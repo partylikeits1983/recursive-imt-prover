@@ -1,9 +1,0 @@
-{"constraints":11626,"witness_variables":11648,"public_inputs":32,"poseidon_permutations":14,"matrix_nonzeros":85584}
-trying witness PoW ceiling 10
-REJECTED InvalidConfig(ZkWhirRandomnessExceedsSlack { round: 2, randomness: 512, slack: 496 })
-trying witness PoW ceiling 12
-REJECTED InvalidConfig(ZkWhirRandomnessExceedsSlack { round: 2, randomness: 512, slack: 496 })
-trying witness PoW ceiling 16
-REJECTED InvalidConfig(ZkWhirRandomnessExceedsSlack { round: 2, randomness: 512, slack: 496 })
-trying witness PoW ceiling 22
-VALID {"matrix_closing":"Spark","security":{"security_level_bits":116,"merkle_security_bits":116,"soundness_assumption":"JohnsonBound"},"whir_params":{"pow_bits":22,"folding_factor":4,"starting_log_inv_rate":2,"rs_domain_initial_reduction_factor":3,"folding_schedule":{"ConstantFromSecondRound":{"first":4,"rest":3}},"round_log_inv_rates":[]},"spark_whir_params":{"fixed_value":{"pow_bits":9,"folding_factor":5,"starting_log_inv_rate":1,"rs_domain_initial_reduction_factor":5,"folding_schedule":{"ConstantFromSecondRound":{"first":5,"rest":4}},"round_log_inv_rates":[]},"fixed_audit":{"pow_bits":6,"folding_factor":8,"starting_log_inv_rate":1,"rs_domain_initial_reduction_factor":8,"folding_schedule":null,"round_log_inv_rates":[]},"read":{"pow_bits":9,"folding_factor":5,"starting_log_inv_rate":1,"rs_domain_initial_reduction_factor":5,"folding_schedule":{"ConstantFromSecondRound":{"first":5,"rest":4}},"round_log_inv_rates":[]}},"ell_zk":3,"mask_log_inv_rate":3}
