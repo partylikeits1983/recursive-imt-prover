@@ -3,6 +3,8 @@
 mod air;
 mod config;
 mod encoding;
+mod fanout;
+mod gates;
 mod keccak;
 mod mixed;
 #[cfg(test)]
@@ -12,6 +14,8 @@ use air::{Chip, convert};
 use anyhow::{Result, ensure};
 use config::{Config, challenger};
 use encoding::TableEncoding;
+use fanout::FanoutShard;
+use gates::GateShard;
 use old_air::BaseAir as OldBaseAir;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::BaseAir;
@@ -31,7 +35,7 @@ use p3_multi_stark::{
 use p3_sumcheck::{TableShape, layout::Table};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 type F = Poly64;
 type Proof = MultiStarkProof<Config>;
@@ -43,6 +47,8 @@ pub struct Prepared {
     hash: BooleanCircuit,
     hash_index: usize,
     calls: usize,
+    sources: Vec<TableSource>,
+    source_hash_index: usize,
     log_heights: Vec<usize>,
     config: Config,
     pk: ProvingKey<Config>,
@@ -51,9 +57,17 @@ pub struct Prepared {
     pub geometry: Geometry,
 }
 
+struct TableSource {
+    index: usize,
+    shard: Option<Arc<FanoutShard>>,
+    gates: Option<Arc<GateShard>>,
+}
+
 #[derive(Serialize)]
 pub struct Geometry {
     pub witnesses: u32,
+    pub fanout_rows_by_width: Vec<(usize, usize)>,
+    pub gate_rows_by_width: Vec<(Vec<usize>, usize)>,
     pub keccak_permutations: usize,
     pub table_widths: Vec<usize>,
     pub log_heights: Vec<usize>,
@@ -98,7 +112,35 @@ impl Prepared {
             .filter(|r| r[117].to_repr() == 1)
             .count()
             / 2;
+        ensure!(
+            bus.airs()[0].width() == 1
+                && bus.airs()[0].preprocessed_width() == 3
+                && bus.airs()[0].main_next_row_columns() == [0],
+            "unexpected native fanout layout"
+        );
+        let widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
+        let shards =
+            fanout::partition(&widths, &bus.airs()[0].preprocessed_trace().unwrap().values)?;
+        let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
+        let gates = gates::partition(
+            &widths,
+            &gates_pp.values,
+            gates_pp.width,
+            bus.airs()[1].width(),
+        )?;
+        drop(gates_pp);
+        drop(widths);
+        let gate_rows_by_width: Vec<_> = gates
+            .iter()
+            .map(|s| (s.coordinate_widths.clone(), s.source_rows.len()))
+            .collect();
+        eprintln!("Gate live rows by coordinate widths: {gate_rows_by_width:?}");
         drop(bridge);
+        let fanout_rows_by_width: Vec<_> = shards
+            .iter()
+            .map(|s| (s.coordinate_width, s.rows.len()))
+            .collect();
+        eprintln!("Fanout live rows by coordinate width: {fanout_rows_by_width:?}");
         ensure!(
             calls > 0 && calls <= 1 << 20,
             "unsupported Keccak call count"
@@ -120,23 +162,55 @@ impl Prepared {
                 F::ONE,
             ]);
         }
-        let airs: Vec<_> = bus
-            .airs()
-            .iter()
-            .enumerate()
-            .map(|(i, a)| {
-                if i == hash_index {
-                    Ok(Chip::Keccak {
-                        preprocessing: RowMajorMatrix::new(preprocessing.clone(), 3),
-                    })
-                } else {
-                    Chip::import(a.clone(), bus.log_heights()[i])
+        let source_hash_index = hash_index;
+        let mut airs = Vec::new();
+        let mut sources = Vec::new();
+        let mut log_heights = Vec::new();
+        for shard in shards {
+            airs.push(Chip::import_shard(
+                bus.airs()[0].clone(),
+                shard.log_height,
+                Some(shard.clone()),
+            )?);
+            log_heights.push(shard.log_height);
+            sources.push(TableSource {
+                index: 0,
+                shard: Some(shard),
+                gates: None,
+            });
+        }
+        for shard in gates {
+            airs.push(Chip::import_gates(bus.airs()[1].clone(), shard.clone())?);
+            log_heights.push(shard.log_height);
+            sources.push(TableSource {
+                index: 1,
+                shard: None,
+                gates: Some(shard),
+            });
+        }
+        let hash_index = source_hash_index + airs.len() - 2;
+        for (i, air) in bus.airs().iter().enumerate().skip(2) {
+            airs.push(if i == source_hash_index {
+                Chip::Keccak {
+                    preprocessing: RowMajorMatrix::new(preprocessing.clone(), 3),
                 }
-            })
-            .collect::<Result<_>>()?;
+            } else {
+                Chip::import(air.clone(), bus.log_heights()[i])?
+            });
+            log_heights.push(if i == source_hash_index {
+                log_calls
+            } else {
+                bus.log_heights()[i]
+            });
+            sources.push(TableSource {
+                index: i,
+                shard: None,
+                gates: None,
+            });
+        }
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
-        identity.update(b"imt-flock-backend-v4/708900d7a730d6ce4d5421d43e2193f2301920fa");
+        identity.update(b"imt-flock-backend-v5/708900d7a730d6ce4d5421d43e2193f2301920fa");
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());
@@ -168,8 +242,6 @@ impl Prepared {
                 identity.update(0u64.to_le_bytes());
             }
         }
-        let mut log_heights = bus.log_heights().to_vec();
-        log_heights[hash_index] = log_calls;
         let shapes: Vec<_> = airs
             .iter()
             .enumerate()
@@ -191,7 +263,12 @@ impl Prepared {
             .iter()
             .enumerate()
             .map(|(i, shape)| {
-                let width = if i == hash_index {
+                if let Some(gates) = &sources[i].gates {
+                    return TableEncoding::new(gates.coordinate_widths.clone());
+                }
+                let width = if let Some(shard) = &sources[i].shard {
+                    shard.coordinate_width
+                } else if i == hash_index {
                     1
                 } else if i == hash_index + 1 {
                     16
@@ -256,6 +333,8 @@ impl Prepared {
         );
         let geometry = Geometry {
             witnesses: circuit.witness_count,
+            fanout_rows_by_width,
+            gate_rows_by_width,
             keccak_permutations: calls,
             table_widths: airs.iter().map(BaseAir::width).collect(),
             log_heights: log_heights.clone(),
@@ -274,6 +353,8 @@ impl Prepared {
             hash,
             hash_index,
             calls,
+            sources,
+            source_hash_index,
             log_heights,
             config,
             pk,
@@ -293,9 +374,17 @@ impl Prepared {
         runner.set_public_inputs(public)?;
         runner.set_private_inputs(private)?;
         let witness = runner.run_witness()?;
-        let mut source = self.bus.column_major_tables(&witness)?;
+        let mut source: Vec<_> = self
+            .bus
+            .column_major_tables(&witness)?
+            .into_iter()
+            .map(Some)
+            .collect();
         drop(witness);
-        let bridge = &source[self.hash_index + 1];
+        // The legacy Keccak trace is replaced by Flock. Release it before
+        // constructing Flock's witness and the partitioned native tables.
+        drop(source[self.source_hash_index].take());
+        let bridge = source[self.source_hash_index + 1].as_ref().unwrap();
         let rows: Vec<[u64; 100]> = (0..self.calls)
             .map(|i| core::array::from_fn(|j| bridge.column(j).value(2 * i).to_repr()))
             .collect();
@@ -307,9 +396,44 @@ impl Prepared {
             |row, words| words.copy_from_slice(row),
         );
         let mut tables = Vec::new();
-        for (i, table) in source.drain(..).enumerate() {
+        for (i, mapping) in self.sources.iter().enumerate() {
             if i == self.hash_index {
                 tables.push(None);
+                continue;
+            }
+            // Table clones share storage. Release each original after its last
+            // partition, avoiding simultaneous retention of both full layouts.
+            let table = source[mapping.index].as_ref().unwrap().clone();
+            if self
+                .sources
+                .get(i + 1)
+                .is_none_or(|next| next.index != mapping.index)
+            {
+                drop(source[mapping.index].take());
+            }
+            if let Some(shard) = &mapping.shard {
+                let height = 1 << shard.log_height;
+                let column = table.column(0);
+                let mut values = vec![F::ZERO; 2 * height];
+                for (r, row) in shard.rows.iter().enumerate() {
+                    values[r + 1] = convert(column.value(row.source_row as usize));
+                }
+                for r in 0..height {
+                    values[height + r] = values[(r + 1).min(height - 1)];
+                }
+                tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
+                continue;
+            }
+            if let Some(shard) = &mapping.gates {
+                let height = 1 << shard.log_height;
+                let mut values = vec![F::ZERO; height * table.num_polys()];
+                for c in 0..table.num_polys() {
+                    let column = table.column(c);
+                    for (r, &source_row) in shard.source_rows.iter().enumerate() {
+                        values[c * height + r] = convert(column.value(source_row as usize));
+                    }
+                }
+                tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
                 continue;
             }
             let height = 1 << table.num_variables();
@@ -325,6 +449,7 @@ impl Prepared {
             }
             tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
         }
+        drop(source);
         let public = self.public(public)?;
         let mut hash_witness = Some(hash_witness);
         let instances = ProverInstances::new(
@@ -399,11 +524,11 @@ impl Prepared {
     }
 
     fn public(&self, values: &[OldF]) -> Result<Vec<Vec<F>>> {
+        let original = self.bus.public_values(values)?;
         Ok(self
-            .bus
-            .public_values(values)?
-            .into_iter()
-            .map(|v| v.into_iter().map(convert).collect())
+            .sources
+            .iter()
+            .map(|s| original[s.index].iter().copied().map(convert).collect())
             .collect())
     }
 }

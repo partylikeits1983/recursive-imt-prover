@@ -239,40 +239,25 @@ This is a research source pin, **not** the dependency used by the binary baselin
 Thus there is now a binary ZK primitive upstream, but no supported **full
 binary Keccak membership + native recursive verification** combination.
 
-## Minimum remaining construction
+## Remaining security work
 
-There are two concrete routes. The new [VEIL experiment](binary-veil.md)
-implements the binary encoding and inner algebraic argument for route 2, plus
-direct Keccak-preimage and IMT relation experiments. The full compiler and
-recursive integration remain unfinished; neither complete route is implemented.
+The experimental [masked-child and Flock implementation](binary-veil.md) now
+supplies the full membership relation and aggregation of its complete verifier.
+The earlier missing integration is implemented; its security argument remains
+unfinished. The required review covers:
 
-1. Reuse the new current-row ZK compiler by flattening the entire fixed
-   membership circuit into one wide current-row relation, including every
-   Keccak round and wiring equality. This avoids extending its security theorem
-   to buses. Then implement a native recursive verifier for its exact reference
-   proof/transcript format. Full coefficient blends and one quotient per
-   constraint make this an unattractive low-latency route; first measure a
-   small single-permutation instance before attempting a complete depth-8 tree.
-2. Keep the efficient native MultiStark relation and integrate a suitable
-   binary-field ZK compiler, such as an adapted VEIL construction. This requires
-   masking every witness-dependent algebraic message, not just the PCS:
-   constraint batching/zerocheck, sumcheck rounds, product-bus GKR and terminal
-   evaluations. It also needs a hiding additive-code/WHIR opening interface with
-   a proven leakage budget, private CSPRNG lifecycle, and recursive verification
-   of all added consistency checks. The existing Succinct VEIL Rust prototype
-   uses two-adic fields/BaseFold, so it is not a drop-in binary WHIR adapter.
+1. Joint simulation of masked algebraic messages, current/successor openings,
+   committed random blends, adaptive queries and salted hash commitments.
+2. Abort probabilities, randomness lifecycle and lifetime query/commitment
+   budgets, with statistical error charged across up to 64 children.
+3. Fiat–Shamir knowledge soundness and recursive composition, separating the
+   conditional algebraic budgets from the hash/CSPRNG assumptions.
 
-The proposed privacy argument for route 2 is a composition argument: masked
-oracle answers must be jointly simulatable for the complete query schedule;
-committed one-time pads hide all algebraic messages; a ZK consistency proof binds
-these masked messages to the original verifier equations. Rank, mask reuse,
-adaptive transcript queries, oracle openings, Fiat-Shamir and composition must
-all be analyzed. This paragraph is a specification of missing obligations, not
-a proof that a partial implementation would be ZK.
-
-Once the child proof is fully ZK, the outer proof may remain non-ZK: it processes
-only already-ZK proof transcripts and their public statements. It must never
-receive the original notes, paths or the child's private random tape.
+The local padding/coupling tests support individual algebraic claims; they are
+not a joint simulator or an end-to-end security proof. A successful aggregate
+cannot establish child privacy. Once child ZK is established, aggregation may
+remain non-ZK because it receives only child transcripts and public statements,
+never the original notes, paths or private random tapes.
 
 Sources: [native binary support](https://plonky3.github.io/Plonky3-recursion/advanced_topics/binary_fields.html),
 [VEIL](https://blog.succinct.xyz/veil/),

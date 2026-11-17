@@ -21,16 +21,28 @@ Local adaptations:
   use linear expansion and recombination; WHIR and Flock are unchanged.
 - `encoding.rs`: trusted per-column coordinate widths. Keccak bridge values use
   16 coordinates; each preprocessing column uses the highest bit present in the
-  fixed trusted table, with a minimum of one. Arithmetic values retain all 64
-  coordinates. The prover rejects values outside the declared subspace instead
+  fixed trusted table, with a minimum of one. Unbounded arithmetic values retain
+  all 64 coordinates. The prover rejects values outside the declared subspace instead
   of truncating them, and the verifier recombines exactly the declared bits.
   Widths are bound into the verifier identity. They never come from the witness.
+- `fanout.rs` partitions whole witness-ID groups into 1-, 16- and 64-coordinate
+  tables. Bounds come from constants, Boolean constraints, Keccak ports and a
+  forward pass over actual polynomial-coordinate arithmetic. Unknown values
+  retain 64 coordinates; hint execution never supplies a bound. Each original
+  witness-bus occurrence appears exactly once. Each partition has an inactive
+  leading zero row, linked to the zero-sentinel group when present.
+- `gates.rs` groups independent arithmetic rows by their per-column bounds.
+  All selectors, constants and witness IDs remain fixed and unchanged. The
+  grouping retains every live row; padding has inactive selectors. A group is
+  split once when that saves at least 25% of its padded cells. Compact
+  byte storage for fixed preprocessing expands losslessly before proving.
 - The native fanout table's successor read is an extra current-row column.
   A product bus matches `(next row address, next value)` to the following row's
   `(row address, value)`; the final value repeats locally. Public row addresses
-  are periodic polynomials with closed-form evaluations. This avoids materializing
-  next-row ring-switch tensors. It adds a bus argument, included in the security
-  report, rather than trusting the shifted witness.
+  are periodic polynomials with closed-form evaluations. Each partition has a
+  distinct successor bus, preventing cross-table cancellation. This avoids materializing
+  next-row ring-switch tensors. The extra bus arguments are included in the
+  security report; successor values are authenticated by those arguments.
 - The transcript seed binds imported constraints, bus declarations, dimensions,
   preprocessing, periodic definitions, Flock circuit, protocol and caller domain.
 
@@ -45,7 +57,11 @@ they do not add a probabilistic test or a new soundness-error term. The opening
 tests compare reconstructed evaluations with direct dense multilinear evaluation,
 including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
-Aggregate protocol v2 / backend identity v4 reject earlier aggregate artifacts.
+Tests check exact occurrence preservation, actual AIR equations and product-bus
+multisets; they reject a changed copy, a nonzero zero sentinel and a successor
+swap across partitions. Aggregate protocol v3 / backend identity v5 reject
+previous aggregate artifacts. Child proof formats and security parameters are
+unchanged.
 
 Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/2,
 folding factor 4, Poly192 challenges, Keccak-256, and a required 144-bit conditional

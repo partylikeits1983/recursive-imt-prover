@@ -1,5 +1,5 @@
 //! Translate the pinned native circuit AIR without changing its constraints.
-use crate::F;
+use crate::{F, fanout::FanoutShard, gates::GateShard};
 use anyhow::{Result, ensure};
 use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression};
 use old_air::{AirLayout as OldLayout, BaseAir as OldBaseAir};
@@ -15,7 +15,7 @@ use p3_bus::{BusActivation, BusBoundary, BusDirection, BusInteractionBuilder, Bu
 use p3_circuit_prover::native_bus::NativeBusCircuitAir;
 use p3_field::{ExtensionField, Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 pub enum Chip {
     Native(Box<ImportedAir>),
@@ -25,6 +25,9 @@ pub enum Chip {
 pub struct ImportedAir {
     source: NativeBusCircuitAir<OldF>,
     successor: bool,
+    shard: Option<Arc<FanoutShard>>,
+    gates: Option<Arc<GateShard>>,
+    successor_bus: String,
     log_height: usize,
     constraints: Vec<SymbolicExpression<OldF>>,
     interactions: Vec<SymbolicBusInteraction<OldF>>,
@@ -35,6 +38,24 @@ impl Chip {
         matches!(self, Self::Native(a) if a.successor)
     }
     pub fn import(source: NativeBusCircuitAir<OldF>, log_height: usize) -> Result<Self> {
+        Self::import_shard(source, log_height, None)
+    }
+    pub fn import_gates(source: NativeBusCircuitAir<OldF>, shard: Arc<GateShard>) -> Result<Self> {
+        ensure!(
+            source.main_next_row_columns().is_empty(),
+            "arithmetic partition has successor access"
+        );
+        let Self::Native(mut air) = Self::import(source, shard.log_height)? else {
+            unreachable!()
+        };
+        air.gates = Some(shard);
+        Ok(Self::Native(air))
+    }
+    pub fn import_shard(
+        source: NativeBusCircuitAir<OldF>,
+        log_height: usize,
+        shard: Option<Arc<FanoutShard>>,
+    ) -> Result<Self> {
         let symbolic =
             BusSymbolicBuilder::<OldF, OldF>::from_air(&source, OldLayout::from_air(&source));
         ensure!(
@@ -57,6 +78,12 @@ impl Chip {
         );
         Ok(Self::Native(Box::new(ImportedAir {
             successor,
+            successor_bus: shard.as_ref().map_or_else(
+                || "imt.successor".to_owned(),
+                |s| format!("imt.successor.{}", s.coordinate_width),
+            ),
+            shard,
+            gates: None,
             log_height,
             source,
             constraints: symbolic.base_constraints(),
@@ -80,6 +107,8 @@ impl BaseAir<F> for Chip {
     }
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
         match self {
+            Self::Native(a) if a.gates.is_some() => Some(a.gates.as_ref().unwrap().preprocessing()),
+            Self::Native(a) if a.shard.is_some() => Some(a.shard.as_ref().unwrap().preprocessing()),
             Self::Native(a) => a
                 .source
                 .preprocessed_trace()
@@ -158,13 +187,13 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                     let first = b.is_first_row();
                     let last = b.is_last_row();
                     b.push_bus_interaction(
-                        BusName::new("imt.successor"),
+                        BusName::new(&a.successor_bus),
                         BusDirection::Push,
                         [addresses[0].into(), row[0].into()],
                         BusActivation::Boolean(AB::Expr::ONE - first),
                     );
                     b.push_bus_interaction(
-                        BusName::new("imt.successor"),
+                        BusName::new(&a.successor_bus),
                         BusDirection::Pull,
                         [addresses[1].into(), row[1].into()],
                         BusActivation::Boolean(AB::Expr::ONE - last.clone()),
