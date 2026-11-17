@@ -1,5 +1,6 @@
 // Adapted from Plonky3 708900d7a730d6ce4d5421d43e2193f2301920fa, MIT OR Apache-2.0.
-// Local change: forward weighted claims only for unchanged Boolean columns.
+// Local changes: trusted per-column coordinate widths; weighted claims only on
+// unchanged leading Boolean columns.
 //! Tables that hold both bit columns and field-element columns, committed as one bit witness.
 //!
 //! ```text
@@ -17,7 +18,9 @@
 //!     v(j)  =  sum_k c_k(j) * e_k        e_k the element with only coordinate k set
 //! ```
 //!
-//! A dense cell therefore commits exactly the bits of one field element.
+//! Each dense column has a trusted coordinate width between 1 and 64. Coordinates
+//! above that width are zero. The prover rejects values outside that subspace;
+//! the verifier reconstructs only the declared low coordinates.
 //!
 //! The bit region commits one bit per cell, as the Boolean trace commitment does.
 //!
@@ -45,7 +48,9 @@
 //!
 //! # Soundness
 //!
-//! The coordinate map is a bijection between field elements and bit strings.
+//! The coordinate map is injective on the declared field-element subspace.
+//! A shorter encoding restricts possible witnesses; it does not drop AIR equations.
+//! Widths are fixed by the trusted circuit, never chosen by the prover.
 //!
 //! So every dense column has exactly one committed preimage.
 //!
@@ -55,9 +60,10 @@
 //!
 //! That includes the column point of each batch, charged once per block and view.
 
-use core::ops::Range;
 use std::vec;
 use std::vec::Vec;
+
+use crate::encoding::{TableEncoding, committed_shapes};
 
 use p3_binary_field::{BinaryField8, BitCoordinates, PackedGf2x64, TowerLevel};
 use p3_challenger::fs::TranscriptField;
@@ -85,7 +91,9 @@ const WORD_BITS: usize = 64;
 
 /// A commitment to tables with a bit region and a dense region, one bit witness underneath.
 ///
-/// Table `t` holds bits in its first `boolean_columns[t]` columns, field elements after.
+/// Each table has a trusted encoding. Its leading one-coordinate columns retain
+/// their indices for weighted Boolean claims; other columns expand into their
+/// declared number of low coordinates.
 ///
 /// Source cells and packed elements use `F`.
 ///
@@ -103,7 +111,7 @@ const WORD_BITS: usize = 64;
 pub struct MixedTraceCommitment<EF, B, F = EF> {
     /// The Boolean trace commitment every claim is discharged against.
     inner: BooleanTraceCommitment<EF, B>,
-    boolean_columns: Vec<usize>,
+    encodings: Vec<TableEncoding>,
     basis: Vec<F>,
 }
 
@@ -132,78 +140,17 @@ pub fn coordinate_basis<EF: Coordinates>() -> Vec<EF> {
         .collect()
 }
 
-/// Committed columns of a table with `bits` bit columns out of `width`.
-///
-/// Each dense column becomes one committed column per coordinate.
-///
-/// # Returns
-///
-/// Nothing when the bit region is wider than the table, or the count overflows a word.
-const fn committed_width<EF: Coordinates>(bits: usize, width: usize) -> Option<usize> {
-    // A bit region wider than its table names columns that do not exist.
-    let Some(dense) = width.checked_sub(bits) else {
-        return None;
-    };
-    // Why: a wrapped count would alias a huge table onto a small committed one.
-    match dense.checked_mul(EF::COORDINATES) {
-        Some(coordinates) => coordinates.checked_add(bits),
-        None => None,
-    }
-}
-
-/// The shapes a batch commits once every dense column is split into its coordinates.
-///
-/// # Panics
-///
-/// - The two slices differ in length.
-/// - A bit region is wider than its table.
-/// - A committed width overflows a word.
-#[must_use]
-pub fn committed_shapes<EF: Coordinates>(
-    shapes: &[TableShape],
-    boolean_columns: &[usize],
-) -> Vec<TableShape> {
-    assert_eq!(
-        shapes.len(),
-        boolean_columns.len(),
-        "one bit region per table"
-    );
-    shapes
-        .iter()
-        .zip(boolean_columns)
-        .map(|(shape, &bits)| {
-            assert!(bits <= shape.width(), "a bit region fits inside its table");
-            // The bit region fits, so only the coordinate count can fail.
-            let width = committed_width::<EF>(bits, shape.width())
-                .expect("the committed width fits in a word");
-            TableShape::new(shape.num_variables(), width)
-        })
-        .collect()
-}
-
-/// Committed columns one source column opens, in the order they are committed.
-///
-/// A bit column opens itself, and a dense column opens one column per coordinate.
-const fn committed_columns<EF: Coordinates>(bits: usize, column: usize) -> Range<usize> {
-    if column < bits {
-        column..column + 1
-    } else {
-        let start = bits + (column - bits) * EF::COORDINATES;
-        start..start + EF::COORDINATES
-    }
-}
-
 impl<EF, B, F: Coordinates> MixedTraceCommitment<EF, B, F> {
     /// Split each table at its bit region, and commit through `inner`.
     ///
     /// `inner` must hold the arity [`committed_shapes`] stacks to.
-    pub fn new(inner: BooleanTraceCommitment<EF, B>, boolean_columns: Vec<usize>) -> Self
+    pub fn new(inner: BooleanTraceCommitment<EF, B>, encodings: Vec<TableEncoding>) -> Self
     where
         B: BooleanBackend<EF, Val = F>,
     {
         Self {
             inner,
-            boolean_columns,
+            encodings,
             basis: coordinate_basis(),
         }
     }
@@ -217,22 +164,16 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
         &self,
         shapes: &[TableShape],
     ) -> Result<(), BooleanTraceCommitmentError<E>> {
-        if shapes.len() != self.boolean_columns.len() {
+        if shapes.len() != self.encodings.len() {
             return Err(BooleanTraceCommitmentError::TableCountMismatch {
-                expected: self.boolean_columns.len(),
+                expected: self.encodings.len(),
                 actual: shapes.len(),
             });
         }
-        for (table, (shape, &bits)) in shapes.iter().zip(&self.boolean_columns).enumerate() {
-            if bits > shape.width() {
-                return Err(BooleanTraceCommitmentError::BitRegionWidth {
-                    table,
-                    bits,
-                    width: shape.width(),
-                });
-            }
-            // Every later width and column offset is bounded by this count.
-            if committed_width::<F>(bits, shape.width()).is_none() {
+        for (shape, encoding) in shapes.iter().zip(&self.encodings) {
+            if shape.width() != encoding.widths.len()
+                || encoding.widths.iter().any(|&width| width > F::COORDINATES)
+            {
                 return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
             }
         }
@@ -248,7 +189,7 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
     /// The extra readings are opened and verified like the others, and dropped on the way back.
     fn expand_protocol(&self, protocol: &OpeningProtocol) -> OpeningProtocol {
         let shapes = protocol.table_shapes();
-        let committed = committed_shapes::<F>(&shapes, &self.boolean_columns);
+        let committed = committed_shapes(&shapes, &self.encodings);
         let mut successor = vec![false; shapes.len()];
         for (table, batch) in protocol.iter_openings() {
             successor[table] |= !batch.next().is_empty();
@@ -284,19 +225,19 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
             .iter_openings()
             .zip(evals)
             .map(|((table, batch), committed)| {
-                let bits = self.boolean_columns[table];
+                let encoding = &self.encodings[table];
                 let side = |columns: &[usize], values: &[EF]| {
                     columns
                         .iter()
                         .map(|&column| {
-                            let range = committed_columns::<F>(bits, column);
-                            if column < bits {
+                            let range = encoding.columns[column].clone();
+                            if encoding.widths[column] == 1 {
                                 values[range.start]
                             } else {
                                 // v(r) = sum_k c_k(r) * embed(e_k)
                                 <EF as Algebra<F>>::batched_linear_combination(
                                     &values[range],
-                                    &self.basis,
+                                    &self.basis[..encoding.widths[column]],
                                 )
                             }
                         })
@@ -319,8 +260,9 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
         let num_variables = table.num_variables();
         let height = 1usize << num_variables;
         let width = table.num_polys();
-        let bits = self.boolean_columns[index];
-        let committed = bits + (width - bits) * F::COORDINATES;
+        let encoding = &self.encodings[index];
+        let bits = encoding.boolean_columns;
+        let committed = encoding.committed_width;
         let blocks = height.div_ceil(WORD_BITS);
         let mut words = vec![0u64; blocks * committed];
 
@@ -350,18 +292,23 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
                 }
                 for column in bits..width {
                     let view = table.column(column);
-                    let out = &mut row[committed_columns::<F>(bits, column)];
+                    let out = &mut row[encoding.columns[column].clone()];
                     let mut cells = [F::ZERO; WORD_BITS];
                     let count = rows.len();
                     for (cell, r) in cells.iter_mut().zip(rows.clone()) {
                         *cell = view.value(r);
                     }
-                    expand_coordinate_block(&cells[..count], out);
+                    if !expand_bounded_block(&cells[..count], out) {
+                        return Some(column);
+                    }
                 }
                 None
             })
             .min();
         if let Some(column) = refused {
+            if encoding.widths[column] != 1 {
+                return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
+            }
             return Err(BooleanTraceCommitmentError::NonBooleanCell {
                 table: index,
                 column,
@@ -372,6 +319,32 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
             num_variables,
         ))
     }
+}
+
+/// A bounded column encodes only its low coordinates. Never silently truncate:
+/// values outside the trusted subspace are rejected before committing anything.
+fn expand_bounded_block<A: Coordinates>(values: &[A], out: &mut [u64]) -> bool {
+    if out.len() == A::COORDINATES {
+        expand_coordinate_block(values, out);
+        return true;
+    }
+    for (lane, value) in values.iter().enumerate() {
+        for (byte_index, &byte) in coordinate_bytes(core::slice::from_ref(value))
+            .iter()
+            .enumerate()
+        {
+            let mut rest = byte;
+            while rest != 0 {
+                let coordinate = byte_index * 8 + rest.trailing_zeros() as usize;
+                if coordinate >= out.len() {
+                    return false;
+                }
+                out[coordinate] |= 1 << lane;
+                rest &= rest - 1;
+            }
+        }
+    }
+    true
 }
 
 /// Expand at most 64 source rows, one coordinate word per output column.
@@ -559,7 +532,7 @@ where
 {
     fn bit_region(&self, table: usize, _width: usize) -> usize {
         // A table this scheme was not sized for has no bit region.
-        self.boolean_columns.get(table).copied().unwrap_or(0)
+        self.encodings.get(table).map_or(0, |e| e.boolean_columns)
     }
 
     fn prescribed_security(&self, protocol: &OpeningProtocol) -> Option<PrescribedOpeningSecurity> {
@@ -622,7 +595,7 @@ where
         // table/column indices, height and weights when dense neighbours expand.
         if weighted
             .iter()
-            .any(|c| c.column >= *self.boolean_columns.get(c.table).unwrap_or(&0))
+            .any(|c| c.column >= self.encodings.get(c.table).map_or(0, |e| e.boolean_columns))
         {
             return Some(Err(BooleanTraceCommitmentError::InvalidOpeningProtocol));
         }
@@ -650,7 +623,7 @@ where
     ) -> Option<Result<Vec<OpeningEvals<EF>>, Self::Error>> {
         if weighted
             .iter()
-            .any(|c| c.column >= *self.boolean_columns.get(c.table).unwrap_or(&0))
+            .any(|c| c.column >= self.encodings.get(c.table).map_or(0, |e| e.boolean_columns))
         {
             return Some(Err(BooleanTraceCommitmentError::InvalidOpeningProtocol));
         }

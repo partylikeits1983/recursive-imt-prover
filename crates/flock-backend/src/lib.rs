@@ -2,6 +2,7 @@
 //! product bus for the arithmetic circuit. This proof is deliberately non-hiding.
 mod air;
 mod config;
+mod encoding;
 mod keccak;
 mod mixed;
 #[cfg(test)]
@@ -10,6 +11,7 @@ mod tests;
 use air::{Chip, convert};
 use anyhow::{Result, ensure};
 use config::{Config, challenger};
+use encoding::TableEncoding;
 use old_air::BaseAir as OldBaseAir;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::BaseAir;
@@ -57,6 +59,10 @@ pub struct Geometry {
     pub log_heights: Vec<usize>,
     pub algebraic_bits: f64,
     pub initial_codeword_cells: usize,
+    pub main_codeword_cells: usize,
+    pub preprocessed_codeword_cells: usize,
+    pub main_coordinate_widths: Vec<Vec<usize>>,
+    pub preprocessed_coordinate_widths: Vec<Vec<usize>>,
     pub security_terms: Vec<(String, f64)>,
 }
 
@@ -130,10 +136,11 @@ impl Prepared {
             .collect::<Result<_>>()?;
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
-        identity.update(b"imt-flock-backend-v3/708900d7a730d6ce4d5421d43e2193f2301920fa");
+        identity.update(b"imt-flock-backend-v4/708900d7a730d6ce4d5421d43e2193f2301920fa");
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());
+        let mut pp_encoding = Vec::new();
         for a in &airs {
             identity.update((a.width() as u64).to_le_bytes());
             identity.update((a.num_public_values() as u64).to_le_bytes());
@@ -143,14 +150,24 @@ impl Prepared {
             if let Some(pp) = a.preprocessed_trace() {
                 identity.update((pp.width as u64).to_le_bytes());
                 identity.update((pp.values.len() as u64).to_le_bytes());
-                for value in pp.values {
-                    identity.update(value.to_repr().to_le_bytes());
+                let mut coordinates = vec![0u64; pp.width];
+                for row in pp.values.chunks_exact(pp.width) {
+                    for (column, value) in row.iter().enumerate() {
+                        let raw = value.to_repr();
+                        identity.update(raw.to_le_bytes());
+                        coordinates[column] |= raw;
+                    }
                 }
+                pp_encoding.push(TableEncoding::new(
+                    coordinates
+                        .into_iter()
+                        .map(|v| (64 - v.leading_zeros() as usize).max(1))
+                        .collect(),
+                )?);
             } else {
                 identity.update(0u64.to_le_bytes());
             }
         }
-        let seed = identity.finalize().to_vec();
         let mut log_heights = bus.log_heights().to_vec();
         log_heights[hash_index] = log_calls;
         let shapes: Vec<_> = airs
@@ -170,14 +187,42 @@ impl Prepared {
             .filter(|(_, a)| a.preprocessed_width() > 0)
             .map(|(i, a)| TableShape::new(log_heights[i], a.preprocessed_width()))
             .collect();
-        let mut regions = vec![0; airs.len()];
-        regions[hash_index] = 1;
+        let main_encoding = shapes
+            .iter()
+            .enumerate()
+            .map(|(i, shape)| {
+                let width = if i == hash_index {
+                    1
+                } else if i == hash_index + 1 {
+                    16
+                } else {
+                    64
+                };
+                TableEncoding::new(vec![width; shape.width()])
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let main_coordinate_widths: Vec<_> =
+            main_encoding.iter().map(|e| e.widths.clone()).collect();
+        let preprocessed_coordinate_widths: Vec<_> =
+            pp_encoding.iter().map(|e| e.widths.clone()).collect();
+        // Encodings are verifier-authorized parts of the statement, including
+        // widths inferred from the fixed preprocessing (never from a witness).
+        for encodings in [&main_encoding, &pp_encoding] {
+            identity.update((encodings.len() as u64).to_le_bytes());
+            for encoding in encodings {
+                identity.update((encoding.widths.len() as u64).to_le_bytes());
+                for &width in &encoding.widths {
+                    identity.update((width as u64).to_le_bytes());
+                }
+            }
+        }
+        let seed = identity.finalize().to_vec();
         eprintln!(
             "Flock tables: widths {:?}, log heights {:?}, {calls} Keccak calls",
             airs.iter().map(BaseAir::width).collect::<Vec<_>>(),
             log_heights
         );
-        let config = Config::new(&shapes, regions, &pp)?;
+        let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
         let (pk, vk) = setup(
             &config,
             &airs.iter().collect::<Vec<_>>(),
@@ -216,6 +261,10 @@ impl Prepared {
             log_heights: log_heights.clone(),
             algebraic_bits,
             initial_codeword_cells: config.initial_codeword_cells,
+            main_codeword_cells: config.main_codeword_cells,
+            preprocessed_codeword_cells: config.preprocessed_codeword_cells,
+            main_coordinate_widths,
+            preprocessed_coordinate_widths,
             security_terms: terms,
         };
         Ok(Self {

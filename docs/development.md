@@ -59,6 +59,10 @@ These requirements do not change when inspecting other implementations.
    separately reporting circuit construction, proof generation, decoding,
    trusted setup and final verification. Profile before changing the design;
    compare a recursion tree only if the fixed batch hits a measured limit.
+   The bounded-coordinate adapter reduces initial codeword storage for depth-32
+   N=2 from 8 GiB to 5 GiB; N=4 still exceeds the guard. Next investigate native
+   fanout/arithmetic table size and checkpointed Keccak GKR (the pinned LeanVM
+   lead in `binary-veil.md`), retaining the 128-bit target and existing hash.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover and trusted-verifier loading before adding another recursion layer.

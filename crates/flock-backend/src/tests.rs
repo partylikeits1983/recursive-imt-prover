@@ -1,11 +1,22 @@
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_binary_field::{Poly192, TowerLevel};
-use p3_field::PrimeCharacteristicRing;
+use p3_commit::MultilinearPcs;
+use p3_field::{BasedVectorSpace, PrimeCharacteristicRing};
 use p3_flock::Witness;
 use p3_keccak::KeccakF;
+use p3_matrix::dense::RowMajorMatrix;
+use p3_multilinear_util::{point::Point, poly::Poly};
+use p3_sumcheck::{
+    OpeningBatch, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec, layout::Table,
+};
 use p3_symmetric::Permutation;
 
-use crate::{F, keccak};
+use crate::{
+    F,
+    config::{challenger, pcs},
+    encoding::TableEncoding,
+    keccak,
+};
 
 #[test]
 fn field_versions_have_identical_polynomial_arithmetic() {
@@ -72,5 +83,120 @@ fn periodic_successor_addresses_match_their_actual_tables() {
             direct[1] += weight * F::from_repr(((row + 1) % height) as u64);
         }
         assert_eq!(crate::air::successor_values(&point), direct);
+    }
+}
+
+#[test]
+fn bounded_coordinates_bind_current_and_successor_openings() {
+    let widths = [vec![1, 8, 1, 16, 64], vec![3, 16]];
+    let shapes = [TableShape::new(8, 5), TableShape::new(4, 2)];
+    let encodings: Vec<_> = widths
+        .iter()
+        .map(|v| TableEncoding::new(v.clone()).unwrap())
+        .collect();
+    let pcs = pcs(&shapes, encodings).unwrap();
+    let tables: Vec<_> = shapes
+        .iter()
+        .zip(&widths)
+        .map(|(shape, widths)| {
+            let rows = 1 << shape.num_variables();
+            let values = widths
+                .iter()
+                .enumerate()
+                .flat_map(|(column, &width)| {
+                    (0..rows).map(move |row| {
+                        let raw = ((row as u64 + 1).wrapping_mul(0x9e3779b97f4a7c15))
+                            .rotate_left(column as u32 * 7);
+                        F::from_repr(raw & (u64::MAX >> (64 - width)))
+                    })
+                })
+                .collect();
+            Table::new(RowMajorMatrix::new(values, rows))
+        })
+        .collect();
+    let protocol = OpeningProtocol::new(vec![
+        TableSpec::new(
+            shapes[0],
+            vec![OpeningBatch::new(vec![4, 1, 0, 2], vec![3, 2])],
+        ),
+        TableSpec::new(shapes[1], vec![OpeningBatch::new(vec![1, 0], vec![0, 1])]),
+    ]);
+    let points: Vec<_> = shapes
+        .iter()
+        .map(|shape| {
+            Point::new(
+                (0..shape.num_variables())
+                    .map(|i| {
+                        Poly192::from_basis_coefficients_fn(|j| {
+                            F::from_repr((1234567 + i as u64).rotate_left(17 * j as u32))
+                        })
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let seed = b"bounded-coordinate-opening-test";
+    let mut prover = challenger(seed);
+    let (commitment, data) = pcs.commit(tables.clone(), &mut prover).unwrap();
+    let proof = pcs.open_at(data, &protocol, &points, &mut prover).unwrap();
+    let mut verifier = challenger(seed);
+    pcs.observe_commitment(&commitment, &mut verifier);
+    let evals = pcs
+        .verify_at(&commitment, &proof, &protocol, &points, &mut verifier)
+        .unwrap();
+    for (((table, batch), point), actual) in protocol.iter_openings().zip(&points).zip(evals) {
+        for (&column, &got) in batch.current().iter().zip(actual.current()) {
+            assert_eq!(
+                got,
+                Poly::new(tables[table].poly(column).as_slice().to_vec()).eval_base(point)
+            );
+        }
+        for (&column, &got) in batch.next().iter().zip(actual.next()) {
+            let values = tables[table].poly(column).as_slice().to_vec();
+            let shifted: Vec<_> = (0..values.len())
+                .map(|r| values[(r + 1).min(values.len() - 1)])
+                .collect();
+            assert_eq!(got, Poly::new(shifted).eval_base(point));
+        }
+    }
+    for index in [0, 1, 8, 9, 10, 25, 89, 179, proof.values.len() - 1] {
+        let mut tampered = proof.clone();
+        tampered.values[index] += Poly192::ONE;
+        let mut verifier = challenger(seed);
+        pcs.observe_commitment(&commitment, &mut verifier);
+        assert!(
+            pcs.verify_at(&commitment, &tampered, &protocol, &points, &mut verifier)
+                .is_err()
+        );
+    }
+    // A source column outside its declared subspace must not be truncated into
+    // a different statement, including a Boolean column after dense columns.
+    for (table, column) in [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1)] {
+        let mut invalid = tables.clone();
+        let rows = 1 << shapes[table].num_variables();
+        let mut values: Vec<_> = (0..shapes[table].width())
+            .flat_map(|c| invalid[table].poly(c).as_slice().to_vec())
+            .collect();
+        values[column * rows + rows - 1] += F::from_repr(1 << widths[table][column]);
+        invalid[table] = Table::new(RowMajorMatrix::new(values, rows));
+        assert!(pcs.commit(invalid, &mut challenger(seed)).is_err());
+    }
+    for invalid in [vec![], vec![0], vec![65]] {
+        assert!(TableEncoding::new(invalid).is_err());
+    }
+    for (width, column) in [(4, 0), (6, 0)] {
+        let malformed = OpeningProtocol::new(vec![
+            TableSpec::new(
+                TableShape::new(8, width),
+                vec![OpeningBatch::new(vec![column], vec![])],
+            ),
+            TableSpec::new(shapes[1], vec![OpeningBatch::new(vec![0], vec![])]),
+        ]);
+        let mut verifier = challenger(seed);
+        pcs.observe_commitment(&commitment, &mut verifier);
+        assert!(
+            pcs.verify_at(&commitment, &proof, &malformed, &points, &mut verifier)
+                .is_err()
+        );
     }
 }

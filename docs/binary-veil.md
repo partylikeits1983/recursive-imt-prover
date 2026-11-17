@@ -669,6 +669,61 @@ the joint child simulation or an end-to-end 128-bit Fiat–Shamir/knowledge theo
 Privacy review follows this implementation milestone, as requested. The aggregate
 itself is deliberately non-hiding.
 
+## Aggregate v2: bounded coordinate encoding
+
+The Flock adapter now commits each trusted preprocessing column using only its
+occupied low coordinates, and each Keccak bridge column using 16 coordinates.
+General arithmetic and fanout values retain 64 coordinates. The verifier identity
+binds these widths; out-of-range witnesses are rejected, and every original AIR
+equation is retained. See the local encoding argument and negative opening tests
+in [the adapter](../crates/flock-backend/README.md). This changes the aggregate
+protocol to v2 and backend identity to v4; use the original revision to verify
+historical aggregate artifacts. The child format is unchanged.
+
+Depth 32, N=2, M2 Pro, four threads, compilation excluded:
+
+| Measurement | Result |
+|---|---:|
+| Initial main + preprocessing codeword storage | 5 GiB, down from 8 GiB |
+| Cold aggregation | 87.64 s |
+| Warm aggregation, two samples | 82.61 s median; 82.49–82.73 s |
+| Warm final verification including decoding | 29.40 ms median; 28.82–29.99 ms |
+| Aggregate proof | 1.010–1.011 MB |
+| Fresh verifier setup | 12.10 s |
+| Fresh cryptographic verification | 28.95 ms |
+| Conditional outer algebraic ledger | 146.54 bits |
+
+The three proofs passed the public-statement/corruption checks; the retained
+aggregate passed independent-process verification. The initial codeword storage
+is **not** total working memory. Reported peak RSS was 7.96 GB, and macOS sampling
+reported a peak physical footprint of `28.2G`, including compressed/swapped
+memory. One two-second `sample` profile ran during the first warm child's
+generation; aggregate timing intervals were not profiled. Critical-path timings
+include that instrumentation, so do not use them as a clean throughput comparison.
+The earlier depth-32 run was one cold sample (108.94 s); it is not a warm baseline.
+
+Raw measurements:
+[`flock-bounded-d32-n2.json`](../benchmarks/binary/masked-aggregate/flock-bounded-d32-n2.json).
+
+The actual four-child attempt constructed 28,824,623 witnesses and 102,752 Keccak
+calls, then rejected the required 1,342,177,280 initial codeword cells (10 GiB)
+against the 2^30-cell guard. No aggregate proof was produced:
+[`flock-bounded-d32-n4-failure.json`](../benchmarks/binary/masked-aggregate/flock-bounded-d32-n4-failure.json).
+The 64-child target remains incomplete. Reducing native fanout/arithmetic tables
+and Keccak committed states matters more than raising this allocation guard.
+
+### LeanVM lead for the next optimization
+
+Inspected [LeanVM revision `1e674918`](https://github.com/leanEthereum/leanVM/tree/1e674918a76c8bd86284ba9443556b646309b96e).
+Its standalone Keccak GKR commits selected round states and reduces output claims
+through the intervening rounds. This is a component to investigate without adding
+a VM. That revision uses F128 challenges and states a 125-bit ROM target, so it
+cannot replace this project's 128-bit path as-is. Any reuse must retain Poly192
+challenges, bind both Keccak boundaries to the native bus, authenticate the
+checkpoint openings, and include the GKR reduction in the security ledger.
+Plonky3's inspected `p3-gkr` currently supplies product-tree GKR, not this Keccak
+layer protocol; no such integration is implemented or claimed here.
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

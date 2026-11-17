@@ -1,4 +1,7 @@
-use crate::mixed::{MixedTraceCommitment, MixedTraceData, committed_shapes};
+use crate::{
+    encoding::{TableEncoding, committed_shapes},
+    mixed::{MixedTraceCommitment, MixedTraceData},
+};
 use anyhow::{Result, ensure};
 use p3_binary_field::{BinaryChallenger, Poly64, Poly192};
 use p3_binary_pcs::whir::{
@@ -27,33 +30,44 @@ pub struct Config {
     main: Pcs,
     preprocessed: Pcs,
     pub initial_codeword_cells: usize,
+    pub main_codeword_cells: usize,
+    pub preprocessed_codeword_cells: usize,
 }
 
 impl Config {
-    pub fn new(main: &[TableShape], regions: Vec<usize>, pp: &[TableShape]) -> Result<Self> {
-        let cells = |shapes: &[TableShape], regions: &[usize]| {
-            let (arity, _) = plan_stacked_layout(&committed_shapes::<Poly64>(shapes, regions));
+    pub fn new(
+        main: &[TableShape],
+        main_encoding: Vec<TableEncoding>,
+        pp: &[TableShape],
+        pp_encoding: Vec<TableEncoding>,
+    ) -> Result<Self> {
+        let cells = |shapes: &[TableShape], encoding: &[TableEncoding]| {
+            let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, encoding));
             1usize
                 .checked_shl((arity - 6 + 1) as u32)
                 .ok_or_else(|| anyhow::anyhow!("codeword size overflow"))
         };
-        let initial_codeword_cells = cells(main, &regions)?
-            .checked_add(cells(pp, &vec![0; pp.len()])?)
+        let main_codeword_cells = cells(main, &main_encoding)?;
+        let preprocessed_codeword_cells = cells(pp, &pp_encoding)?;
+        let initial_codeword_cells = main_codeword_cells
+            .checked_add(preprocessed_codeword_cells)
             .ok_or_else(|| anyhow::anyhow!("codeword budget overflow"))?;
         ensure!(
             initial_codeword_cells <= 1 << 30,
             "Flock initial codeword cells {initial_codeword_cells} exceed this prototype's 2^30 budget"
         );
         Ok(Self {
-            main: pcs(main, regions)?,
-            preprocessed: pcs(pp, vec![0; pp.len()])?,
+            main: pcs(main, main_encoding)?,
+            preprocessed: pcs(pp, pp_encoding)?,
             initial_codeword_cells,
+            main_codeword_cells,
+            preprocessed_codeword_cells,
         })
     }
 }
 
-fn pcs(shapes: &[TableShape], regions: Vec<usize>) -> Result<Pcs> {
-    let (arity, _) = plan_stacked_layout(&committed_shapes::<Poly64>(shapes, &regions));
+pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result<Pcs> {
+    let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, &encoding));
     let domain = BinaryWhirDomain::default();
     let config = WhirConfig::<Poly192, Poly64, Challenger>::new_with_domain(
         arity - 6,
@@ -72,7 +86,7 @@ fn pcs(shapes: &[TableShape], regions: Vec<usize>) -> Result<Pcs> {
     let bits = BooleanWhirPcs::new(BooleanWhirProver::new(config, domain, mmcs), arity)?;
     Ok(MixedTraceCommitment::new(
         p3_binary_pcs::BooleanTraceCommitment::from_commitment(bits),
-        regions,
+        encoding,
     ))
 }
 

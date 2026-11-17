@@ -18,7 +18,13 @@ Local adaptations:
   high bits. Both full permutation boundaries join the native Keccak bus.
 - `mixed.rs`: upstream mixed dense/Boolean trace adapter, extended to forward
   Flock weighted claims **only** on unchanged Boolean columns. Dense coordinates
-  use upstream expansion and recombination; WHIR and Flock are unchanged.
+  use linear expansion and recombination; WHIR and Flock are unchanged.
+- `encoding.rs`: trusted per-column coordinate widths. Keccak bridge values use
+  16 coordinates; each preprocessing column uses the highest bit present in the
+  fixed trusted table, with a minimum of one. Arithmetic values retain all 64
+  coordinates. The prover rejects values outside the declared subspace instead
+  of truncating them, and the verifier recombines exactly the declared bits.
+  Widths are bound into the verifier identity. They never come from the witness.
 - The native fanout table's successor read is an extra current-row column.
   A product bus matches `(next row address, next value)` to the following row's
   `(row address, value)`; the final value repeats locally. Public row addresses
@@ -32,6 +38,14 @@ The proof is one Plonky3 multi-STARK containing Flock, product-bus, sumcheck and
 WHIR subarguments. The final verifier requires no child proofs. It reconstructs
 trusted setup from the fixed circuit; serialization of a compact verifier-only
 key is still an optimization to implement.
+
+The coordinate map is injective on each declared binary linear subspace. Shorter
+widths restrict the witness domain and preserve every original AIR equation;
+they do not add a probabilistic test or a new soundness-error term. The opening
+tests compare reconstructed evaluations with direct dense multilinear evaluation,
+including successor rows, and reject high-bit values and altered coordinates.
+This is a local encoding argument, not a full proof-system security theorem.
+Aggregate protocol v2 / backend identity v4 reject earlier aggregate artifacts.
 
 Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/2,
 folding factor 4, Poly192 challenges, Keccak-256, and a required 144-bit conditional
