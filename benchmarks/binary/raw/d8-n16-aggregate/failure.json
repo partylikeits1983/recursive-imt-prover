@@ -1,0 +1,6 @@
+{
+  "elapsed_ms": 5110.319209,
+  "error": "witnesses requires 14180366 entries, exceeding limit 8388608",
+  "peak_rss_bytes": 4168269824,
+  "stage": "aggregate_setup"
+}

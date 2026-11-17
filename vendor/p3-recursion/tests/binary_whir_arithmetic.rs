@@ -1,0 +1,298 @@
+//! Released additive WHIR selectors, row folds and coefficient evaluations.
+
+#[path = "common/rejection_oracle.rs"]
+#[cfg(debug_assertions)]
+#[allow(clippy::duplicate_mod)]
+#[allow(dead_code)]
+mod rejection_oracle;
+
+use core::hash::Hash;
+
+use p3_baby_bear::BabyBear;
+use p3_binary_field::{BinaryField32, BinaryField128, Poly64, TowerLevel};
+use p3_binary_pcs::whir::BinaryWhirDomain;
+use p3_circuit::ops::BinaryTower128Target;
+use p3_circuit::{CircuitBuilder, ExprId};
+use p3_field::{ExtensionField, Field, PrimeCharacteristicRing};
+use p3_multilinear_util::point::Point;
+use p3_multilinear_util::poly::Poly;
+use p3_recursion::pcs::binary::{
+    binary_whir_query_point, binary128_eval_coefficients, binary128_eval_multilinear,
+    binary128_select_eval, native_poly64_whir_query_point, native_tower128_whir_query_point,
+};
+use p3_sumcheck::constraints::statement::SelectStatement;
+use p3_whir::{WhirDomain, WhirQueryPoint};
+
+fn value(i: usize) -> BinaryField128 {
+    BinaryField128::from_repr(0x598741ee35171f49a3781264456ba331u128.wrapping_mul(i as u128 + 1))
+}
+
+fn input(
+    b: &mut CircuitBuilder<BabyBear>,
+    values: &mut Vec<BabyBear>,
+    v: BinaryField128,
+) -> BinaryTower128Target {
+    let limbs = b.alloc_private_input_array::<8>("binary WHIR value");
+    values.extend((0..8).map(|i| BabyBear::from_u16((v.to_repr() >> (16 * i)) as u16)));
+    b.binary128_from_limbs::<BabyBear>(limbs).unwrap()
+}
+
+fn bind(
+    b: &mut CircuitBuilder<BabyBear>,
+    values: &mut Vec<BabyBear>,
+    actual: &BinaryTower128Target,
+    v: BinaryField128,
+) {
+    let expected = input(b, values, v);
+    for (&a, &e) in actual.bits().iter().zip(expected.bits()) {
+        let difference = b.sub(a, e);
+        b.assert_zero(difference);
+    }
+}
+
+fn check(b: CircuitBuilder<BabyBear>, mut values: Vec<BabyBear>) {
+    let circuit = b.build().unwrap();
+    let mut runner = circuit.runner();
+    runner.set_private_inputs(&values).unwrap();
+    runner.run().unwrap();
+    *values.last_mut().unwrap() += BabyBear::ONE;
+    let mut runner = circuit.runner();
+    runner.set_private_inputs(&values).unwrap();
+    assert!(runner.run().is_err());
+}
+
+#[test]
+fn direct_selector_and_coefficient_evaluation_match_native_statements() {
+    for n in 0..=4 {
+        let point = Point::new((0..n).map(value).collect());
+        let row = Point::new((0..n).map(|i| value(13 + i)).collect());
+        let coeffs = (0..1 << n).map(|i| value(29 + i)).collect::<Vec<_>>();
+        let expected = coeffs
+            .iter()
+            .enumerate()
+            .map(|(index, &c)| {
+                let monomial: BinaryField128 = point
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| (index >> (n - 1 - i)) & 1 != 0)
+                    .map(|(_, &r)| r)
+                    .product();
+                c * monomial
+            })
+            .sum();
+        let mut statement = SelectStatement::<BinaryField128, BinaryField128>::initialize(n);
+        statement.add_point_constraint(point.clone(), expected);
+        assert!(statement.verify(&Poly::new(coeffs.clone())));
+        let weight = statement.weights_at(&row).next().unwrap();
+        let mut b = CircuitBuilder::<BabyBear>::new();
+        let mut values = Vec::new();
+        let p = point
+            .iter()
+            .map(|&v| input(&mut b, &mut values, v))
+            .collect::<Vec<_>>();
+        let r = row
+            .iter()
+            .map(|&v| input(&mut b, &mut values, v))
+            .collect::<Vec<_>>();
+        let c = coeffs
+            .iter()
+            .map(|&v| input(&mut b, &mut values, v))
+            .collect::<Vec<_>>();
+        let actual = binary128_select_eval(&mut b, &p, &r).unwrap();
+        bind(&mut b, &mut values, &actual, weight);
+        let actual = binary128_eval_coefficients(&mut b, &c, &p).unwrap();
+        bind(&mut b, &mut values, &actual, expected);
+        let actual = binary128_eval_multilinear(&mut b, &c, &p).unwrap();
+        bind(
+            &mut b,
+            &mut values,
+            &actual,
+            Poly::new(coeffs).eval_ext::<BinaryField128>(&point),
+        );
+        check(b, values);
+    }
+}
+
+macro_rules! query_points {
+    ($f:ty, $width:expr) => {{
+        type F = $f;
+        let width = $width;
+        let domain = BinaryWhirDomain::<F>::default();
+        for index in [0usize, 1, 2, 7, (1usize << width) - 13] {
+            for n in [0, 1, 4, width] {
+                let WhirQueryPoint::Multilinear(point) =
+                    <BinaryWhirDomain<F> as WhirDomain<F, BinaryField128>>::query_point(
+                        &domain, width, n, index,
+                    )
+                else {
+                    panic!("binary domain must return direct coordinates");
+                };
+                let mut b = CircuitBuilder::<BabyBear>::new();
+                let mut values = Vec::new();
+                let bits = (0..width)
+                    .map(|i| {
+                        values.push(BabyBear::from_bool((index >> i) & 1 != 0));
+                        b.alloc_private_input("binary WHIR query bit")
+                    })
+                    .collect::<Vec<_>>();
+                let actual = binary_whir_query_point::<F, BabyBear>(&mut b, &bits, n).unwrap();
+                assert_eq!(actual.len(), n);
+                for (a, &e) in actual.iter().zip(point.iter()) {
+                    bind(
+                        &mut b,
+                        &mut values,
+                        a,
+                        BinaryField128::from_repr(e.to_repr() as u128),
+                    );
+                }
+                if n == 0 {
+                    let circuit = b.build().unwrap();
+                    let mut runner = circuit.runner();
+                    runner.set_private_inputs(&values).unwrap();
+                    runner.run().unwrap();
+                } else {
+                    check(b, values);
+                }
+            }
+        }
+    }};
+}
+
+#[test]
+fn shifted_cantor_coordinates_match_both_released_tower_domains() {
+    query_points!(BinaryField128, 40);
+    query_points!(BinaryField32, 31);
+}
+
+/// Native query points bind each coordinate to the released domain's
+/// `[W_(n-1)(x), ..., W_0(x)]` at the queried point `x`, highest first, where
+/// `W_(s+1)(x) = W_s(x)^2 + W_s(x)`. Flipping the lowest index bit moves `W_0`,
+/// so a nonempty point must refuse it.
+fn native_query_points<A, EF, C, T>(
+    width: usize,
+    query_point: impl Fn(&mut CircuitBuilder<C>, &[ExprId], usize) -> Vec<T>,
+    coordinate: impl Fn(&T) -> ExprId,
+    embed: impl Fn(A) -> C,
+) where
+    A: Field,
+    EF: ExtensionField<A>,
+    BinaryWhirDomain<A>: WhirDomain<A, EF> + Default,
+    C: Field + Eq + Hash,
+{
+    let domain = BinaryWhirDomain::<A>::default();
+    for index in [0usize, 1, 2, 7, (1usize << width) - 13] {
+        for n in [0, 1, 4, width] {
+            let WhirQueryPoint::Multilinear(point) =
+                <BinaryWhirDomain<A> as WhirDomain<A, EF>>::query_point(&domain, width, n, index)
+            else {
+                panic!("binary domain must return direct coordinates");
+            };
+            let mut b = CircuitBuilder::<C>::new();
+            let bits = (0..width)
+                .map(|_| b.alloc_private_input("native WHIR query bit"))
+                .collect::<Vec<_>>();
+            let actual = query_point(&mut b, &bits, n);
+            assert_eq!(actual.len(), n);
+            for (a, &e) in actual.iter().zip(point.iter()) {
+                let expected = b.define_const(embed(e));
+                b.connect(coordinate(a), expected);
+            }
+            let circuit = b.build().unwrap();
+            let run = |index: usize| {
+                let bits = (0..width)
+                    .map(|i| C::from_bool((index >> i) & 1 != 0))
+                    .collect::<Vec<_>>();
+                let mut runner = circuit.runner();
+                runner
+                    .set_private_inputs(&bits)
+                    .and_then(|()| runner.run().map(|_| ()))
+                    .is_ok()
+            };
+            assert!(run(index), "index {index}, {n} coordinates");
+            assert_eq!(run(index ^ 1), n == 0, "index {index}, {n} coordinates");
+        }
+    }
+}
+
+#[test]
+fn native_query_points_match_every_released_domain() {
+    native_query_points::<BinaryField128, BinaryField128, _, _>(
+        40,
+        |b, bits, n| native_tower128_whir_query_point::<BinaryField128>(b, bits, n).unwrap(),
+        |x| x.as_expr(),
+        |e| e,
+    );
+    native_query_points::<BinaryField32, BinaryField128, _, _>(
+        31,
+        |b, bits, n| native_tower128_whir_query_point::<BinaryField32>(b, bits, n).unwrap(),
+        |x| x.as_expr(),
+        |e| BinaryField128::from_repr(e.to_repr() as u128),
+    );
+    native_query_points::<Poly64, Poly64, _, _>(
+        40,
+        |b, bits, n| native_poly64_whir_query_point(b, bits, n).unwrap(),
+        |x| {
+            assert_eq!(x.coefficients()[1..], [ExprId::ZERO; 2]);
+            x.coefficients()[0]
+        },
+        |e| e,
+    );
+}
+
+#[test]
+fn malformed_evaluation_geometry_is_rejected() {
+    let mut b = CircuitBuilder::<BabyBear>::new();
+    let zero = b.binary128_constant(0).unwrap();
+    assert!(binary128_eval_multilinear(&mut b, &[], &[]).is_err());
+    assert!(
+        binary128_eval_coefficients(&mut b, &vec![zero.clone(); 3], std::slice::from_ref(&zero))
+            .is_err()
+    );
+    assert!(binary128_select_eval(&mut b, &[zero], &[]).is_err());
+    assert!(
+        binary_whir_query_point::<BinaryField32, BabyBear>(
+            &mut b,
+            &[p3_circuit::ExprId::ZERO; 33],
+            1
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn empty_coordinate_points_enforce_boolean_ingress_in_the_proof() {
+    use p3_circuit_prover::ConstraintProfile;
+    use p3_circuit_prover::batch_stark_prover::BatchStarkProver;
+    let mut b = CircuitBuilder::<BabyBear>::new();
+    let bit = b.alloc_private_input("query bit");
+    binary_whir_query_point::<BinaryField128, BabyBear>(&mut b, &[bit], 0).unwrap();
+    let circuit = b.build().unwrap();
+    let prover = BatchStarkProver::new(crate::proof_config());
+    let prepared = prover
+        .prepare_circuit::<BabyBear, 1>(&circuit, &[], &[], ConstraintProfile::Standard)
+        .unwrap();
+    for (value, accepted) in [(BabyBear::ONE, true), (BabyBear::TWO, false)] {
+        let mut runner = circuit.runner();
+        runner.set_private_inputs(&[value]).unwrap();
+        // BoolCheck is enforced by AIR; the runner only records its input.
+        let trace = runner.run().unwrap();
+        let check = || {
+            let proof = prepared.prove(&trace).unwrap();
+            prepared.verifier().verify(&proof, &[])
+        };
+        if accepted {
+            check().unwrap();
+        } else {
+            #[cfg(debug_assertions)]
+            assert!(matches!(
+                rejection_oracle::run_with_debug_oracle(check),
+                Err(rejection_oracle::DebugRejectionKind::Constraint)
+            ));
+            #[cfg(not(debug_assertions))]
+            assert!(matches!(
+                check(),
+                Err(p3_circuit_prover::BatchStarkProverError::Verify(_))
+            ));
+        }
+    }
+}

@@ -1,8 +1,13 @@
 [package]
-name = "minimal-recursion"
+name = "recursive-imt-prover"
 version = "0.1.0"
 edition = "2024"
 publish = false
+default-run = "demo"
+
+[features]
+default = []
+legacy-prime = ["dep:p3-koala-bear", "dep:p3-uni-stark"]
 
 [dependencies]
 anyhow = "1.0"
@@ -13,12 +18,56 @@ rayon = "=1.12.0"
 sha3 = "0.10.8"
 hex = "0.4.3"
 rand = { version = "0.10", features = ["std_rng", "sys_rng"] }
+postcard = { version = "1", features = ["alloc"] }
+p3-air = "=0.9.0-rc.2"
+p3-matrix = "=0.9.0-rc.2"
+p3-keccak-air = "=0.9.0-rc.2"
+p3-uni-stark = { version = "=0.9.0-rc.2", optional = true }
 p3-field = "=0.9.0-rc.2"
-p3-koala-bear = "=0.9.0-rc.2"
+p3-security = "=0.9.0-rc.2"
+p3-binary-field = "=0.9.0-rc.2"
+p3-binary-dft = "=0.9.0-rc.2"
+p3-commit = "=0.9.0-rc.2"
+p3-keccak = "=0.9.0-rc.2"
+p3-merkle-tree = "=0.9.0-rc.2"
+p3-symmetric = "=0.9.0-rc.2"
+p3-binary-pcs = "=0.9.0-rc.2"
+p3-bus = "=0.9.0-rc.2"
+p3-multi-stark = "=0.9.0-rc.2"
+p3-whir = "=0.9.0-rc.2"
+mimalloc = { version = "0.1", default-features = false }
+libc = "0.2"
+p3-koala-bear = { version = "=0.9.0-rc.2", optional = true }
 p3-circuit = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-circuit-prover = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
-p3-recursion = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7", features = ["parallel"] }
+p3-recursion = { path = "vendor/p3-recursion", features = ["parallel"] }
+
+[dev-dependencies]
+p3-baby-bear = "=0.9.0-rc.2"
+p3-koala-bear = "=0.9.0-rc.2"
+p3-poseidon2-circuit-air = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
+
+[build-dependencies]
+sha3 = "0.10.8"
+
+[[bin]]
+name = "recursive-imt-prover"
+path = "src/legacy/main.rs"
+required-features = ["legacy-prime"]
+
+[[test]]
+name = "legacy"
+path = "tests/legacy.rs"
+required-features = ["legacy-prime"]
 
 [profile.release]
 codegen-units = 16
 lto = "thin"
+
+[lints.clippy]
+items_after_statements = "warn"
+wildcard_imports = "warn"
+
+[[example]]
+name = "binary-upstream"
+path = "vendor/p3-recursion/examples/native_binary_recursion.rs"

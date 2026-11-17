@@ -423,6 +423,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -438,22 +447,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "minimal-recursion"
-version = "0.1.0"
+name = "mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
 dependencies = [
- "anyhow",
- "clap",
- "hex",
- "p3-circuit",
- "p3-circuit-prover",
- "p3-field",
- "p3-koala-bear",
- "p3-recursion",
- "rand",
- "rayon",
- "serde",
- "serde_json",
- "sha3",
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1140,7 +1139,6 @@ dependencies = [
 [[package]]
 name = "p3-recursion"
 version = "0.1.0"
-source = "git+https://github.com/Plonky3/Plonky3-recursion?rev=3a69ba61f713c8400b14eb3d8f0e52caa13512c7#3a69ba61f713c8400b14eb3d8f0e52caa13512c7"
 dependencies = [
  "blake3",
  "hashbrown",
@@ -1389,6 +1387,45 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "recursive-imt-prover"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "libc",
+ "mimalloc",
+ "p3-air",
+ "p3-baby-bear",
+ "p3-binary-dft",
+ "p3-binary-field",
+ "p3-binary-pcs",
+ "p3-bus",
+ "p3-circuit",
+ "p3-circuit-prover",
+ "p3-commit",
+ "p3-field",
+ "p3-keccak",
+ "p3-keccak-air",
+ "p3-koala-bear",
+ "p3-matrix",
+ "p3-merkle-tree",
+ "p3-multi-stark",
+ "p3-poseidon2-circuit-air",
+ "p3-recursion",
+ "p3-security",
+ "p3-symmetric",
+ "p3-uni-stark",
+ "p3-whir",
+ "postcard",
+ "rand",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha3",
 ]
 
 [[package]]

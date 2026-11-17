@@ -1,0 +1,331 @@
+{
+  "privacy": "NON-ZK: child transcripts reveal witness-dependent data",
+  "settings": {
+    "depth": 8,
+    "batch_size": 8,
+    "pcs_bits": 32,
+    "min_security_bits": 16,
+    "log_inv_rate": 1,
+    "packed_log_inv_rate": 3,
+    "fold": 4,
+    "max_codeword_cells": 134217728
+  },
+  "environment": {
+    "hardware": "Apple M2 Pro",
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags": "",
+    "security": "Johnson; no grinding; per-authority modeled classical bounds; no 128-bit or PQ claim",
+    "source_keccak256": "c1dcf6a8914a182e12d082f310a3e35d069b2d20a52a536decbc6af082525bf1",
+    "threads": 12
+  },
+  "child_setup_ms": 39.13175,
+  "aggregate_setup_ms": null,
+  "child_geometry": {
+    "witnesses": 18174,
+    "table_widths": [
+      1,
+      4,
+      40,
+      1625,
+      116
+    ],
+    "log_heights": [
+      16,
+      14,
+      4,
+      8,
+      5
+    ],
+    "constraints": [
+      2,
+      15,
+      40,
+      1652,
+      117
+    ],
+    "initial_codeword_cells": 1605632,
+    "security_bits": 29.723967233647443,
+    "security_terms": [
+      [
+        "constraint-batching None",
+        102.34509131042466
+      ],
+      [
+        "air-batching None",
+        111.03421571533792
+      ],
+      [
+        "zerocheck None",
+        108.03421571533792
+      ],
+      [
+        "constraint-sumcheck None",
+        107.03421571533792
+      ],
+      [
+        "binary-bus None",
+        94.1278124403403
+      ],
+      [
+        "binary-bus-batching None",
+        112.03421571533792
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.290969122459515
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.516487560995188
+      ],
+      [
+        "bit-ring-switch Some(\"main-pcs\")",
+        116.63367778575417
+      ],
+      [
+        "column-batching Some(\"main-pcs\")",
+        117.21864028647533
+      ],
+      [
+        "whir-opening Some(\"preprocessed-pcs\")",
+        31.143537561550286
+      ],
+      [
+        "commitment-and-transcript-collision None",
+        128.0
+      ]
+    ]
+  },
+  "aggregate_geometry": null,
+  "samples": [
+    {
+      "phase": "cold-first-proof-after-setup",
+      "fixture_ms": 0.07037500000000001,
+      "children": [
+        {
+          "witness_ms": 0.558166,
+          "prove_ms": 72.548667,
+          "verify_ms": 18.068,
+          "encode_ms": 19.019875,
+          "proof_bytes": 243563
+        },
+        {
+          "witness_ms": 0.454166,
+          "prove_ms": 69.091542,
+          "verify_ms": 18.416167,
+          "encode_ms": 18.986583000000003,
+          "proof_bytes": 243435
+        },
+        {
+          "witness_ms": 0.554292,
+          "prove_ms": 64.017417,
+          "verify_ms": 18.259667,
+          "encode_ms": 18.84775,
+          "proof_bytes": 244011
+        },
+        {
+          "witness_ms": 0.500125,
+          "prove_ms": 66.458083,
+          "verify_ms": 19.4775,
+          "encode_ms": 19.972083,
+          "proof_bytes": 243563
+        },
+        {
+          "witness_ms": 0.483667,
+          "prove_ms": 65.33999999999999,
+          "verify_ms": 19.580541999999998,
+          "encode_ms": 19.632958,
+          "proof_bytes": 243563
+        },
+        {
+          "witness_ms": 0.5499590000000001,
+          "prove_ms": 72.97666699999999,
+          "verify_ms": 18.197208999999997,
+          "encode_ms": 18.703500000000002,
+          "proof_bytes": 243563
+        },
+        {
+          "witness_ms": 0.519667,
+          "prove_ms": 63.34604100000001,
+          "verify_ms": 17.669583,
+          "encode_ms": 18.695791,
+          "proof_bytes": 243499
+        },
+        {
+          "witness_ms": 0.521333,
+          "prove_ms": 67.641334,
+          "verify_ms": 18.504042,
+          "encode_ms": 18.702416,
+          "proof_bytes": 243531
+        }
+      ],
+      "aggregation_wall_ms": null,
+      "aggregate": null,
+      "aggregate_decode_verify_ms": null,
+      "critical_path_ms": 846.9660839999999,
+      "throughput_children_per_second": 9.445478574794974,
+      "process_peak_rss_bytes": 177799168
+    },
+    {
+      "phase": "warm-reused-setup",
+      "fixture_ms": 0.063833,
+      "children": [
+        {
+          "witness_ms": 0.4975,
+          "prove_ms": 68.44533299999999,
+          "verify_ms": 20.163375000000002,
+          "encode_ms": 18.966834,
+          "proof_bytes": 243179
+        },
+        {
+          "witness_ms": 0.522625,
+          "prove_ms": 64.411167,
+          "verify_ms": 19.043459,
+          "encode_ms": 20.207209,
+          "proof_bytes": 244427
+        },
+        {
+          "witness_ms": 0.511083,
+          "prove_ms": 78.996167,
+          "verify_ms": 19.413375,
+          "encode_ms": 19.250084,
+          "proof_bytes": 242539
+        },
+        {
+          "witness_ms": 0.517167,
+          "prove_ms": 80.21845800000001,
+          "verify_ms": 18.957083,
+          "encode_ms": 19.606375,
+          "proof_bytes": 243787
+        },
+        {
+          "witness_ms": 0.527542,
+          "prove_ms": 73.324416,
+          "verify_ms": 18.884958,
+          "encode_ms": 19.770916999999997,
+          "proof_bytes": 244011
+        },
+        {
+          "witness_ms": 0.488041,
+          "prove_ms": 80.572083,
+          "verify_ms": 19.744167,
+          "encode_ms": 19.464875,
+          "proof_bytes": 242923
+        },
+        {
+          "witness_ms": 0.519625,
+          "prove_ms": 84.531125,
+          "verify_ms": 19.232083,
+          "encode_ms": 20.014125,
+          "proof_bytes": 244011
+        },
+        {
+          "witness_ms": 0.48612500000000003,
+          "prove_ms": 71.938584,
+          "verify_ms": 19.646125,
+          "encode_ms": 20.104208,
+          "proof_bytes": 242667
+        }
+      ],
+      "aggregation_wall_ms": null,
+      "aggregate": null,
+      "aggregate_decode_verify_ms": null,
+      "critical_path_ms": 919.670792,
+      "throughput_children_per_second": 8.698764894558051,
+      "process_peak_rss_bytes": 200867840
+    },
+    {
+      "phase": "warm-reused-setup",
+      "fixture_ms": 0.078583,
+      "children": [
+        {
+          "witness_ms": 0.48870900000000006,
+          "prove_ms": 75.132084,
+          "verify_ms": 18.604499999999998,
+          "encode_ms": 18.837291999999998,
+          "proof_bytes": 243499
+        },
+        {
+          "witness_ms": 0.467875,
+          "prove_ms": 83.606916,
+          "verify_ms": 19.858416000000002,
+          "encode_ms": 19.8005,
+          "proof_bytes": 243723
+        },
+        {
+          "witness_ms": 0.5329160000000001,
+          "prove_ms": 80.28158400000001,
+          "verify_ms": 19.299375,
+          "encode_ms": 19.556167,
+          "proof_bytes": 243499
+        },
+        {
+          "witness_ms": 0.507084,
+          "prove_ms": 81.897292,
+          "verify_ms": 18.685916,
+          "encode_ms": 20.024542,
+          "proof_bytes": 242987
+        },
+        {
+          "witness_ms": 0.484084,
+          "prove_ms": 70.842833,
+          "verify_ms": 20.109624999999998,
+          "encode_ms": 19.770458,
+          "proof_bytes": 242507
+        },
+        {
+          "witness_ms": 0.529584,
+          "prove_ms": 77.26675,
+          "verify_ms": 18.969584,
+          "encode_ms": 19.544417000000003,
+          "proof_bytes": 243915
+        },
+        {
+          "witness_ms": 0.5550830000000001,
+          "prove_ms": 75.72841700000001,
+          "verify_ms": 18.853624999999997,
+          "encode_ms": 18.782,
+          "proof_bytes": 244075
+        },
+        {
+          "witness_ms": 0.472042,
+          "prove_ms": 75.591708,
+          "verify_ms": 18.703166,
+          "encode_ms": 18.763917000000003,
+          "proof_bytes": 242987
+        }
+      ],
+      "aggregation_wall_ms": null,
+      "aggregate": null,
+      "aggregate_decode_verify_ms": null,
+      "critical_path_ms": 933.256583,
+      "throughput_children_per_second": 8.572133479394916,
+      "process_peak_rss_bytes": 211697664
+    }
+  ],
+  "fresh_verifier": null,
+  "summary": {
+    "warm_aggregate_verify_ms": {
+      "max": 0.0,
+      "median": 0.0,
+      "min": 0.0
+    },
+    "warm_aggregation_wall_ms": {
+      "max": 0.0,
+      "median": 0.0,
+      "min": 0.0
+    },
+    "warm_critical_path_ms": {
+      "max": 933.256583,
+      "median": 926.4636875,
+      "min": 919.670792
+    },
+    "warm_samples": 2
+  }
+}

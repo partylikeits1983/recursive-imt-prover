@@ -1,0 +1,23 @@
+Experimental binary VEIL: privacy/security analysis incomplete; no aggregate generated
+78400 variables, 78400 products, 0.77 GiB retained commitments (excludes scratch)
+Sample 1: witness 4.6 ms, prove 1144.5 ms, decode+verify 256.0 ms, 17333500 bytes
+Sample 2: witness 4.3 ms, prove 1079.8 ms, decode+verify 255.5 ms, 17334524 bytes
+Sample 3: witness 3.8 ms, prove 1090.8 ms, decode+verify 253.1 ms, 17333298 bytes
+{
+  "decode_verify_ms": {
+    "max": 255.54737500000002,
+    "median": 254.31962500000003,
+    "min": 253.09187500000002
+  },
+  "phase": "warm",
+  "proof_bytes": {
+    "max": 17334524.0,
+    "median": 17333911.0,
+    "min": 17333298.0
+  },
+  "prove_ms": {
+    "max": 1090.815417,
+    "median": 1085.312917,
+    "min": 1079.810417
+  }
+}

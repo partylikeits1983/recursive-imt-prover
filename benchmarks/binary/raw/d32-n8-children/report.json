@@ -1,0 +1,331 @@
+{
+  "privacy": "NON-ZK: child transcripts reveal witness-dependent data",
+  "settings": {
+    "depth": 32,
+    "batch_size": 8,
+    "pcs_bits": 32,
+    "min_security_bits": 16,
+    "log_inv_rate": 1,
+    "packed_log_inv_rate": 3,
+    "fold": 4,
+    "max_codeword_cells": 134217728
+  },
+  "environment": {
+    "hardware": "Apple M2 Pro",
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags": "",
+    "security": "Johnson; no grinding; per-authority modeled classical bounds; no 128-bit or PQ claim",
+    "source_keccak256": "c1dcf6a8914a182e12d082f310a3e35d069b2d20a52a536decbc6af082525bf1",
+    "threads": 12
+  },
+  "child_setup_ms": 82.545917,
+  "aggregate_setup_ms": null,
+  "child_geometry": {
+    "witnesses": 66294,
+    "table_widths": [
+      1,
+      4,
+      40,
+      1625,
+      116
+    ],
+    "log_heights": [
+      17,
+      16,
+      4,
+      10,
+      7
+    ],
+    "constraints": [
+      2,
+      15,
+      40,
+      1652,
+      117
+    ],
+    "initial_codeword_cells": 5373952,
+    "security_bits": 29.672505230882305,
+    "security_terms": [
+      [
+        "constraint-batching None",
+        102.34509131042466
+      ],
+      [
+        "air-batching None",
+        111.03421571533792
+      ],
+      [
+        "zerocheck None",
+        107.94675287408757
+      ],
+      [
+        "constraint-sumcheck None",
+        106.94675287408757
+      ],
+      [
+        "binary-bus None",
+        92.13841414212055
+      ],
+      [
+        "binary-bus-batching None",
+        112.03421571533792
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.143537561550286
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.516487560995188
+      ],
+      [
+        "bit-ring-switch Some(\"main-pcs\")",
+        116.46861853948369
+      ],
+      [
+        "column-batching Some(\"main-pcs\")",
+        117.21864028647533
+      ],
+      [
+        "whir-opening Some(\"preprocessed-pcs\")",
+        31.143537561550286
+      ],
+      [
+        "commitment-and-transcript-collision None",
+        128.0
+      ]
+    ]
+  },
+  "aggregate_geometry": null,
+  "samples": [
+    {
+      "phase": "cold-first-proof-after-setup",
+      "fixture_ms": 0.232334,
+      "children": [
+        {
+          "witness_ms": 1.8022909999999999,
+          "prove_ms": 186.349334,
+          "verify_ms": 19.086084,
+          "encode_ms": 20.351416,
+          "proof_bytes": 269727
+        },
+        {
+          "witness_ms": 1.545042,
+          "prove_ms": 150.677125,
+          "verify_ms": 19.188125,
+          "encode_ms": 20.586792,
+          "proof_bytes": 270047
+        },
+        {
+          "witness_ms": 1.610791,
+          "prove_ms": 177.65975,
+          "verify_ms": 19.250792,
+          "encode_ms": 20.425124999999998,
+          "proof_bytes": 270143
+        },
+        {
+          "witness_ms": 3.6857499999999996,
+          "prove_ms": 238.93562500000002,
+          "verify_ms": 18.886291999999997,
+          "encode_ms": 19.371291,
+          "proof_bytes": 270239
+        },
+        {
+          "witness_ms": 1.63175,
+          "prove_ms": 209.24420899999998,
+          "verify_ms": 18.990292,
+          "encode_ms": 19.865417,
+          "proof_bytes": 270559
+        },
+        {
+          "witness_ms": 1.63175,
+          "prove_ms": 205.290875,
+          "verify_ms": 19.608125,
+          "encode_ms": 19.698,
+          "proof_bytes": 270143
+        },
+        {
+          "witness_ms": 1.586041,
+          "prove_ms": 234.09125,
+          "verify_ms": 19.649917,
+          "encode_ms": 20.900125,
+          "proof_bytes": 269695
+        },
+        {
+          "witness_ms": 1.6837499999999999,
+          "prove_ms": 172.194542,
+          "verify_ms": 24.401042,
+          "encode_ms": 21.267459,
+          "proof_bytes": 269119
+        }
+      ],
+      "aggregation_wall_ms": null,
+      "aggregate": null,
+      "aggregate_decode_verify_ms": null,
+      "critical_path_ms": 1912.091792,
+      "throughput_children_per_second": 4.1838995562196315,
+      "process_peak_rss_bytes": 473497600
+    },
+    {
+      "phase": "warm-reused-setup",
+      "fixture_ms": 0.23566700000000002,
+      "children": [
+        {
+          "witness_ms": 1.667208,
+          "prove_ms": 309.170333,
+          "verify_ms": 20.157041,
+          "encode_ms": 20.890083,
+          "proof_bytes": 269599
+        },
+        {
+          "witness_ms": 1.677291,
+          "prove_ms": 257.300416,
+          "verify_ms": 20.364875,
+          "encode_ms": 20.700791,
+          "proof_bytes": 269503
+        },
+        {
+          "witness_ms": 1.5806660000000001,
+          "prove_ms": 198.303625,
+          "verify_ms": 19.940875000000002,
+          "encode_ms": 21.155125,
+          "proof_bytes": 269663
+        },
+        {
+          "witness_ms": 1.627666,
+          "prove_ms": 211.078167,
+          "verify_ms": 19.428041999999998,
+          "encode_ms": 20.568666,
+          "proof_bytes": 269567
+        },
+        {
+          "witness_ms": 1.6422080000000001,
+          "prove_ms": 218.640625,
+          "verify_ms": 20.051958000000003,
+          "encode_ms": 21.256917,
+          "proof_bytes": 269599
+        },
+        {
+          "witness_ms": 1.621875,
+          "prove_ms": 231.40016699999998,
+          "verify_ms": 20.422791,
+          "encode_ms": 21.009959000000002,
+          "proof_bytes": 269887
+        },
+        {
+          "witness_ms": 2.3050829999999998,
+          "prove_ms": 186.677166,
+          "verify_ms": 19.903582999999998,
+          "encode_ms": 21.317458000000002,
+          "proof_bytes": 269375
+        },
+        {
+          "witness_ms": 1.709833,
+          "prove_ms": 207.71004200000002,
+          "verify_ms": 19.209708,
+          "encode_ms": 20.5755,
+          "proof_bytes": 269919
+        }
+      ],
+      "aggregation_wall_ms": null,
+      "aggregate": null,
+      "aggregate_decode_verify_ms": null,
+      "critical_path_ms": 2161.993083,
+      "throughput_children_per_second": 3.7002893593438944,
+      "process_peak_rss_bytes": 493060096
+    },
+    {
+      "phase": "warm-reused-setup",
+      "fixture_ms": 0.240583,
+      "children": [
+        {
+          "witness_ms": 11.721583,
+          "prove_ms": 196.14825,
+          "verify_ms": 20.253,
+          "encode_ms": 21.519292,
+          "proof_bytes": 269919
+        },
+        {
+          "witness_ms": 1.6437920000000001,
+          "prove_ms": 175.83016600000002,
+          "verify_ms": 20.279249999999998,
+          "encode_ms": 20.682583,
+          "proof_bytes": 268927
+        },
+        {
+          "witness_ms": 1.737542,
+          "prove_ms": 219.675375,
+          "verify_ms": 19.342709,
+          "encode_ms": 20.901041,
+          "proof_bytes": 269407
+        },
+        {
+          "witness_ms": 1.622625,
+          "prove_ms": 175.005875,
+          "verify_ms": 20.162917,
+          "encode_ms": 20.587583,
+          "proof_bytes": 270207
+        },
+        {
+          "witness_ms": 1.5939159999999999,
+          "prove_ms": 255.867709,
+          "verify_ms": 21.453166,
+          "encode_ms": 19.819708,
+          "proof_bytes": 269919
+        },
+        {
+          "witness_ms": 1.607208,
+          "prove_ms": 226.94174999999998,
+          "verify_ms": 20.90275,
+          "encode_ms": 20.978458,
+          "proof_bytes": 269663
+        },
+        {
+          "witness_ms": 11.692917000000001,
+          "prove_ms": 229.704542,
+          "verify_ms": 20.536583,
+          "encode_ms": 21.065,
+          "proof_bytes": 270111
+        },
+        {
+          "witness_ms": 1.5945829999999999,
+          "prove_ms": 344.742167,
+          "verify_ms": 20.587916,
+          "encode_ms": 20.950833,
+          "proof_bytes": 270431
+        }
+      ],
+      "aggregation_wall_ms": null,
+      "aggregate": null,
+      "aggregate_decode_verify_ms": null,
+      "critical_path_ms": 2189.559792,
+      "throughput_children_per_second": 3.6537024607547233,
+      "process_peak_rss_bytes": 493207552
+    }
+  ],
+  "fresh_verifier": null,
+  "summary": {
+    "warm_aggregate_verify_ms": {
+      "max": 0.0,
+      "median": 0.0,
+      "min": 0.0
+    },
+    "warm_aggregation_wall_ms": {
+      "max": 0.0,
+      "median": 0.0,
+      "min": 0.0
+    },
+    "warm_critical_path_ms": {
+      "max": 2189.559792,
+      "median": 2175.7764374999997,
+      "min": 2161.993083
+    },
+    "warm_samples": 2
+  }
+}

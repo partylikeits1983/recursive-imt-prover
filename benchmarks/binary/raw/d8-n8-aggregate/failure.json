@@ -1,0 +1,6 @@
+{
+  "elapsed_ms": 2561.9968750000003,
+  "error": "initial codeword cells 536870912 exceed budget 134217728; reduce batch size or increase --max-codeword-cells",
+  "peak_rss_bytes": 2108473344,
+  "stage": "aggregate_setup"
+}

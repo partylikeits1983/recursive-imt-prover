@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/Users/riemann/Desktop/polylog-labs/recursive-imt-prover/target/release/veil-demo",
+    "--depth",
+    "8",
+    "--samples",
+    "3",
+    "--max-retained-bytes",
+    "10737418240",
+    "--out",
+    "/Users/riemann/Desktop/polylog-labs/recursive-imt-prover/run/veil-final-matrix/depth-8"
+  ],
+  "threads": 4,
+  "exit_code": 0,
+  "stop_reason": null,
+  "wall_seconds": 51.51113045797683,
+  "sampled_parent_peak_rss_bytes": 7150288896,
+  "max_rss_gib": 10.0,
+  "timeout_seconds": 300.0,
+  "scope": "experimental direct child argument; no aggregate"
+}

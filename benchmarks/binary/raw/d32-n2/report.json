@@ -1,0 +1,304 @@
+{
+  "privacy": "NON-ZK: child transcripts reveal witness-dependent data",
+  "settings": {
+    "depth": 32,
+    "batch_size": 2,
+    "pcs_bits": 32,
+    "min_security_bits": 16,
+    "log_inv_rate": 1,
+    "packed_log_inv_rate": 3,
+    "fold": 4,
+    "max_codeword_cells": 268435456
+  },
+  "environment": {
+    "hardware": "Apple M2 Pro",
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags": "",
+    "security": "Johnson; no grinding; per-authority modeled classical bounds; no 128-bit or PQ claim",
+    "source_keccak256": "c1dcf6a8914a182e12d082f310a3e35d069b2d20a52a536decbc6af082525bf1",
+    "threads": 12
+  },
+  "child_setup_ms": 77.814875,
+  "aggregate_setup_ms": 1099.495791,
+  "child_geometry": {
+    "witnesses": 66294,
+    "table_widths": [
+      1,
+      4,
+      40,
+      1625,
+      116
+    ],
+    "log_heights": [
+      17,
+      16,
+      4,
+      10,
+      7
+    ],
+    "constraints": [
+      2,
+      15,
+      40,
+      1652,
+      117
+    ],
+    "initial_codeword_cells": 5373952,
+    "security_bits": 29.672505230882305,
+    "security_terms": [
+      [
+        "constraint-batching None",
+        102.34509131042466
+      ],
+      [
+        "air-batching None",
+        111.03421571533792
+      ],
+      [
+        "zerocheck None",
+        107.94675287408757
+      ],
+      [
+        "constraint-sumcheck None",
+        106.94675287408757
+      ],
+      [
+        "binary-bus None",
+        92.13841414212055
+      ],
+      [
+        "binary-bus-batching None",
+        112.03421571533792
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.143537561550286
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.516487560995188
+      ],
+      [
+        "bit-ring-switch Some(\"main-pcs\")",
+        116.46861853948369
+      ],
+      [
+        "column-batching Some(\"main-pcs\")",
+        117.21864028647533
+      ],
+      [
+        "whir-opening Some(\"preprocessed-pcs\")",
+        31.143537561550286
+      ],
+      [
+        "commitment-and-transcript-collision None",
+        128.0
+      ]
+    ]
+  },
+  "aggregate_geometry": {
+    "witnesses": 1954414,
+    "table_widths": [
+      1,
+      5,
+      80,
+      1625,
+      116
+    ],
+    "log_heights": [
+      22,
+      20,
+      4,
+      18,
+      14
+    ],
+    "constraints": [
+      2,
+      20,
+      80,
+      1652,
+      117
+    ],
+    "initial_codeword_cells": 134217728,
+    "security_bits": 29.192570568983946,
+    "security_terms": [
+      [
+        "constraint-batching None",
+        102.34509131042466
+      ],
+      [
+        "air-batching None",
+        111.03421571533792
+      ],
+      [
+        "zerocheck None",
+        107.57478409670063
+      ],
+      [
+        "constraint-sumcheck None",
+        106.57478409670063
+      ],
+      [
+        "binary-bus None",
+        87.40641468457486
+      ],
+      [
+        "binary-bus-batching None",
+        112.03421571533792
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        30.56007875715527
+      ],
+      [
+        "whir-opening Some(\"main-pcs\")",
+        31.345344092924652
+      ],
+      [
+        "bit-ring-switch Some(\"main-pcs\")",
+        115.95015145054944
+      ],
+      [
+        "column-batching Some(\"main-pcs\")",
+        117.21864028647533
+      ],
+      [
+        "whir-opening Some(\"preprocessed-pcs\")",
+        30.560078757155264
+      ],
+      [
+        "commitment-and-transcript-collision None",
+        128.0
+      ]
+    ]
+  },
+  "samples": [
+    {
+      "phase": "cold-first-proof-after-setup",
+      "fixture_ms": 0.129042,
+      "children": [
+        {
+          "witness_ms": 1.5858750000000001,
+          "prove_ms": 140.21520900000002,
+          "verify_ms": 19.643833,
+          "encode_ms": 19.551916,
+          "proof_bytes": 270175
+        },
+        {
+          "witness_ms": 1.623542,
+          "prove_ms": 138.456334,
+          "verify_ms": 19.934667,
+          "encode_ms": 20.711750000000002,
+          "proof_bytes": 270271
+        }
+      ],
+      "aggregation_wall_ms": 9825.666167,
+      "aggregate": {
+        "witness_ms": 45.55225,
+        "prove_ms": 9693.87525,
+        "verify_ms": 22.492833,
+        "encode_ms": 22.318583,
+        "proof_bytes": 360559
+      },
+      "aggregate_decode_verify_ms": 22.022042,
+      "critical_path_ms": 10210.409792,
+      "throughput_children_per_second": 0.19587852404974265,
+      "process_peak_rss_bytes": 6150914048
+    },
+    {
+      "phase": "warm-reused-setup",
+      "fixture_ms": 0.11683299999999999,
+      "children": [
+        {
+          "witness_ms": 3.034292,
+          "prove_ms": 182.34924999999998,
+          "verify_ms": 19.408208,
+          "encode_ms": 19.610333,
+          "proof_bytes": 269919
+        },
+        {
+          "witness_ms": 1.630792,
+          "prove_ms": 146.208625,
+          "verify_ms": 20.111792,
+          "encode_ms": 23.5145,
+          "proof_bytes": 269567
+        }
+      ],
+      "aggregation_wall_ms": 9508.774540999999,
+      "aggregate": {
+        "witness_ms": 84.122917,
+        "prove_ms": 9336.550042,
+        "verify_ms": 21.988666000000002,
+        "encode_ms": 22.771583000000003,
+        "proof_bytes": 360399
+      },
+      "aggregate_decode_verify_ms": 22.675125,
+      "critical_path_ms": 9948.360792000001,
+      "throughput_children_per_second": 0.20103814505886286,
+      "process_peak_rss_bytes": 6150914048
+    },
+    {
+      "phase": "warm-reused-setup",
+      "fixture_ms": 0.126792,
+      "children": [
+        {
+          "witness_ms": 3.279166,
+          "prove_ms": 145.47912499999998,
+          "verify_ms": 20.543791,
+          "encode_ms": 20.988791,
+          "proof_bytes": 269215
+        },
+        {
+          "witness_ms": 1.7646249999999999,
+          "prove_ms": 140.201958,
+          "verify_ms": 19.525042,
+          "encode_ms": 19.60225,
+          "proof_bytes": 270239
+        }
+      ],
+      "aggregation_wall_ms": 9203.303541000001,
+      "aggregate": {
+        "witness_ms": 76.70595900000001,
+        "prove_ms": 9039.884916,
+        "verify_ms": 23.077625,
+        "encode_ms": 23.6025,
+        "proof_bytes": 360015
+      },
+      "aggregate_decode_verify_ms": 35.566208,
+      "critical_path_ms": 9611.8425,
+      "throughput_children_per_second": 0.20807665127679734,
+      "process_peak_rss_bytes": 6150914048
+    }
+  ],
+  "fresh_verifier": {
+    "decode_verify_ms": 23.534458,
+    "process_peak_rss_bytes": 1928511488,
+    "process_wall_ms": 1641.022708,
+    "verified": true,
+    "verifier_reconstruction_ms": 1520.009875
+  },
+  "summary": {
+    "warm_aggregate_verify_ms": {
+      "max": 35.566208,
+      "median": 29.120666500000002,
+      "min": 22.675125
+    },
+    "warm_aggregation_wall_ms": {
+      "max": 9508.774540999999,
+      "median": 9356.039041,
+      "min": 9203.303541000001
+    },
+    "warm_critical_path_ms": {
+      "max": 9948.360792000001,
+      "median": 9780.101646000001,
+      "min": 9611.8425
+    },
+    "warm_samples": 2
+  }
+}

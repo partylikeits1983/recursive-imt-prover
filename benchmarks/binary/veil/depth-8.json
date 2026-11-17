@@ -1,0 +1,96 @@
+{
+  "acceptance_pass": false,
+  "aggregate": false,
+  "challenge_bits": 192,
+  "coding_bound": "Johnson",
+  "depth": 8,
+  "end_to_end_security_bits": null,
+  "environment": {
+    "compile_time_included": false,
+    "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "hardware": "Apple M2 Pro",
+    "profile": "release",
+    "rayon_threads": 4,
+    "rustflags_runtime": "",
+    "source_keccak256": "5d1d08bf9ec85cb1e31b182ec8a48fc6c934059da35f8fcc6bf89234256ca1ea"
+  },
+  "fresh_verifier": {
+    "decode_verify_ms": 2459.570208,
+    "process_wall_ms": 3263.6043329999998,
+    "setup_ms": 713.035333,
+    "verified": true
+  },
+  "hash": "Keccak-256",
+  "linear_constraints": 355328,
+  "mask_code": {
+    "codeword_symbols": 16777216,
+    "linear_combination_gap_bits": 152.408008856523,
+    "message_symbols": 705614,
+    "opened_rows": 83,
+    "query_miss_bits": 160.15768578501397,
+    "randomized_dimension": 1048576,
+    "retained_commitment_bytes": 2684354528
+  },
+  "product_code": {
+    "codeword_symbols": 16777216,
+    "linear_combination_gap_bits": 151.82304704373297,
+    "message_symbols": 709706,
+    "opened_rows": 112,
+    "query_miss_bits": 160.11639527616342,
+    "randomized_dimension": 1048576,
+    "retained_commitment_bytes": 3892314080
+  },
+  "product_constraints": 709704,
+  "protocol": "experimental-binary-veil-inner-v1",
+  "retained_commitment_bytes": 6576668608,
+  "samples": [
+    {
+      "decode_verify_ms": 2672.096459,
+      "encode_ms": 526.68125,
+      "phase": "cold-first-proof-after-setup",
+      "process_peak_rss_bytes": 4419076096,
+      "proof_bytes": 139771679,
+      "prove_ms": 13220.934458,
+      "witness_ms": 35.970167
+    },
+    {
+      "decode_verify_ms": 2658.8102080000003,
+      "encode_ms": 562.11375,
+      "phase": "warm-reused-setup",
+      "process_peak_rss_bytes": 6353420288,
+      "proof_bytes": 139772743,
+      "prove_ms": 12305.266125,
+      "witness_ms": 43.932292
+    },
+    {
+      "decode_verify_ms": 3118.239542,
+      "encode_ms": 314.030333,
+      "phase": "warm-reused-setup",
+      "process_peak_rss_bytes": 7177224192,
+      "proof_bytes": 139774567,
+      "prove_ms": 11483.890333,
+      "witness_ms": 41.5535
+    }
+  ],
+  "setup_ms": 347.537125,
+  "status": "EXPERIMENTAL: ZK adaptation unreviewed; end-to-end security unassessed",
+  "summary": {
+    "decode_verify_ms": {
+      "max": 3118.239542,
+      "median": 2888.524875,
+      "min": 2658.8102080000003
+    },
+    "phase": "warm",
+    "proof_bytes": {
+      "max": 139774567.0,
+      "median": 139773655.0,
+      "min": 139772743.0
+    },
+    "prove_ms": {
+      "max": 12305.266125,
+      "median": 11894.578228999999,
+      "min": 11483.890333
+    }
+  },
+  "variables": 705608
+}
