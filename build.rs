@@ -10,11 +10,13 @@ fn main() -> io::Result<()> {
         PathBuf::from("build.rs"),
         PathBuf::from("Cargo.toml"),
         PathBuf::from("Cargo.lock"),
+        PathBuf::from("crates/flock-backend/Cargo.toml"),
         PathBuf::from("rust-toolchain.toml"),
         PathBuf::from(".cargo/config.toml"),
         PathBuf::from("vendor/p3-recursion/Cargo.toml"),
     ];
     collect_sources(&root, Path::new("src"), &mut files)?;
+    collect_sources(&root, Path::new("crates/flock-backend/src"), &mut files)?;
     collect_sources(&root, Path::new("vendor/p3-recursion/src"), &mut files)?;
     files.sort();
     let mut keccak = Keccak256::new();

@@ -1,8 +1,9 @@
 //! VEIL-style private affine and multiplication constraints.
 //!
-//! This direct argument is intended for the small algebraic verifier transcript.
-//! Sending a masked copy of an entire execution witness is supported for research
-//! but is linear-size; it does not provide the succinct outer PCS integration.
+//! This argument masks the algebraic verifier transcript. Its public uniform
+//! combinations are committed with additive WHIR, so the recursive verifier
+//! does not reconstruct a large broadcast codeword. The masked message stream
+//! itself remains linear-size; a full privacy/composition proof is outstanding.
 
 use anyhow::{Result, ensure};
 use p3_field::PrimeCharacteristicRing;
@@ -16,6 +17,10 @@ use super::{
     transcript::Transcript,
     vector::{CommittedVectors, VectorProof, dot, powers},
 };
+
+const PROOF_MAGIC: &[u8; 8] = b"IMTVEIL4";
+
+pub(super) mod recursive;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Linear {
@@ -36,9 +41,18 @@ pub struct Relation {
 /// A research proof format, distinct from the accepted application child format.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ExperimentalProof {
-    masked: Vec<E>,
-    masks: VectorProof,
-    products: VectorProof,
+    pub(super) masked: Vec<E>,
+    pub(super) masks: VectorProof,
+    pub(super) products: VectorProof,
+}
+
+/// Single-use state for a mask commitment already bound into a transcript.
+/// The online compiler supplies this after the interactive verifier replay.
+pub(super) struct PreparedTranscript {
+    pub witness: Vec<E>,
+    pub masked: Vec<E>,
+    pub masks: CommittedVectors,
+    pub transcript: Transcript,
 }
 
 impl Linear {
@@ -129,6 +143,7 @@ impl Relation {
         witness: &[E],
     ) -> Result<ExperimentalProof> {
         self.check(parameters, public, witness)?;
+        self.require_algebraic_budget(parameters)?;
         self.prove_inner(
             parameters,
             public,
@@ -145,11 +160,7 @@ impl Relation {
         rng: &mut StdRng,
     ) -> Result<ExperimentalProof> {
         let mut transcript = self.transcript(parameters, public)?;
-        let mut padded = witness.to_vec();
-        let r: E = rng.random();
-        let s: E = rng.random();
-        let t: E = rng.random();
-        padded.extend([r, s, r * s, r + E::ONE, t, (r + E::ONE) * t]);
+        let padded = pad_witness(witness, rng);
         let masks: Vec<E> = (0..padded.len()).map(|_| rng.random()).collect();
         let mask_data = CommittedVectors::new(
             std::slice::from_ref(&masks),
@@ -160,6 +171,39 @@ impl Relation {
         transcript.bytes(b"mask-commitment", &mask_data.root);
         let masked: Vec<_> = padded.iter().zip(&masks).map(|(&a, &b)| a + b).collect();
         transcript.fields(b"masked-transcript", &masked);
+        self.prove_prepared(
+            parameters,
+            public,
+            PreparedTranscript {
+                witness: padded,
+                masked,
+                masks: mask_data,
+                transcript,
+            },
+            rng,
+        )
+    }
+
+    pub(super) fn prove_prepared(
+        &self,
+        parameters: &Parameters,
+        public: &[E],
+        prepared: PreparedTranscript,
+        rng: &mut StdRng,
+    ) -> Result<ExperimentalProof> {
+        self.validate(parameters, public)?;
+        self.require_algebraic_budget(parameters)?;
+        let PreparedTranscript {
+            witness: padded,
+            masked,
+            masks: mask_data,
+            mut transcript,
+        } = prepared;
+        ensure!(
+            padded.len() == self.variables + 6,
+            "wrong padded witness length"
+        );
+        ensure!(masked.len() == padded.len(), "wrong masked witness length");
         let products = self.padded_products();
         let vectors: Vec<_> = (0..3)
             .map(|i| products.iter().map(|p| p[i].evaluate(&padded)).collect())
@@ -171,7 +215,7 @@ impl Relation {
         transcript.bytes(b"product-commitment", &product_data.root);
         let link = transcript.challenge(b"product-link")?;
         let link_weights = powers(link, products.len());
-        let product_proof = product_data.prove(&link_weights, &mut transcript)?;
+        let product_proof = product_data.prove(&link_weights, parameters, &mut transcript)?;
         let batch = transcript.challenge(b"linear-batch")?;
         let (weights, _) = self.linear_test(
             public,
@@ -180,7 +224,7 @@ impl Relation {
             &product_proof.dot.claims,
             batch,
         );
-        let mask_proof = mask_data.prove(&weights, &mut transcript)?;
+        let mask_proof = mask_data.prove(&weights, parameters, &mut transcript)?;
         Ok(ExperimentalProof {
             masked,
             masks: mask_proof,
@@ -194,7 +238,21 @@ impl Relation {
         public: &[E],
         proof: &ExperimentalProof,
     ) -> Result<()> {
+        let mut transcript = self.transcript(parameters, public)?;
+        transcript.bytes(b"mask-commitment", &proof.masks.root);
+        transcript.fields(b"masked-transcript", &proof.masked);
+        self.verify_prepared(parameters, public, proof, &mut transcript)
+    }
+
+    pub(super) fn verify_prepared(
+        &self,
+        parameters: &Parameters,
+        public: &[E],
+        proof: &ExperimentalProof,
+        transcript: &mut Transcript,
+    ) -> Result<()> {
         self.validate(parameters, public)?;
+        self.require_algebraic_budget(parameters)?;
         ensure!(
             proof.masked.len() == self.variables + 6,
             "wrong masked transcript length"
@@ -204,9 +262,6 @@ impl Relation {
             "wrong product claim count"
         );
         ensure!(proof.masks.dot.claims.len() == 1, "wrong mask claim count");
-        let mut transcript = self.transcript(parameters, public)?;
-        transcript.bytes(b"mask-commitment", &proof.masks.root);
-        transcript.fields(b"masked-transcript", &proof.masked);
         transcript.bytes(b"product-commitment", &proof.products.root);
         let link = transcript.challenge(b"product-link")?;
         let products = self.padded_products();
@@ -216,7 +271,8 @@ impl Relation {
             &link_weights,
             3,
             true,
-            &mut transcript,
+            parameters,
+            transcript,
         )?;
         let batch = transcript.challenge(b"linear-batch")?;
         let (weights, constant) = self.linear_test(
@@ -235,7 +291,8 @@ impl Relation {
             &weights,
             1,
             false,
-            &mut transcript,
+            parameters,
+            transcript,
         )
     }
 
@@ -246,7 +303,7 @@ impl Relation {
         Ok(Transcript::new(&Keccak256::digest(encoded)))
     }
 
-    fn padded_products(&self) -> Vec<[Linear; 3]> {
+    pub(super) fn padded_products(&self) -> Vec<[Linear; 3]> {
         let mut products = self.products.clone();
         let n = self.variables;
         products.push([Linear::wire(n), Linear::wire(n + 1), Linear::wire(n + 2)]);
@@ -258,7 +315,7 @@ impl Relation {
         products
     }
 
-    fn linear_test(
+    pub(super) fn linear_test(
         &self,
         public: &[E],
         products: &[[Linear; 3]],
@@ -289,16 +346,30 @@ impl Relation {
     }
 }
 
+pub(super) fn pad_witness(witness: &[E], rng: &mut StdRng) -> Vec<E> {
+    let mut padded = witness.to_vec();
+    let r: E = rng.random();
+    let s: E = rng.random();
+    let t: E = rng.random();
+    padded.extend([r, s, r * s, r + E::ONE, t, (r + E::ONE) * t]);
+    padded
+}
+
 impl ExperimentalProof {
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        Ok(postcard::to_allocvec(self)?)
+        let mut bytes = PROOF_MAGIC.to_vec();
+        bytes.extend(postcard::to_allocvec(self)?);
+        Ok(bytes)
     }
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         ensure!(
             bytes.len() <= 256 << 20,
             "experimental proof exceeds transport limit"
         );
-        let (proof, rest) = postcard::take_from_bytes(bytes)?;
+        let payload = bytes
+            .strip_prefix(PROOF_MAGIC)
+            .ok_or_else(|| anyhow::anyhow!("unsupported VEIL proof format; expected IMTVEIL4"))?;
+        let (proof, rest) = postcard::take_from_bytes(payload)?;
         ensure!(rest.is_empty(), "trailing proof bytes");
         Ok(proof)
     }

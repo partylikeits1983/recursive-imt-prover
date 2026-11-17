@@ -1,9 +1,11 @@
 use std::time::Instant;
 
+use super::MAX_CHILDREN;
 use crate::benchmark::ms;
+
 use anyhow::{Result, ensure};
 use p3_air::{AirLayout, BaseAir};
-use p3_binary_field::{BinaryField2, Ghash128, TowerLevel};
+use p3_binary_field::{Poly192, TowerLevel};
 use p3_binary_pcs::whir::BinaryWhirDomain;
 use p3_bus::BusSymbolicBuilder;
 use p3_circuit::ops::ByteHash;
@@ -11,13 +13,13 @@ use p3_circuit::ops::binary_encoding::NativeBinaryEncoding;
 use p3_circuit::{Circuit, CircuitBuilder, CircuitConstructionLimits};
 use p3_circuit_prover::direct::DirectCircuitLimits;
 use p3_circuit_prover::native_bus::{KeccakCommitment, NativeBusCircuit, NativeBusCircuitAir};
-use p3_multi_stark::{MultiStarkProof, ReprBackend};
+use p3_multi_stark::MultiStarkProof;
 use p3_recursion::BinaryTower128Challenger;
 use p3_recursion::artifact::{
-    BinaryNativeChallenger, BinaryNativeMixedWhirAuthority, BinaryNativeMixedWhirConfig,
-    BinaryNativeMixedWhirPcsParameters, BinaryNativeMixedWhirProver, BinaryNativeVerifierSpec,
-    BinaryNativeWhirPcsParameters, CanonicalBinaryStatement, ExpectedVerifierArtifact,
-    VerifiedBinaryNativeMixedWhirProof,
+    BinaryNativeChallenger, BinaryNativePolyMixedWhirAuthority, BinaryNativePolyMixedWhirConfig,
+    BinaryNativePolyMixedWhirPcsParameters, BinaryNativePolyMixedWhirProver,
+    BinaryNativePolyWhirPcsParameters, BinaryNativeVerifierSpec, CanonicalBinaryStatement,
+    ExpectedVerifierArtifact, VerifiedBinaryNativePolyMixedWhirProof,
 };
 use p3_recursion::pcs::binary::MerkleArity;
 use p3_recursion::verifier::VerifierLimits;
@@ -27,11 +29,12 @@ use serde::{Deserialize, Serialize};
 use super::relation::{
     AggregatePublic, ClientPublic, ClientWitness, F, PUBLIC_BYTES, membership_circuit,
 };
+use super::security::{AlgebraicAssessment, BatchAssessment};
 use super::tree::keccak;
 
-pub type Authority = BinaryNativeMixedWhirAuthority<NativeBusCircuitAir<F>>;
-type Prover = BinaryNativeMixedWhirProver<NativeBusCircuitAir<F>>;
-type Proof = MultiStarkProof<BinaryNativeMixedWhirConfig>;
+pub type Authority = BinaryNativePolyMixedWhirAuthority<NativeBusCircuitAir<F>>;
+type Prover = BinaryNativePolyMixedWhirProver<NativeBusCircuitAir<F>>;
+type Proof = MultiStarkProof<BinaryNativePolyMixedWhirConfig>;
 
 /// Explicit research parameters. A PCS target is not a composed security claim.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -43,6 +46,7 @@ pub struct Settings {
     #[serde(default)]
     pub pow_bits: usize,
     pub min_security_bits: usize,
+    pub min_algebraic_bits: usize,
     pub log_inv_rate: usize,
     pub packed_log_inv_rate: usize,
     pub fold: usize,
@@ -58,6 +62,7 @@ pub struct Geometry {
     pub initial_codeword_cells: usize,
     pub security_bits: Option<f64>,
     pub security_terms: Vec<(String, f64)>,
+    pub assessment: AlgebraicAssessment,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,15 +103,16 @@ pub struct PreparedAggregate {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            depth: 8,
+            depth: 16,
             batch_size: 2,
-            pcs_bits: 32,
-            pow_bits: 0,
-            min_security_bits: 16,
+            pcs_bits: 152,
+            pow_bits: 16,
+            min_security_bits: 127,
+            min_algebraic_bits: 144,
             log_inv_rate: 1,
             packed_log_inv_rate: 3,
             fold: 4,
-            max_codeword_cells: 1 << 27,
+            max_codeword_cells: 1 << 29,
         }
     }
 }
@@ -119,16 +125,20 @@ impl Settings {
         );
         ensure!((1..=32).contains(&self.depth), "depth must be in 1..=32");
         ensure!(
-            [1, 2, 4, 8, 16, 32].contains(&self.batch_size),
+            self.batch_size.is_power_of_two() && self.batch_size <= MAX_CHILDREN,
             "unsupported fixed batch size"
         );
         ensure!(
-            (8..=128).contains(&self.pcs_bits),
-            "PCS bits must be in 8..=128"
+            (8..=192).contains(&self.pcs_bits),
+            "PCS bits must be in 8..=192"
         );
         ensure!(
             (1..=128).contains(&self.min_security_bits),
-            "invalid composed security floor"
+            "invalid upstream security floor"
+        );
+        ensure!(
+            (1..=192).contains(&self.min_algebraic_bits),
+            "invalid algebraic security floor"
         );
         ensure!((1..=4).contains(&self.log_inv_rate), "invalid rate");
         ensure!(
@@ -161,6 +171,7 @@ impl Settings {
 
 impl PreparedCircuit {
     pub fn new(circuit: Circuit<F>, settings: &Settings, domain: &[u8]) -> Result<Self> {
+        settings.validate()?;
         let bus = NativeBusCircuit::with_compact_options(
             &circuit,
             "imt",
@@ -179,14 +190,17 @@ impl PreparedCircuit {
             .packed_bit_variables()
             .ok_or_else(|| anyhow::anyhow!("missing packed geometry"))?;
         let cells = (1usize << (bus.main_variables() + settings.log_inv_rate))
-            + (1usize << (bit_variables - 7 + settings.packed_log_inv_rate))
+            + (1usize << (bit_variables - 6 + settings.packed_log_inv_rate))
             + bus
                 .preprocessed_variables()
                 .map_or(0, |n| 1usize << (n + settings.log_inv_rate));
         ensure!(
             cells <= settings.max_codeword_cells,
-            "initial codeword cells {cells} exceed budget {}; reduce batch size or increase --max-codeword-cells",
-            settings.max_codeword_cells
+            "initial codeword cells {cells} exceed budget {} (main variables {}, packed variables {}, preprocessing {:?}); reduce batch size or increase --max-codeword-cells",
+            settings.max_codeword_cells,
+            bus.main_variables(),
+            bit_variables - 6,
+            bus.preprocessed_variables()
         );
         let limits = VerifierLimits {
             max_rounds: 2048,
@@ -194,7 +208,7 @@ impl PreparedCircuit {
             ..Default::default()
         };
         let whir = |n, packed| {
-            BinaryNativeWhirPcsParameters::<F>::with_limits(
+            BinaryNativePolyWhirPcsParameters::with_limits(
                 n,
                 settings.protocol(packed),
                 ByteHash::Keccak256,
@@ -203,7 +217,7 @@ impl PreparedCircuit {
                 &limits,
             )
             .map_err(|error| {
-                let detail = WhirConfig::<F, F, BinaryNativeChallenger<F>>::new_with_domain(
+                let detail = WhirConfig::<Poly192, F, BinaryNativeChallenger<F>>::new_with_domain(
                     n,
                     settings.protocol(packed),
                     &BinaryWhirDomain::<F>::default(),
@@ -212,15 +226,15 @@ impl PreparedCircuit {
                 anyhow::anyhow!("{error}; variables={n}, packed={packed}, upstream={detail:?}")
             })
         };
-        let main = BinaryNativeMixedWhirPcsParameters::with_packed_table(
+        let main = BinaryNativePolyMixedWhirPcsParameters::with_packed_table(
             whir(bus.main_variables(), false)?,
-            whir(bit_variables - 7, true)?,
+            whir(bit_variables - 6, true)?,
             packed_table,
             bit_variables,
         )?;
         let pp = bus
             .preprocessed_variables()
-            .map(|n| whir(n, false).map(BinaryNativeMixedWhirPcsParameters::dense))
+            .map(|n| whir(n, false).map(BinaryNativePolyMixedWhirPcsParameters::dense))
             .transpose()?;
         let spec = BinaryNativeVerifierSpec {
             main,
@@ -238,6 +252,8 @@ impl PreparedCircuit {
             &limits,
         )?;
         let report = authority.security_report();
+        let assessment = AlgebraicAssessment::from_upstream(report)?;
+        assessment.require_algebraic(settings.min_algebraic_bits)?;
         let geometry = Geometry {
             witnesses: circuit.witness_count,
             table_widths: bus.airs().iter().map(BaseAir::width).collect(),
@@ -258,6 +274,7 @@ impl PreparedCircuit {
                 .iter()
                 .map(|t| (format!("{} {:?}", t.label, t.component), t.bits.bits()))
                 .collect(),
+            assessment,
         };
         Ok(Self {
             circuit,
@@ -279,12 +296,7 @@ impl PreparedCircuit {
         let witness_ms = ms(start);
         let public_tables = self.bus.public_values(public)?;
         let start = Instant::now();
-        let proof: Proof = self
-            .prover
-            .prove_tables_with_backend::<ReprBackend<BinaryField2, Ghash128, true>>(
-                &public_tables,
-                tables,
-            )?;
+        let proof: Proof = self.prover.prove_tables(&public_tables, tables)?;
         let prove_ms = ms(start);
         let start = Instant::now();
         self.authority.verify_native(&proof, &public_tables)?;
@@ -320,7 +332,7 @@ impl PreparedChild {
     pub fn new(settings: &Settings) -> Result<Self> {
         settings.validate()?;
         let circuit = membership_circuit(settings.depth)?;
-        let inner = PreparedCircuit::new(circuit, settings, b"binary-keccak-imt-child-v1")?;
+        let inner = PreparedCircuit::new(circuit, settings, b"binary-poly64-keccak-imt-child-v2")?;
         Ok(Self {
             inner,
             depth: settings.depth,
@@ -350,7 +362,21 @@ impl PreparedAggregate {
             child.depth == settings.depth,
             "child depth differs from settings"
         );
-        let authority = &child.inner.authority;
+        Self::from_circuit(&child.inner, settings)
+    }
+
+    /// Aggregate proofs from a caller-provisioned fixed circuit whose public
+    /// statement is exactly one ordered root/amount pair. The retained authority
+    /// supplies every verifier constraint; proof data cannot choose a circuit.
+    pub fn from_circuit(child: &PreparedCircuit, settings: &Settings) -> Result<Self> {
+        settings.validate()?;
+        let authority = &child.authority;
+        // Reassess the retained authority, not caller-mutable report metadata.
+        let child_security = AlgebraicAssessment::from_upstream(authority.security_report())?;
+        child_security.require_algebraic(settings.min_algebraic_bits)?;
+        authority
+            .security_report()
+            .require_security(settings.min_security_bits)?;
         let verifier = authority.recursive_verifier();
         let shape = verifier.input_shape();
         let counts: Vec<_> = shape.public_value_counts().collect();
@@ -369,20 +395,13 @@ impl PreparedAggregate {
         for _ in 0..settings.batch_size {
             let public: Vec<Vec<_>> = counts
                 .iter()
-                .map(|&n| {
-                    (0..n)
-                        .map(|_| {
-                            let value = builder.public_input();
-                            builder.native_tower128_from_expr(value)
-                        })
-                        .collect()
-                })
+                .map(|&n| (0..n).map(|_| builder.public_input()).collect())
                 .collect();
             let proof = shape.allocate_native_targets(&mut builder)?;
             let initial: Vec<_> = authority
                 .initial_bytes()
                 .iter()
-                .map(|&byte| builder.define_const(F::from_repr(u128::from(byte))))
+                .map(|&byte| builder.define_const(F::from_repr(u64::from(byte))))
                 .collect();
             let challenger = BinaryTower128Challenger::with_initial_bytes_with_host::<
                 NativeBinaryEncoding,
@@ -394,8 +413,22 @@ impl PreparedAggregate {
             builder.check_construction_limits()?;
         }
         let circuit = builder.build()?;
-        let domain = format!("binary-keccak-imt-aggregate-v1/{:02}", settings.batch_size);
+        let domain = format!(
+            "binary-poly64-keccak-imt-aggregate-v2/{:02}",
+            settings.batch_size
+        );
         let inner = PreparedCircuit::new(circuit, settings, domain.as_bytes())?;
+        if settings.min_algebraic_bits >= 128 {
+            ensure!(
+                BatchAssessment::new(
+                    &child_security,
+                    &inner.geometry.assessment,
+                    settings.batch_size
+                )?
+                .meets_algebraic_128_budget,
+                "batch algebraic union bound falls below 128 bits"
+            );
+        }
         Ok(Self {
             inner,
             child: authority.clone(),
@@ -454,11 +487,11 @@ impl PreparedAggregate {
     }
 }
 
-fn decode(
+pub(crate) fn decode(
     authority: &Authority,
     proof: &[u8],
     public: &[Vec<F>],
-) -> Result<VerifiedBinaryNativeMixedWhirProof> {
+) -> Result<VerifiedBinaryNativePolyMixedWhirProof> {
     let statement = authority.encode_statement(public)?;
     let identity = authority.canonical_verifier_bytes();
     Ok(authority.decode_and_verify(

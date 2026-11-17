@@ -1,0 +1,98 @@
+[
+  {
+    "format": "native",
+    "case": "amount",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 4.282990667008562,
+    "stderr": "Error: artifact proof verification was rejected"
+  },
+  {
+    "format": "native",
+    "case": "root",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 3.8499314169748686,
+    "stderr": "Error: artifact proof verification was rejected"
+  },
+  {
+    "format": "native",
+    "case": "order",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 3.8159523750073276,
+    "stderr": "Error: artifact proof verification was rejected"
+  },
+  {
+    "format": "native",
+    "case": "remove",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 0.004863792011747137,
+    "stderr": "Error: incorrect statement count"
+  },
+  {
+    "format": "native",
+    "case": "insert",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 0.0022840409947093576,
+    "stderr": "Error: incorrect statement count"
+  },
+  {
+    "format": "native",
+    "case": "authority",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 3.995425291999709,
+    "stderr": "Error: aggregate authority mismatch"
+  },
+  {
+    "format": "native",
+    "case": "corrupt",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 3.6995693749922793,
+    "stderr": "Error: artifact proof verification was rejected"
+  },
+  {
+    "format": "veil",
+    "case": "amount",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 1.4751298329792917,
+    "stderr": "Error: product relation failed"
+  },
+  {
+    "format": "veil",
+    "case": "root",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 1.4336706250032876,
+    "stderr": "Error: product relation failed"
+  },
+  {
+    "format": "veil",
+    "case": "noncanonical",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 0.6909481250040699,
+    "stderr": "Error: decode JSON /Users/riemann/Desktop/polylog-labs/recursive-imt-prover/run/v2-negative-veil/statement.json\n\nCaused by:\n    invalid type: floating point `1.5`, expected u64 at line 1 column 165"
+  },
+  {
+    "format": "veil",
+    "case": "authority",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 0.7003741670050658,
+    "stderr": "Error: wrong relation identity"
+  },
+  {
+    "format": "veil",
+    "case": "truncate",
+    "rejected": true,
+    "exit_code": 1,
+    "seconds": 0.7748268329887651,
+    "stderr": "Error: Hit the end of buffer, expected more data"
+  }
+]

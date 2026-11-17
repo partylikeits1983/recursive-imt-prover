@@ -20,6 +20,27 @@ Changes:
   [PR #484](https://github.com/Plonky3/Plonky3-recursion/pull/484), revision
   `78bd012ba44799913311aa0ab0c00dbb239dc0b7`. Changed files: `src/pcs/mmcs.rs`,
   `tests/mmcs_leaf_hash_binding.rs`, and `tests/zk_hiding_mmcs.rs`.
+- `src/challenger/binary.rs`: allow a trusted Keccak hash prefix on every
+  challenger refill, matching the masked child's domain-separated native
+  transcript. Existing constructors keep the unprefixed behavior. Legacy
+  rejection-query continuation tokens reject a prefixed challenger; the
+  selected WHIR path uses stratified queries.
+- `src/pcs/binary/{whir_domains,whir_kernel,poly_whir_verifier}.rs` and the
+  `src/pcs/binary.rs` re-export: optionally authenticate WHIR leaves and nodes
+  with distinct, trusted Keccak prefixes. This adapter supports binary trees
+  with a single root and preserves the shared-upper-tree optimization. It
+  reuses all upstream WHIR arithmetic and query constraints. Prefixes are
+  circuit constants, not proof inputs; callers must authenticate the complete
+  compiled circuit because the existing input-shape encoding does not include
+  these additional domains.
+
+The repository's `src/binary/veil/whir/recursive/` component tests import actual
+prefixed native proofs, constrain their verification, and reject mutations.
+They also exercise the framed transcript and functional sumcheck. The complete
+masked-child verifier composes these with AIR replay and inner algebraic checks.
+The isolated `crates/flock-backend` adapter proves two such verifiers in one
+binary-field proof, measured at IMT depths 16 and 32. Larger batches remain
+resource-bound; see the root README for timings and security limitations.
 
 The local copy is necessary because the upstream portable registry rejects
 Johnson even though native WHIR supports it. Keep these changes explicit when

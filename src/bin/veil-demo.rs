@@ -69,15 +69,16 @@ fn main() -> Result<()> {
     let product = parameters.diagnostic(circuit.relation.products.len() + 2, 3, true)?;
     let retained = mask.retained_commitment_bytes + product.retained_commitment_bytes;
     let trusted = Trusted {
-        protocol: "experimental-binary-veil-inner-v1".into(),
+        protocol: "experimental-binary-veil-inner-v4".into(),
         depth: args.depth,
         relation_keccak: hex::encode(keccak(&postcard::to_allocvec(&circuit.relation)?)),
         parameters,
     };
     let mut report = json!({"protocol":trusted.protocol, "depth":args.depth,
     "status":"EXPERIMENTAL: ZK adaptation unreviewed; end-to-end security unassessed", "aggregate":false,
-    "challenge_bits":192,"hash":"Keccak-256","coding_bound":"Johnson",
+    "challenge_bits":192,"hash":"Keccak-256","coding_bound":"Johnson proximity bound with VEIL half-distance binding cap",
     "end_to_end_security_bits":null, "acceptance_pass":false,
+    "inner_security":circuit.relation.security_diagnostic(&trusted.parameters)?,
     "setup_ms":setup_ms, "variables":circuit.relation.variables,
     "linear_constraints":circuit.relation.linear.len(), "product_constraints":circuit.relation.products.len(),
     "mask_code":mask, "product_code":product, "retained_commitment_bytes":retained,
@@ -162,7 +163,7 @@ fn verify(args: &Args) -> Result<()> {
     let start = Instant::now();
     let trusted: Trusted = read_json(&args.out.join("trusted.json"))?;
     ensure!(
-        trusted.protocol == "experimental-binary-veil-inner-v1",
+        trusted.protocol == "experimental-binary-veil-inner-v4",
         "wrong protocol"
     );
     trusted.parameters.validate()?;

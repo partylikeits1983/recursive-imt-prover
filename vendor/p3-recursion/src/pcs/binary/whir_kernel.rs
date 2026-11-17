@@ -10,6 +10,7 @@ use p3_util::reverse_bits_len;
 
 use super::gadgets::{next_eval_using, reduce_sumcheck_using};
 use super::verifier::observe_cap_with_host;
+use super::whir_domains::{BinaryWhirHashDomains, compress_prefixed, hash_prefixed};
 use super::whir_gadgets::{
     Powers, eval_coefficients_using, eval_multilinear_using, eval_power_table_using,
     select_eval_using,
@@ -58,7 +59,7 @@ struct Authentication<'a, T> {
 pub(super) fn verify_using<P, H, CF>(
     p: &WhirPlan<P::Base, P::Challenge>,
     b: &mut CircuitBuilder<CF>,
-    mut ch: BinaryTower128Challenger,
+    ch: BinaryTower128Challenger,
     cap: &[Vec<ExprId>],
     points: &[Vec<P::ChallengeTarget>],
     proof: &BinaryWhirProofTargets<P::ChallengeTarget, P::BaseTarget>,
@@ -68,7 +69,33 @@ where
     H: BinaryCircuitHost<CF>,
     P: BinaryWhirPolicy<CF>,
 {
+    verify_with_domains::<P, H, CF>(p, b, ch, cap, points, proof, None)
+}
+
+pub(super) fn verify_with_domains<P, H, CF>(
+    p: &WhirPlan<P::Base, P::Challenge>,
+    b: &mut CircuitBuilder<CF>,
+    mut ch: BinaryTower128Challenger,
+    cap: &[Vec<ExprId>],
+    points: &[Vec<P::ChallengeTarget>],
+    proof: &BinaryWhirProofTargets<P::ChallengeTarget, P::BaseTarget>,
+    domains: Option<&BinaryWhirHashDomains>,
+) -> Result<super::WhirVerificationOutput<P::ChallengeTarget>, VerificationError>
+where
+    CF: Field + Eq + Hash,
+    H: BinaryCircuitHost<CF>,
+    P: BinaryWhirPolicy<CF>,
+{
     H::check_hash(p.hash)?;
+    if domains.is_some()
+        && (p.hash != p3_circuit::ops::ByteHash::Keccak256
+            || p.arity != MerkleArity::Two
+            || p.cap_height != 0)
+    {
+        return Err(invalid(
+            "prefixed WHIR requires binary Keccak trees with cap height zero",
+        ));
+    }
     check_targets(p, cap, points, proof)?;
     b.check_construction_limits()?;
     let mut virtual_points = Vec::new();
@@ -279,7 +306,7 @@ where
     let expected = P::mul(b, &weight, &final_value);
     P::assert_equal(b, &claim, &expected);
     for check in checks {
-        authenticate_using::<P, H, CF>(b, p.hash, p.arity, &check)?;
+        authenticate_using::<P, H, CF>(b, p.hash, p.arity, &check, domains)?;
     }
     Ok((proof.evals.clone(), ch))
 }
@@ -289,6 +316,7 @@ fn authenticate_using<P, H, CF>(
     hash: p3_circuit::ops::ByteHash,
     arity: MerkleArity,
     check: &Authentication<'_, P::ChallengeTarget>,
+    domains: Option<&BinaryWhirHashDomains>,
 ) -> Result<(), VerificationError>
 where
     CF: Field + Eq + Hash,
@@ -317,6 +345,7 @@ where
                     &check.indices[q][..low],
                     &check.paths[q][..low],
                     core::slice::from_ref(root),
+                    domains,
                 )?;
             }
             for k in 0..depth - cap_height {
@@ -336,7 +365,11 @@ where
                     .0
                     .iter()
                     .map(|pair| {
-                        let digest = H::compress(b, hash, &pair[0], &pair[1])?;
+                        let digest = if let Some(domains) = domains {
+                            compress_prefixed::<H, CF>(b, hash, domains.node(), &pair[0], &pair[1])?
+                        } else {
+                            H::compress(b, hash, &pair[0], &pair[1])?
+                        };
                         b.check_construction_limits()?;
                         Ok(digest)
                     })
@@ -360,6 +393,7 @@ where
                     &check.indices[q],
                     &check.paths[q],
                     &check.cap,
+                    domains,
                 )?;
             }
         }
@@ -381,6 +415,7 @@ fn authenticate_row_using<P, H, CF>(
     index: &[ExprId],
     path: &[Vec<ExprId>],
     cap: &[Vec<ExprId>],
+    domains: Option<&BinaryWhirHashDomains>,
 ) -> Result<(), VerificationError>
 where
     CF: Field + Eq + Hash,
@@ -402,6 +437,47 @@ where
     }
     for sibling in path {
         H::constrain_sibling(b, sibling)?;
+    }
+    if let Some(domains) = domains {
+        if arity != MerkleArity::Two
+            || cap.len() != 1
+            || path.len() != index.len()
+            || index.len() != log_height
+            || path.iter().any(|p| p.len() != 16)
+        {
+            return Err(invalid("invalid prefixed Merkle opening shape"));
+        }
+        let mut digest = if let Some(words) = words {
+            hash_prefixed::<H, CF>(b, hash, domains.leaf(), &words.concat())?
+        } else {
+            let mut input = domains
+                .leaf()
+                .iter()
+                .map(|&byte| H::encode_u16(u16::from(byte)).map(|value| b.define_const(value)))
+                .collect::<Result<Vec<_>, _>>()?;
+            input.extend_from_slice(&bytes);
+            let digest = H::hash_bytes(b, hash, &input)?;
+            H::words_from_bytes(b, &digest)?
+        };
+        for (&bit, sibling) in index.iter().zip(path) {
+            b.assert_bool(bit);
+            let left: Vec<_> = digest
+                .iter()
+                .zip(sibling)
+                .map(|(&d, &s)| b.select(bit, s, d))
+                .collect();
+            let right: Vec<_> = digest
+                .iter()
+                .zip(sibling)
+                .map(|(&d, &s)| b.select(bit, d, s))
+                .collect();
+            digest = compress_prefixed::<H, CF>(b, hash, domains.node(), &left, &right)?;
+        }
+        for (&actual, &expected) in digest.iter().zip(&cap[0]) {
+            b.connect(actual, expected);
+        }
+        b.check_construction_limits()?;
+        return Ok(());
     }
     let heights = [1usize << log_height];
     match (words, arity) {
@@ -759,6 +835,7 @@ mod forest_tests {
                 indices,
                 mode: BinaryOracleWord::Base,
             },
+            None,
         )
         .unwrap();
         let circuit = b.build().unwrap();

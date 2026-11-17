@@ -1,7 +1,9 @@
 # Binary Keccak research status
 
-The implemented binary path is **non-ZK**, including its child proofs. It is a
-correctness/performance milestone, not completion of the private-transaction
+The native baseline is **non-ZK**, including its child proofs. The separate
+experimental masked path proves Keccak membership at depths 16/32 and aggregates
+two such proofs into one. Its full privacy/security argument is unfinished. These are
+correctness/performance milestones, not completion of the private-transaction
 objective. The aggregate does not need to be ZK. No child witness, note, path,
 index or proving randomness is an argument to the aggregation API.
 
@@ -10,6 +12,94 @@ binary fields, Keccak IMT proving and the stated aggregation latency targets.
 The intended security class is classical; Keccak-256 does not support a claim
 of 128-bit generic quantum collision security. Sub-128-bit reports are research
 measurements only. No default or nominal PCS target is evidence of acceptance.
+
+The accepted privacy target is statistical ZK, with the joint statistical error
+budgeted across at most 64 child proofs. Child benchmarking covers depths 16/32.
+Aggregation of aggregates is deferred. See the explicit (not yet proved)
+[privacy budget](binary-veil.md#privacy-target-and-historical-v2-measurements).
+
+## Masked-child aggregation status
+
+The experimental masked path now has one real Flock/native-product-bus aggregate
+of two independent child candidates, including fresh-process verification at
+IMT depths 16 and 32. Its prover receives no original IMT witnesses. Flock is
+non-hiding here; all its witness data comes from the published child proofs.
+
+This supplies the verification relation, not the missing joint child simulator
+or a Fiat–Shamir/knowledge composition theorem. The outer Johnson ledger enforces
+at least 144 conditional algebraic bits (146.43 in the measured depth-32 batch),
+separately from Keccak-256's generic 128-bit classical collision work factor.
+The child masks, oracle randomness, aborts, salted commitments and CSPRNG/ROM
+assumptions still require a composed analysis. Reports therefore keep
+`full_zk_established: false` and `end_to_end_security_bits: null`.
+
+The pinned Flock upstream PR is experimental. The local adapter and its weighted
+claim/successor-bus changes also need review; see
+[the backend notes](../crates/flock-backend/README.md). Numerical budgets and tests
+are not a security certificate, and there is no 128-bit post-quantum claim.
+
+## Current implementation pass
+
+The native child and aggregate prover now use **Poly64 with Poly192 challenges**,
+including actual in-circuit child verification. The v2 authority/transcript domain
+and public transport reject the old Tower128/v1 proof family; use commit `40ac660`
+to reproduce or verify historical artifacts. The separate Flock backend adds
+the upstream pin documented in the root README.
+
+Defaults are PCS target 152, grinding ceiling 16, and Johnson analysis. Both
+child and outer authorities must have at least 144 bits in the union of upstream
+**non-hash, uniform-challenge** terms. The aggregate constructor reassesses the
+retained child authority and checks the union of N children plus its outer proof.
+It cannot accept a weaker child merely because its own output configuration is
+stronger. Explicit low-security test settings remain available for regressions.
+
+The upstream combined floor is 127, **not a rounded 128-bit pass**. Its estimate
+includes the 128-bit hash cap as an error term. Reports keep that combined result,
+the non-hash algebraic union, and Keccak's conventional collision work factor
+separate. Adding those different quantities is not an end-to-end work-security
+proof. `child_zk` and `end_to_end_128_established` remain false on this native path.
+Fiat–Shamir knowledge extraction and recursive composition remain obligations.
+
+The VEIL v2 experiment corrects a separate binding-radius error, separates all
+commitment/transcript hash domains, and has its own conditional inner-IOP ledger.
+See [binary-veil.md](binary-veil.md). Its format is still not accepted by the
+native recursive verifier.
+
+## Measured v2 native baseline
+
+Depth 8, N=2, three samples (one cold, two warm), four threads on the same
+Apple M2 Pro / 16 GiB / Rust 1.98.1 machine. No compilation ran concurrently.
+The historical command is `cargo run --locked --release --bin bench -- --depth 8 --batch-size 2
+--samples 3 --out run/bench-two` (one shell line).
+
+| Measurement | Warm median | Warm range |
+|---|---:|---:|
+| Child proving, four samples | 80.47 ms | 60.84–118.45 ms |
+| Child native verification | 25.26 ms | 24.44–26.65 ms |
+| Outer proving | 39.094 s | 36.887–41.301 s |
+| Aggregation wall time | 40.176 s | 38.080–42.273 s |
+| Aggregate decode + verify | 36.72 ms | 36.00–37.44 ms |
+| Batch critical path | 40.491 s | 38.405–42.578 s |
+
+Setup took 4.707 s. The outer proof was 1.260–1.263 MB; peak process RSS was
+7.23 GiB. The independent verifier took **4.795 s wall time**, including 4.547 s
+reconstructing trusted verifier data and 33.68 ms decoding/verifying the proof.
+Warm verification excludes reconstruction; this distinction matters for latency.
+The default codeword budget is 2^29 cells and is not a peak-RAM guarantee.
+
+The child's conditional non-hash model is 148.181 bits, the outer's is 145.893,
+and the N=2 algebraic union is **145.398 bits**. These are explicitly separate
+from Keccak's generic 128-bit collision work factor. **Both proof formats in
+this benchmark are non-ZK; the end-to-end acceptance flag remains false.**
+The aggregation latency target is not met.
+
+Raw reports are in [`benchmarks/binary/v2`](../benchmarks/binary/v2), including
+failed attempts at PCS target 160. The child required at least 6 grinding bits
+at that target; the larger outer circuit required 18, beyond the configured
+ceiling of 16. The final run explicitly used target 152 and retained the same
+144-bit algebraic floor. No automatic security fallback was used. All successful
+v2 records share the same compiled source fingerprint, and the exact settings
+are serialized alongside each measurement.
 
 ## Implemented relation
 
@@ -36,7 +126,7 @@ authorization, spending, replay prevention and nullifiers are out of scope.
 
 ## Actual proof and recursion path
 
-The selected path uses BinaryField128, native Keccak-f tables, product buses and
+The selected path uses Poly64/Poly192, native Keccak-f tables, product buses and
 additive WHIR. The Keccak table is committed as packed bits; all other tables are
 dense. Commitments and Fiat-Shamir use Keccak-256, four-way commitment Merkle
 trees, and a cap of 16 roots. The application IMT remains binary.
@@ -59,7 +149,7 @@ much more than warm proof verification. It does not yet have a compact portable
 snapshot for this native verifier family. Reconstruction time and process wall
 time are reported separately; neither is hidden inside the warm verifier number.
 
-## Soundness
+## Historical Tower128 assessment
 
 Dependencies for the selected path are Plonky3 crates `=0.9.0-rc.2` (published
 source revision `fe5e46d755b8a7d9069778361e21b33e5978b377`) and Plonky3-recursion
@@ -67,7 +157,7 @@ source revision `fe5e46d755b8a7d9069778361e21b33e5978b377`) and Plonky3-recursio
 patches described in [LOCAL_CHANGES.md](../vendor/p3-recursion/LOCAL_CHANGES.md).
 The binary implementation adds no cryptographic dependency patches.
 
-All selected WHIR proximity parameters use the **Johnson bound**. Default PCS
+The historical WHIR proximity parameters use the **Johnson bound**. Its default PCS
 target is deliberately only 32 bits, no grinding; dense code rate is 1/2, packed
 code rate 1/8, and log folding factor is 4. These are low-security research
 measurements. They are not a 128-bit configuration. Every report includes the
@@ -80,8 +170,8 @@ argument, their knowledge/extraction assumptions, Fiat-Shamir/ROM analysis, hash
 collisions and any composition losses. No end-to-end bit-security theorem is
 claimed. Increasing queries does not remove field-size losses: the Tower128
 product-bus and constraint terms already cap the current graphs below 128 bits.
-The native Poly64/Poly192 path is a possible larger-challenge-field direction;
-it does not solve child ZK by itself.
+The current native implementation uses that larger Poly64/Poly192 challenge
+field; it does not solve child ZK by itself.
 
 The separate 80-bit-PCS experiment uses a 16-bit WHIR grinding ceiling and
 reports 77.08-bit child / 75.20-bit outer models. It is also non-ZK and not a
@@ -93,7 +183,7 @@ terms, rather than treating the nominal PCS target as achieved security.
 
 `cargo run --locked --release --example binary-security` constructs the actual
 Keccak IMT relation over Poly64 with Poly192 challenges at depths 8, 16 and 32.
-This is a parameter/authority assessment, not a new accepted proof path. It
+This example remains a parameter/authority assessment. It
 does not generate a proof or add ZK. The relation builder is shared with the
 Tower128 baseline; positive and tampered-root witness checks cover both carriers.
 
@@ -108,7 +198,7 @@ Hash collision assumptions, Fiat-Shamir/ROM losses and N-proof composition need
 to be stated separately and analyzed. Outer graphs also need their own budget.
 
 The raw terms and strict-gate results are in
-[binary-poly-security.json](../benchmarks/binary/raw/binary-poly-security.json).
+[security-parameter-probe.json](../benchmarks/binary/v2/security-parameter-probe.json).
 The example deliberately uses a low setup gate to inspect all terms, then
 reports the separate strict-128 check. It cannot emit an accepted low-security
 proof disguised as a 128-bit proof.
@@ -187,3 +277,7 @@ receive the original notes, paths or the child's private random tape.
 Sources: [native binary support](https://plonky3.github.io/Plonky3-recursion/advanced_topics/binary_fields.html),
 [VEIL](https://blog.succinct.xyz/veil/),
 [VEIL implementation](https://github.com/succinctlabs/sp1/tree/749b0c63f226063c471a6238a94101f930c14a13/slop/crates/veil).
+
+Fresh-process negative checks are recorded in
+[`verification-negative.json`](../benchmarks/binary/v2/verification-negative.json).
+All 12 cases rejected altered statements, authority data or proof bytes.

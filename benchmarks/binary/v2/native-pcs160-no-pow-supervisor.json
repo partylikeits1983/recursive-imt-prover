@@ -1,0 +1,20 @@
+{
+  "command": [
+    "target/release/bench",
+    "--batch-size",
+    "2",
+    "--depth",
+    "8",
+    "--samples",
+    "3",
+    "--max-codeword-cells",
+    "536870912",
+    "--out",
+    "/Users/riemann/Desktop/polylog-labs/recursive-imt-prover/run/poly192-strong-n2"
+  ],
+  "threads": 4,
+  "exit_code": 1,
+  "stop_reason": null,
+  "sampled_parent_peak_rss_bytes": 3571712,
+  "wall_seconds": 0.26446345800650306
+}

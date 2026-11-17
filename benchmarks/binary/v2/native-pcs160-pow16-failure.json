@@ -1,0 +1,6 @@
+{
+  "elapsed_ms": 2001.2520829999999,
+  "error": "Invalid proof shape: binary native polynomial WHIR configuration rejected; variables=26, packed=false, upstream=Some(PowBitsExceedBudget { required: 18, budget: 16 })",
+  "peak_rss_bytes": 1687175168,
+  "stage": "aggregate_setup"
+}

@@ -1,0 +1,73 @@
+{
+  "protocol": "experimental-binary-masked-imt-v2",
+  "depth": 32,
+  "source_keccak256": "8ee0b85f5565789d730e162507097fa46caa2eb5ba6cec5dc875acf3a32365bc",
+  "cases": [
+    {
+      "case": "amount",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: invalid vector opening: CapMismatch"
+    },
+    {
+      "case": "root",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: invalid vector opening: CapMismatch"
+    },
+    {
+      "case": "noncanonical-amount",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: decode JSON run/masked-child-stacked-negative/statement.json\n\nCaused by:\n    invalid type: string \"100\", expected u64 at line 1 column 175"
+    },
+    {
+      "case": "authority",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: masked child verifier identity mismatch"
+    },
+    {
+      "case": "depth",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: masked child verifier identity mismatch"
+    },
+    {
+      "case": "parameters",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: wrong opening count"
+    },
+    {
+      "case": "old-format",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: wrong masked child protocol"
+    },
+    {
+      "case": "corrupted-proof",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: Found a varint that didn't terminate. Is the usize too big for this platform?"
+    },
+    {
+      "case": "truncated-proof",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: Hit the end of buffer, expected more data"
+    },
+    {
+      "case": "trailing-proof",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: trailing masked membership proof bytes"
+    },
+    {
+      "case": "old-proof-magic",
+      "rejected": true,
+      "exit_code": 1,
+      "reason": "Error: unsupported masked membership format"
+    }
+  ]
+}

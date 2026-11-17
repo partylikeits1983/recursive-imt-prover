@@ -3,7 +3,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::process::Command;
 
 use p3_air::check_constraints;
-use p3_binary_field::{Poly64, TowerLevel};
+use p3_binary_field::{BinaryField128, TowerLevel};
 use p3_circuit::Circuit;
 use p3_field::Field;
 use p3_recursion::artifact::{CanonicalBinaryStatement, ExpectedVerifierArtifact};
@@ -14,10 +14,14 @@ use recursive_imt_prover::binary::relation::{
 };
 use recursive_imt_prover::binary::tree::{Imt, commitment, keccak, parent};
 
+const TEST_DEPTH: usize = 16;
+
 fn settings() -> Settings {
     Settings {
         pcs_bits: 8,
+        pow_bits: 0,
         min_security_bits: 1,
+        min_algebraic_bits: 1,
         ..Default::default()
     }
 }
@@ -32,7 +36,7 @@ fn accepts<F: Field>(circuit: &Circuit<F>, public: &[F], private: &[F]) -> bool 
 }
 
 fn witness_fields(witness: &ClientWitness) -> Vec<F> {
-    witness.fields(8).unwrap()
+    witness.fields(TEST_DEPTH).unwrap()
 }
 
 #[test]
@@ -41,7 +45,7 @@ fn keccak_is_not_sha3_and_tree_is_append_only() {
         hex::encode(keccak(b"")),
         "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
     );
-    let mut tree = Imt::new(8).unwrap();
+    let mut tree = Imt::new(TEST_DEPTH).unwrap();
     let note = commitment(&[1; 32], 0x0102030405060708, &[2; 32]);
     assert_ne!(note, commitment(&[1; 32], 0x0807060504030201, &[2; 32]));
     let index = tree.append(note).unwrap();
@@ -61,23 +65,23 @@ fn keccak_is_not_sha3_and_tree_is_append_only() {
 
 #[test]
 fn membership_constraints_reject_every_private_and_public_mutation() {
-    let circuit = membership_circuit(8).unwrap();
-    let (public, witness) = fixtures(8, 1).unwrap().remove(0);
+    let circuit = membership_circuit(TEST_DEPTH).unwrap();
+    let (public, witness) = fixtures(TEST_DEPTH, 1).unwrap().remove(0);
     let fields = public.fields();
     let private = witness_fields(&witness);
     assert!(accepts(&circuit, &fields, &private));
-    let poly = membership_circuit_over::<Poly64>(8).unwrap();
+    let poly = membership_circuit_over::<BinaryField128>(TEST_DEPTH).unwrap();
     let poly_public: Vec<_> = fields
         .iter()
-        .map(|f| Poly64::new(f.to_repr() as u64))
+        .map(|f| BinaryField128::from_repr(u128::from(f.to_repr())))
         .collect();
     let poly_private: Vec<_> = private
         .iter()
-        .map(|f| Poly64::new(f.to_repr() as u64))
+        .map(|f| BinaryField128::from_repr(u128::from(f.to_repr())))
         .collect();
     assert!(accepts(&poly, &poly_public, &poly_private));
     let mut wrong_poly = poly_public.clone();
-    wrong_poly[0] += Poly64::new(1);
+    wrong_poly[0] += BinaryField128::from_repr(1);
     assert!(!accepts(&poly, &wrong_poly, &poly_private));
     // Secret, nonce, direction and sibling are independent constrained inputs.
     for position in [0, 32, 64, 65, private.len() - 1] {
@@ -103,13 +107,13 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     nonboolean[64] = F::from_repr(2);
     assert!(!accepts(&circuit, &fields, &nonboolean));
     let mut outside = witness.clone();
-    outside.leaf_index = 256;
-    assert!(outside.fields(8).is_err());
+    outside.leaf_index = 1 << TEST_DEPTH;
+    assert!(outside.fields(TEST_DEPTH).is_err());
     outside = witness.clone();
     outside.merkle_path.pop();
-    assert!(outside.fields(8).is_err());
+    assert!(outside.fields(TEST_DEPTH).is_err());
     for amount in [0, u64::MAX] {
-        let mut tree = Imt::new(8).unwrap();
+        let mut tree = Imt::new(TEST_DEPTH).unwrap();
         let index = tree
             .append(commitment(&witness.secret, amount, &witness.nonce))
             .unwrap();
@@ -132,8 +136,10 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
 fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     let settings = settings();
     let child = PreparedChild::new(&settings).unwrap();
+    // A strong outer setting cannot upgrade the security of a weak child.
+    assert!(PreparedAggregate::new(&child, &Settings::default()).is_err());
     let mut children = Vec::new();
-    for (public, witness) in fixtures(8, 2).unwrap() {
+    for (public, witness) in fixtures(TEST_DEPTH, 2).unwrap() {
         let (proof, _) = child.prove(public, &witness).unwrap();
         child.verify(&proof).unwrap();
         children.push(proof);
@@ -208,7 +214,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     bad[0].public.amount ^= 1;
     assert!(aggregate.prove(&bad).is_err());
     let foreign = PreparedChild::new(&Settings {
-        depth: 9,
+        depth: 32,
         ..settings.clone()
     })
     .unwrap();
@@ -221,7 +227,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
 #[test]
 fn keccak_air_rejects_tampered_permutation_trace() {
     let child = PreparedChild::new(&settings()).unwrap();
-    let (public, witness) = fixtures(8, 1).unwrap().remove(0);
+    let (public, witness) = fixtures(TEST_DEPTH, 1).unwrap().remove(0);
     let mut runner = child.inner.circuit.runner();
     runner.set_public_inputs(&public.fields()).unwrap();
     runner
@@ -250,7 +256,17 @@ fn independent_process_needs_only_aggregate_statement_and_trust() {
     let directory = std::env::temp_dir().join(format!("binary-imt-process-{}", std::process::id()));
     assert!(!directory.exists());
     let output = Command::new(env!("CARGO_BIN_EXE_demo"))
-        .args(["--pcs-bits", "8", "--min-security-bits", "1", "--out"])
+        .args([
+            "--pcs-bits",
+            "8",
+            "--pow-bits",
+            "0",
+            "--min-security-bits",
+            "1",
+            "--min-algebraic-bits",
+            "1",
+            "--out",
+        ])
         .arg(&directory)
         .output()
         .unwrap();
@@ -283,12 +299,17 @@ fn independent_process_needs_only_aggregate_statement_and_trust() {
         .args([
             "--pcs-bits",
             "8",
+            "--pow-bits",
+            "0",
             "--min-security-bits",
+            "1",
+            "--min-algebraic-bits",
             "1",
             "--samples",
             "1",
             "--max-codeword-cells",
-            "2097152",
+            // Permit the depth-16 child (2,752,512 cells), but reject its outer.
+            "4194304",
             "--out",
         ])
         .arg(&limited)

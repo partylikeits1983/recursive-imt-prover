@@ -90,10 +90,12 @@ mod trace_routing;
 mod trace_whir;
 mod trace_whir_poly;
 mod verifier;
+mod whir_domains;
 mod whir_gadgets;
 mod whir_input;
 mod whir_kernel;
 mod whir_plan;
+pub use whir_domains::BinaryWhirHashDomains;
 mod whir_queries;
 mod whir_verifier;
 pub use boolean::{

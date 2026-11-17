@@ -1,12 +1,12 @@
 use anyhow::{Result, ensure};
-use p3_binary_field::{BinaryField128, TowerLevel};
+use p3_binary_field::{Poly64, TowerLevel};
 use p3_circuit::ops::binary_native::BinaryCoordinateField;
 use p3_circuit::{Circuit, CircuitBuilder};
 use serde::{Deserialize, Serialize};
 
 use super::tree::{Hash, LEAF_DOMAIN, NODE_DOMAIN};
 
-pub type F = BinaryField128;
+pub type F = Poly64;
 pub const PUBLIC_BYTES: usize = 40;
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ impl ClientPublic {
         self.root
             .iter()
             .chain(self.amount.to_le_bytes().iter())
-            .map(|&b| F::from_repr(u128::from(b)))
+            .map(|&b| F::from_repr(u64::from(b)))
             .collect()
     }
 }
@@ -53,11 +53,11 @@ impl ClientWitness {
             .secret
             .iter()
             .chain(&self.nonce)
-            .map(|&b| F::from_repr(u128::from(b)))
+            .map(|&b| F::from_repr(u64::from(b)))
             .collect();
         for (level, sibling) in self.merkle_path.iter().enumerate() {
-            fields.push(F::from_repr(u128::from((self.leaf_index >> level) & 1)));
-            fields.extend(sibling.iter().map(|&b| F::from_repr(u128::from(b))));
+            fields.push(F::from_repr(u64::from((self.leaf_index >> level) & 1)));
+            fields.extend(sibling.iter().map(|&b| F::from_repr(u64::from(b))));
         }
         Ok(fields)
     }

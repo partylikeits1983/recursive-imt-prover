@@ -35,6 +35,7 @@ use p3_field::{ExtensionField, Field, PrimeField64};
 #[derive(Clone, Debug)]
 pub struct BinaryTower128Challenger {
     hash: ByteHash,
+    hash_prefix: Vec<u8>,
     input_buffer: Vec<Absorbed>,
     output_buffer: Vec<Unsampled>,
     /// The input is the digest of the last refill, with nothing observed since.
@@ -246,6 +247,7 @@ impl BinaryQueryContinuation {
         }
         Ok(BinaryTower128Challenger {
             hash: self.hash,
+            hash_prefix: Vec::new(),
             input_buffer: self.digest.absorbed(),
             output_buffer: Vec::new(),
             retains_digest: false,
@@ -264,6 +266,13 @@ impl BinaryTower128Challenger {
     pub(crate) fn retained_query_digest(
         &self,
     ) -> Result<(ByteHash, RetainedDigest), CircuitBuilderError> {
+        if !self.hash_prefix.is_empty() {
+            return Err(CircuitBuilderError::NonPrimitiveOpArity {
+                op: "BinaryQueryDigest",
+                expected: "unprefixed transcript for rejection-query continuation".into(),
+                got: self.hash_prefix.len(),
+            });
+        }
         let bytes: Option<Vec<_>> = self.input_buffer.iter().map(|unit| unit.byte()).collect();
         let words: Option<Vec<_>> = self.input_buffer.iter().map(|unit| unit.word()).collect();
         let digest = match (bytes, words) {
@@ -296,6 +305,7 @@ impl BinaryTower128Challenger {
         };
         if branches.iter().any(|(_, branch)| {
             branch.hash != first.hash
+                || branch.hash_prefix != first.hash_prefix
                 || branch.retains_digest != first.retains_digest
                 || branch.input_buffer.len() != first.input_buffer.len()
                 || branch.output_buffer.len() != first.output_buffer.len()
@@ -354,6 +364,7 @@ impl BinaryTower128Challenger {
             .collect();
         Ok(Self {
             hash: first.hash,
+            hash_prefix: first.hash_prefix.clone(),
             input_buffer,
             output_buffer,
             retains_digest: first.retains_digest,
@@ -367,10 +378,21 @@ impl BinaryTower128Challenger {
     pub const fn new(hash: ByteHash) -> Self {
         Self {
             hash,
+            hash_prefix: Vec::new(),
             input_buffer: Vec::new(),
             output_buffer: Vec::new(),
             retains_digest: false,
         }
+    }
+
+    /// Starts with `hash(prefix || input)` on every refill. The prefix is
+    /// trusted circuit configuration, not an observed message or proof input.
+    /// Stratified WHIR sampling supports this; legacy rejection-query tokens
+    /// explicitly reject it instead of silently losing the prefix.
+    pub fn new_with_hash_prefix(hash: ByteHash, prefix: &[u8]) -> Self {
+        let mut result = Self::new(hash);
+        result.hash_prefix = prefix.to_vec();
+        result
     }
 
     /// Starts with the exact bytes of `initial`: each natural-order limb
@@ -408,6 +430,7 @@ impl BinaryTower128Challenger {
         let bytes = Self::bytes_from_limbs::<H, EF>(circuit, initial)?;
         Ok(Self {
             hash,
+            hash_prefix: Vec::new(),
             input_buffer: absorbed_bytes(&bytes).collect(),
             output_buffer: Vec::new(),
             retains_digest: false,
@@ -449,6 +472,7 @@ impl BinaryTower128Challenger {
         }
         Ok(Self {
             hash,
+            hash_prefix: Vec::new(),
             input_buffer: absorbed_bytes(initial).collect(),
             output_buffer: Vec::new(),
             retains_digest: false,
@@ -1096,7 +1120,19 @@ impl BinaryTower128Challenger {
         H: BinaryCircuitHost<EF>,
         EF: Field + Eq + Hash,
     {
-        match Self::hash_input::<H, EF>(circuit, self.hash, &self.input_buffer)? {
+        let digest = if self.hash_prefix.is_empty() {
+            Self::hash_input::<H, EF>(circuit, self.hash, &self.input_buffer)?
+        } else {
+            let mut input = Vec::with_capacity(self.hash_prefix.len() + self.input_buffer.len());
+            for &byte in &self.hash_prefix {
+                input.push(Absorbed::Byte(
+                    circuit.define_const(H::encode_u16(u16::from(byte))?),
+                ));
+            }
+            input.extend_from_slice(&self.input_buffer);
+            Self::hash_input::<H, EF>(circuit, self.hash, &input)?
+        };
+        match digest {
             Digest::Limbs(DigestLimbs { limbs, swapped }) => {
                 self.input_buffer = limbs.map(Absorbed::Word).to_vec();
                 self.output_buffer = swapped.map(Unsampled::Word).to_vec();

@@ -1,6 +1,0 @@
-{
-  "elapsed_ms": 1031.318666,
-  "error": "Invalid proof shape: binary native WHIR configuration rejected",
-  "peak_rss_bytes": 1056931840,
-  "stage": "aggregate_setup"
-}

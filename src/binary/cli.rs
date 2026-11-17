@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
+use super::MAX_CHILDREN;
+
 use anyhow::{Result, ensure};
 use clap::Parser;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -10,27 +12,31 @@ use serde::{Deserialize, Serialize};
 
 use super::engine::{Geometry, PreparedAggregate, PreparedChild, ProofMetrics, Settings};
 use super::relation::{AggregatePublic, ClientPublic, ClientWitness};
+use super::security::BatchAssessment;
 use super::tree::{Imt, commitment};
 use crate::benchmark::{environment, ms, peak_rss, statistics};
 use crate::files::{read_bounded, read_json, write_json};
 
 #[derive(Parser)]
-#[command(about = "BinaryField128 / Keccak / additive-WHIR NON-ZK research baseline")]
+#[command(about = "Poly64 / Poly192 / Keccak / additive-WHIR NON-ZK research baseline")]
 pub struct Args {
     #[arg(long, default_value_t = 2)]
     pub batch_size: usize,
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = 16)]
     pub depth: usize,
     #[arg(long, default_value_t = 3)]
     pub samples: usize,
-    #[arg(long, default_value_t = 32)]
+    #[arg(long, default_value_t = 152)]
     pub pcs_bits: usize,
     /// Maximum WHIR grinding bits; reported separately from the PCS target.
-    #[arg(long, default_value_t = 0)]
-    pub pow_bits: usize,
     #[arg(long, default_value_t = 16)]
+    pub pow_bits: usize,
+    #[arg(long, default_value_t = 127)]
     pub min_security_bits: usize,
-    #[arg(long, default_value_t = 1 << 27)]
+    /// Separate floor for all non-hash terms under uniform transcript challenges.
+    #[arg(long, default_value_t = 144)]
+    pub min_algebraic_bits: usize,
+    #[arg(long, default_value_t = 1 << 29)]
     pub max_codeword_cells: usize,
     #[arg(long, default_value = "run/binary")]
     pub out: PathBuf,
@@ -74,6 +80,7 @@ struct Report {
     aggregate_setup_ms: Option<f64>,
     child_geometry: Geometry,
     aggregate_geometry: Option<Geometry>,
+    security: Option<BatchAssessment>,
     samples: Vec<Sample>,
     fresh_verifier: Option<serde_json::Value>,
     summary: serde_json::Value,
@@ -100,6 +107,7 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
         pcs_bits: args.pcs_bits,
         pow_bits: args.pow_bits,
         min_security_bits: args.min_security_bits,
+        min_algebraic_bits: args.min_algebraic_bits,
         max_codeword_cells: args.max_codeword_cells,
         ..Default::default()
     };
@@ -131,6 +139,7 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
         aggregate_setup_ms: None,
         child_geometry: child.inner.geometry.clone(),
         aggregate_geometry: None,
+        security: None,
         samples: vec![],
         fresh_verifier: None,
         summary: serde_json::json!({}),
@@ -161,10 +170,15 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
     if let Some(aggregate) = &aggregate {
         report.aggregate_setup_ms = Some(ms(start));
         report.aggregate_geometry = Some(aggregate.inner.geometry.clone());
+        report.security = Some(BatchAssessment::new(
+            &child.inner.geometry.assessment,
+            &aggregate.inner.geometry.assessment,
+            settings.batch_size,
+        )?);
         write_json(
             &args.out.join("trusted.json"),
             &Trusted {
-                protocol: "binary-keccak-imt-nonzk-v1".into(),
+                protocol: "binary-poly64-keccak-imt-nonzk-v2".into(),
                 settings: settings.clone(),
                 child_identity: child.inner.identity(),
                 aggregate_identity: aggregate.inner.identity(),
@@ -175,6 +189,8 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
             aggregate.inner.geometry.witnesses, aggregate.inner.geometry.security_bits
         );
     }
+    // Retain the checked outer geometry/security even if proving is interrupted.
+    write_json(&args.out.join("report.json"), &report)?;
     for index in 0..args.samples {
         let start = Instant::now();
         let fixture_start = Instant::now();
@@ -274,7 +290,7 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
     let mut tree = Imt::new(depth)?;
     let capacity = 1u64 << depth;
     ensure!(
-        count > 0 && count <= 32 && 2 * count as u64 <= capacity,
+        count > 0 && count <= MAX_CHILDREN && 2 * count as u64 <= capacity,
         "tree cannot hold users and later appends"
     );
     for _ in 0..8.min(capacity - 2 * count as u64) {
@@ -311,7 +327,7 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
 fn verify_files(directory: &Path) -> Result<()> {
     let trusted: Trusted = read_json(&directory.join("trusted.json"))?;
     ensure!(
-        trusted.protocol == "binary-keccak-imt-nonzk-v1",
+        trusted.protocol == "binary-poly64-keccak-imt-nonzk-v2",
         "unsupported trusted protocol"
     );
     let public: AggregatePublic = read_json(&directory.join("statement.json"))?;

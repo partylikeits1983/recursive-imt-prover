@@ -1,13 +1,20 @@
 # Development map
 
 Keep one active direction: add a complete, analyzed binary ZK child format to
-the existing proof-only aggregation flow. The direct VEIL experiment tests the
-missing algebraic pieces; it is not another production backend to optimize.
+the existing proof-only aggregation flow. The VEIL module contains the
+experimental masked child and its component checks.
+
+The acceptance target is **depths 16 and 32**, **up to 64 children in one aggregate**,
+**binary fields**, **Keccak throughout**, **statistical child ZK**, and **at least
+128-bit end-to-end classical security**. The aggregate itself may be non-ZK. Aggregation of aggregates is deferred.
+These requirements do not change when inspecting other implementations.
 
 | Location | Purpose |
 |---|---|
 | `src/binary/tree.rs`, `relation.rs` | Keccak IMT and the child statement |
-| `src/binary/engine.rs` | Working native, non-ZK child/aggregate baseline |
+| `src/binary/engine.rs` | Poly64/Poly192 native, non-ZK child/aggregate baseline |
+| `src/binary/security.rs` | Conditional algebraic budgets and N-child composition |
+| `crates/flock-backend/` | Isolated final prover and old/new Plonky3 AIR adapter |
 | `src/binary/veil/` | Experimental binary VEIL components and direct Keccak fixture |
 | `src/bin/` | Binary demo, benchmark and VEIL experiment entry points |
 | `src/benchmark.rs`, `files.rs` | Shared measurements and bounded artifact I/O |
@@ -19,18 +26,42 @@ missing algebraic pieces; it is not another production backend to optimize.
 
 ## Next milestones
 
-1. Complete the binary VEIL joint simulation and soundness accounting. The
-   current local coding diagnostics are not an end-to-end security bound.
-2. Adapt the MultiStark transcript and hiding oracle interface to additive WHIR.
-   Apply the inner argument to verifier algebra rather than the whole Keccak
-   execution. Account for every opening and preserve packed-bit performance
-   where the privacy construction permits it.
-3. Constrain verification of that complete child format in the Poly64/Poly192
-   outer circuit. Authenticate the trusted authority and ordered public vector.
-   Start with two children; the outer proof may remain non-ZK.
-4. Establish the composed 128-bit classical bound, then measure final parameters
-   for depths 8/16/32 and batch sizes 2/4/8/16. Do not spend time on Ethereum or
-   another backend before this works.
+1. **Online masked transcript — implemented.** Fresh masks are committed before
+   algebraic messages and challenges. One verifier replay produces the affine
+   and product constraints. Native AIR sumcheck uses upstream arithmetic.
+2. **Private oracle — implemented experimentally.** Additive WHIR authenticates
+   only a uniformly masked combination of private columns. The child now stacks
+   128 trace columns per commitment column, uses random low-degree coefficient
+   padding, and verifies a compact functional instead of a dense weight table.
+   The original interpolation oracle remains a component comparison fixture.
+3. **Complete membership relation — implemented experimentally.** A fixed AIR
+   connects adjacent Keccak hashes directly, including the amount, domains,
+   path direction, schedule and root. It needs no product bus. The upstream
+   zerocheck, private current/successor openings, public preprocessing and masked
+   endpoint algebra are linked in one serialized child proof. Depths 16/32
+   have independent-process measurements. This establishes the implemented
+   relation, not the full privacy or composed security theorem.
+4. **One-proof masked-child aggregation — implemented experimentally.**
+   `masked-demo` compiles the complete child verifier for the fixed ordered batch.
+   `crates/flock-backend` proves its arithmetic on the native product bus and its
+   Keccak calls with the pinned upstream Flock circuit-table prover. The first
+   two-child aggregate has passed independent-process verification and negative
+   public-statement checks. This replaces the abandoned three-part wrapper
+   recursion prototype. The component bundle remains an explicitly non-succinct
+   diagnostic. See the measurements and resource limits in `binary-veil.md`.
+5. **Privacy/security review follows integration.** The user accepts a plausible
+   statistical-ZK candidate for this milestone. Keep unproved claims labelled:
+   joint simulation, adaptive/ROM composition, abort probabilities, salted-leaf
+   lifetime budgets, and end-to-end 128-bit security remain to be established.
+   Retain binary fields, Keccak, Johnson bounds and conservative algebraic
+   parameters. Do not turn the conditional budget into a security certificate.
+6. **Measure and optimize.** Benchmark depths 16/32 and batches 1/2/4/8/16/32/64,
+   separately reporting circuit construction, proof generation, decoding,
+   trusted setup and final verification. Profile before changing the design;
+   compare a recursion tree only if the fixed batch hits a measured limit.
+
+Do not implement Ethereum verification yet. Optimize the measured fixed-batch
+prover and trusted-verifier loading before adding another recursion layer.
 
 The exact obligations and existing measurements live in
 [binary-veil.md](binary-veil.md). Avoid copying status and security explanations
@@ -38,19 +69,23 @@ into additional documents; keep the README as the entry point.
 
 ## Checks
 
+GitHub CI has one Linux job: formatting, default-feature Clippy across targets,
+and library unit tests. It uses the pinned Rust toolchain and a dependency cache.
+Proof benchmarks and the full release regression suite remain local checks.
+
 ```sh
 # Normal binary development: excludes the old prime CLI and its slow tests.
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked --release
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --release --workspace
 
 # Before publishing changes that also affect shared or legacy code.
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --release --all-features
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --release --workspace --all-features
 ```
 
-The existing binary `demo`, `bench` and `veil-demo --verify` interfaces are
-unchanged. A plain `cargo run` now selects the binary demo. The prime CLI retains
+The binary `demo`, `bench` and `veil-demo --verify` command names are retained.
+Their v2 proof/trust formats deliberately reject v1 artifacts. A plain `cargo run` now selects the binary demo. The prime CLI retains
 its executable name but requires `--features legacy-prime --bin recursive-imt-prover`.
 Library callers use the `legacy` namespace for that implementation.
 
@@ -60,5 +95,6 @@ retain their respective framing. Benchmark reports share environment and RSS
 collection. Historical reports retain the metadata from their original run.
 
 Generated runs, proofs and private fixtures belong under ignored `run/`.
-Keep historical raw benchmark records when they explain a research decision.
-Do not rewrite their timings or fingerprints after refactoring.
+Keep the current reports and diagnostics supporting documented results.
+Retrieve superseded measurements from Git history; remove duplicate logs.
+Do not rewrite retained timings or fingerprints after refactoring.

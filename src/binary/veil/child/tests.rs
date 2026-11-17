@@ -1,0 +1,153 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
+use anyhow::Result;
+use p3_air::check_constraints;
+use p3_field::PrimeCharacteristicRing;
+
+use super::{MaskedMembershipProof, PendingChild, PreparedMembership};
+use crate::binary::{
+    cli::fixtures,
+    relation::{ClientPublic, ClientWitness},
+    tree::commitment,
+    veil::{
+        F,
+        membership_air::{DIRECTION, MembershipAir, STATE_START, WIDTH},
+        parameters::Parameters,
+    },
+};
+
+fn note() -> (ClientPublic, ClientWitness) {
+    let witness = ClientWitness {
+        secret: [19; 32],
+        nonce: [27; 32],
+        leaf_index: 0,
+        merkle_path: vec![],
+    };
+    let amount = 0x0102030405060708;
+    (
+        ClientPublic {
+            root: commitment(&witness.secret, amount, &witness.nonce),
+            amount,
+        },
+        witness,
+    )
+}
+
+#[test]
+fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
+    for depth in [0, 1, 16, 32] {
+        let (public, witness) = if depth == 0 {
+            note()
+        } else {
+            fixtures(depth, 1)?.remove(0)
+        };
+        let air = MembershipAir::new(depth)?;
+        let trace = air.trace(&public, &witness)?;
+        let inputs = MembershipAir::public_values(&public);
+        check_constraints(&air, &trace, &inputs);
+        for kind in 0..8 {
+            let mut bad = trace.clone();
+            let cell = match kind {
+                0 => STATE_START + 16 * 8,     // secret
+                1 => STATE_START + 56 * 8,     // nonce
+                2 => STATE_START + 48 * 8,     // amount
+                3 => STATE_START,              // leaf domain
+                4 => STATE_START + 88 * 8,     // Keccak suffix
+                5 => 24 * WIDTH + STATE_START, // leaf output / link
+                6 => {
+                    if depth > 0 {
+                        24 * WIDTH + DIRECTION
+                    } else {
+                        DIRECTION
+                    }
+                }
+                _ => 25 * WIDTH + 24, // schedule: first node or padding flag
+            };
+            bad.values[cell] += F::ONE;
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| check_constraints(&air, &bad, &inputs))).is_err(),
+                "depth={depth}, mutation={kind}"
+            );
+        }
+        for kind in 0..2 {
+            let mut altered = public.clone();
+            if kind == 0 {
+                altered.root[0] ^= 1;
+            } else {
+                altered.amount ^= 1;
+            }
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| check_constraints(
+                    &air,
+                    &trace,
+                    &MembershipAir::public_values(&altered)
+                )))
+                .is_err()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
+    let parameters = Parameters::default();
+    let prepared = PreparedMembership::new(0, parameters.clone())?;
+    let (public, witness) = note();
+    let proof = prepared.prove(&public, &witness)?;
+    let bytes = proof.to_bytes()?;
+    let decoded = MaskedMembershipProof::from_bytes(&bytes)?;
+    for old_magic in [b"IMTVCA01", b"IMTVCA02", b"IMTVCA03", b"IMTVCA04"] {
+        let mut old = bytes.clone();
+        old[..8].copy_from_slice(old_magic);
+        assert!(MaskedMembershipProof::from_bytes(&old).is_err());
+    }
+    prepared.verify(&public, &decoded)?;
+    for kind in 0..2 {
+        let mut altered = public.clone();
+        if kind == 0 {
+            altered.root[0] ^= 1;
+        } else {
+            altered.amount ^= 1;
+        }
+        assert!(prepared.verify(&altered, &decoded).is_err());
+    }
+    assert!(
+        PreparedMembership::new(1, parameters)?
+            .verify(&public, &decoded)
+            .is_err()
+    );
+    let mut appended = bytes.clone();
+    appended.push(0);
+    assert!(MaskedMembershipProof::from_bytes(&appended).is_err());
+    for i in [0, 8, bytes.len() / 2, bytes.len() - 1] {
+        let mut altered = bytes.clone();
+        altered[i] ^= 0x80;
+        if let Ok(proof) = MaskedMembershipProof::from_bytes(&altered) {
+            assert!(prepared.verify(&public, &proof).is_err());
+        }
+    }
+
+    // Actual proof attempt for a false statement, bypassing only the prover's
+    // private relation precheck. The child verifier must enforce the AIR itself.
+    let trace = prepared.witness(&public, &witness)?;
+    let mut false_public = public.clone();
+    false_public.amount ^= 1;
+    let PendingChild {
+        root,
+        ctx,
+        opening,
+        mut rng,
+    } = prepared.prepare(&false_public, trace)?;
+    let inner = ctx.finish_unchecked(
+        |reader| prepared.replay(&false_public, &root, &opening, reader),
+        &mut rng,
+    )?;
+    let forged = MaskedMembershipProof {
+        oracle_root: root,
+        inner,
+        opening,
+    };
+    assert!(prepared.verify(&false_public, &forged).is_err());
+    Ok(())
+}

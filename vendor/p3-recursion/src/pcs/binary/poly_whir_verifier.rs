@@ -190,4 +190,34 @@ impl BinaryPolyWhirVerifier {
             b, ch, cap, points, proof,
         )
     }
+    /// Native relation with trusted, distinct leaf/node Keccak prefixes. The
+    /// challenger must independently use the matching transcript hash prefix.
+    /// The emitted circuit binds all prefixes; they are not proof inputs.
+    /// Authenticate the compiled circuit, not only `input_shape()`: the legacy
+    /// input-shape encoding does not include these additional hash domains.
+    pub fn verify_at_native_with_domains(
+        &self,
+        b: &mut CircuitBuilder<Poly64>,
+        ch: BinaryTower128Challenger,
+        cap: &[Vec<ExprId>],
+        points: &[Vec<NativePoly192Target>],
+        proof: &BinaryPolyWhirProofTargets<NativePoly192Target, ExprId>,
+        domains: &super::BinaryWhirHashDomains,
+    ) -> Result<
+        (
+            Vec<OpeningBatch<NativePoly192Target>>,
+            BinaryTower128Challenger,
+        ),
+        VerificationError,
+    > {
+        super::whir_kernel::verify_with_domains::<NativePoly64Relation, NativeBinaryEncoding, Poly64>(
+            &self.plan,
+            b,
+            ch,
+            cap,
+            points,
+            proof,
+            Some(domains),
+        )
+    }
 }

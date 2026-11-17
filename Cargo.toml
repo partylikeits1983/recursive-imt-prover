@@ -1,3 +1,8 @@
+[workspace]
+members = ["crates/flock-backend"]
+exclude = ["vendor/p3-recursion"]
+resolver = "2"
+
 [package]
 name = "recursive-imt-prover"
 version = "0.1.0"
@@ -10,6 +15,7 @@ default = []
 legacy-prime = ["dep:p3-koala-bear", "dep:p3-uni-stark"]
 
 [dependencies]
+imt-flock-backend = { path = "crates/flock-backend" }
 anyhow = "1.0"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
@@ -28,12 +34,15 @@ p3-security = "=0.9.0-rc.2"
 p3-binary-field = "=0.9.0-rc.2"
 p3-binary-dft = "=0.9.0-rc.2"
 p3-commit = "=0.9.0-rc.2"
+p3-challenger = "=0.9.0-rc.2"
 p3-keccak = "=0.9.0-rc.2"
 p3-merkle-tree = "=0.9.0-rc.2"
 p3-symmetric = "=0.9.0-rc.2"
 p3-binary-pcs = "=0.9.0-rc.2"
 p3-bus = "=0.9.0-rc.2"
 p3-multi-stark = "=0.9.0-rc.2"
+p3-multilinear-util = "=0.9.0-rc.2"
+p3-sumcheck = "=0.9.0-rc.2"
 p3-whir = "=0.9.0-rc.2"
 mimalloc = { version = "0.1", default-features = false }
 libc = "0.2"

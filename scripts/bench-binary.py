@@ -12,28 +12,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=3)
-    parser.add_argument("--threads", type=int, default=12)
+    parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     environment = dict(os.environ, RAYON_NUM_THREADS=str(args.threads))
     subprocess.run(["cargo", "build", "--locked", "--release", "--bin", "bench"], check=True)
     cases = []
-    for count in [1, 2, 4, 8, 16]:
-        cases.append((f"d8-n{count}-aggregate", ["--batch-size", str(count),
-                      "--max-codeword-cells", str(1 << (28 if count == 4 else 27))]))
-    for depth in [8, 16, 32]:
-        for count in [1, 2, 4, 8, 16]:
-            cases.append((f"d{depth}-n{count}-children", ["--depth", str(depth),
-                          "--batch-size", str(count), "--children-only"]))
     for depth in [16, 32]:
-        cases.append((f"d{depth}-n2-aggregate", ["--depth", str(depth),
-                      "--max-codeword-cells", str(1 << 28)]))
-    cases.append(("d8-n2-pcs80-pow16", ["--pcs-bits", "80", "--pow-bits", "16",
-                  "--min-security-bits", "64", "--max-codeword-cells", str(1 << 28)]))
+        for count in [1, 2, 4, 8, 16, 32, 64]:
+            base = ["--depth", str(depth), "--batch-size", str(count)]
+            cases.append((f"d{depth}-n{count}-children", base + ["--children-only"]))
+            cases.append((f"d{depth}-n{count}-aggregate", base +
+                          ["--max-codeword-cells", str(1 << 29)]))
     results = []
     for name, parameters in cases:
         command = ["target/release/bench", "--out", str(args.out / name),
-                   "--samples", str(args.samples)] + parameters
+                   "--samples", str(args.samples), "--pcs-bits", "152", "--pow-bits", "16",
+                   "--min-security-bits", "127", "--min-algebraic-bits", "144"] + parameters
         print(f"Running {name}", flush=True)
         started = time.monotonic()
         with (args.out / f"{name}.log").open("w") as log:
