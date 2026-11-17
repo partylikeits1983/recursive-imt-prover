@@ -17,7 +17,7 @@ impl TableEncoding {
         let mut committed_width = 0usize;
         let mut columns = Vec::with_capacity(widths.len());
         for &width in &widths {
-            ensure!((1..=64).contains(&width), "coordinate width outside 1..=64");
+            ensure!(width <= 64, "coordinate width outside 0..=64");
             let end = committed_width
                 .checked_add(width)
                 .ok_or_else(|| anyhow::anyhow!("coordinate width overflow"))?;
@@ -28,7 +28,8 @@ impl TableEncoding {
             boolean_columns: widths.iter().take_while(|&&width| width == 1).count(),
             widths,
             columns,
-            committed_width,
+            // An all-zero table keeps one dummy committed bit column.
+            committed_width: committed_width.max(1),
         })
     }
 }

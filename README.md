@@ -31,9 +31,9 @@ limits apply. Large batches are a scaling target, not a measured capability.
 Reports record per-child timings, aggregation, verification, proof sizes and RSS.
 Cold verification currently rebuilds trusted preprocessing; its time is separate
 from cryptographic verification. Aggregation remains well above the latency target.
-Measured depth-32, N=2: **82.6 s warm aggregation, 29.4 ms verification, 1.01 MB
-aggregate** on an M2 Pro with four threads. Cold verifier setup adds about 12 s.
-N=4 currently exceeds the allocation guard; 64 children remain a research target.
+Measured depth-32, N=2: **57.5 s warm aggregation, 114.7 ms verification, 1.30 MB
+aggregate** on an M2 Pro with four threads. Cold verifier setup adds about 13 s.
+N=4 passes the codeword guard but has exceeded working memory; 64 children remain a research target.
 
 `demo` / `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` is a diagnostic bundle, not a single aggregate.
@@ -47,4 +47,5 @@ recursion `3a69ba61f713c8400b14eb3d8f0e52caa13512c7`;
 experimental Flock backend [PR #2582](https://github.com/Plonky3/Plonky3/pull/2582)
 `708900d7a730d6ce4d5421d43e2193f2301920fa`.
 [Recursion patches](vendor/p3-recursion/LOCAL_CHANGES.md) and
-[Flock adapter](crates/flock-backend/README.md) document local changes.
+[Flock adapter](crates/flock-backend/README.md), including its narrow upstream
+prover patches, document local changes.

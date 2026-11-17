@@ -23,6 +23,7 @@ These requirements do not change when inspecting other implementations.
 | `scripts/` | Reproducible benchmark drivers |
 | `benchmarks/` | Recorded measurements; no proof or private witness files |
 | `vendor/p3-recursion/` | Pinned upstream code and documented patches |
+| `vendor/p3-sumcheck/`, `vendor/p3-multi-stark/` | Narrow Flock prover memory/work optimizations; documented upstream diffs |
 
 ## Next milestones
 
@@ -59,10 +60,13 @@ These requirements do not change when inspecting other implementations.
    separately reporting circuit construction, proof generation, decoding,
    trusted setup and final verification. Profile before changing the design;
    compare a recursion tree only if the fixed batch hits a measured limit.
-   The bounded-coordinate adapter reduces initial codeword storage for depth-32
-   N=2 from 8 GiB to 5 GiB; N=4 still exceeds the guard. Next investigate native
-   fanout/arithmetic table size and checkpointed Keccak GKR (the pinned LeanVM
-   lead in `binary-veil.md`), retaining the 128-bit target and existing hash.
+   Partitioning native fanout/arithmetic tables reduces initial codeword storage
+   for depth-32 N=4 from 10 GiB to 6 GiB. This passes the allocation guard but
+   does not bound total prover memory: initial attempts were killed under swap
+   pressure. Deferred opening sweeps and product-bus materialization now have
+   narrow upstream optimizations. Measure actual memory and latency before
+   increasing batch limits. Checkpointed Keccak GKR remains a research lead
+   (`binary-veil.md`), retaining the 128-bit target and existing hash.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover and trusted-verifier loading before adding another recursion layer.

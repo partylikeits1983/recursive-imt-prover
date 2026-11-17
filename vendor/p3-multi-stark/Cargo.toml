@@ -1,0 +1,67 @@
+# Pinned upstream crate; see LOCAL_CHANGES.md.
+[package]
+name = "p3-multi-stark"
+description = "Multilinear (SuperSpartan-style) STARK prover for AIRs."
+version = "0.8.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Plonky3/Plonky3"
+homepage = "https://github.com/Plonky3/Plonky3"
+keywords = ["cryptography", "SNARK", "PLONK", "FRI", "plonky3"]
+categories = ["cryptography::cryptocurrencies"]
+publish = false
+autobenches = false
+autoexamples = false
+
+[features]
+parallel = ["p3-bus/parallel", "p3-maybe-rayon/parallel", "p3-multilinear-util/parallel", "p3-sumcheck/parallel"]
+
+[dependencies]
+hashbrown = { version = "0.17.1" }
+itertools = { version = "0.15.0", default-features = false, features = ["use_alloc"] }
+p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-binary-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-bus = { default-features = false, git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-commit = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-flock = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-lookup = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-matrix = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-multilinear-util = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-security = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-sumcheck = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+postcard = { version = "1.1.3", default-features = false, features = ["alloc"] }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+thiserror = { version = "2.0", default-features = false }
+tracing = { version = "0.1.44", default-features = false, features = ["attributes"] }
+
+[dev-dependencies]
+criterion = { version = "0.8" }
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-binary-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-binary-pcs = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-blake3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-bus = { features = ["diagnostics"], git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-dft = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-keccak = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-keccak-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-monty-31 = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-poseidon2-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-sha256-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-whir = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+proptest = { version = "1.11", default-features = false, features = ["std"] }
+rand = { version = "0.10.1", default-features = false }
+tracing-forest = { version = "0.3.1", features = ["ansi", "smallvec"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["alloc", "std", "env-filter"] }
+
+[profile.release]
+codegen-units = 16
+lto = "thin"
+
+[patch."https://github.com/Plonky3/Plonky3"]
+p3-sumcheck = { path = "../p3-sumcheck" }

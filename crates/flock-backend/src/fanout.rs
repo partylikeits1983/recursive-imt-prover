@@ -42,11 +42,11 @@ pub fn coordinate_widths(
 ) -> Result<Vec<u8>> {
     ensure!(bridge_width >= 119, "unexpected bridge preprocessing");
     let mut widths = vec![64u8; circuit.witness_count as usize + 1];
-    widths[0] = 1; // The native bus reserves ID zero for an absent addend.
+    widths[0] = 0; // The native bus reserves ID zero for an absent addend.
     for op in &circuit.ops {
         match op {
             Op::Const { out, val } => {
-                let bits = (64 - val.to_repr().leading_zeros()).max(1) as u8;
+                let bits = (64 - val.to_repr().leading_zeros()) as u8;
                 widths[out.0 as usize + 1] = widths[out.0 as usize + 1].min(bits);
             }
             Op::Alu {
@@ -86,8 +86,8 @@ pub fn coordinate_widths(
         {
             let a = widths[a.0 as usize + 1];
             let b = widths[b.0 as usize + 1];
-            let c = c.map_or(1, |id| widths[id.0 as usize + 1]);
-            let product = (a + b - 1).min(64);
+            let c = c.map_or(0, |id| widths[id.0 as usize + 1]);
+            let product = product_width(a, b);
             let width = match kind {
                 AluOpKind::Add => a.max(b),
                 AluOpKind::Mul => product,
@@ -101,7 +101,7 @@ pub fn coordinate_widths(
                 AluOpKind::HornerAcc => {
                     let acc = widths
                         [intermediate_out.expect("validated Horner accumulator").0 as usize + 1];
-                    (acc + b - 1).min(64).max(c).max(a)
+                    product_width(acc, b).max(c).max(a)
                 }
             };
             widths[out.0 as usize + 1] = widths[out.0 as usize + 1].min(width);
@@ -138,7 +138,7 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>
         );
         previous = id;
         let shard = match widths[id] {
-            1 => 0,
+            0..=1 => 0,
             2..=16 => 1,
             _ => 2,
         };
@@ -159,4 +159,12 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>
             Arc::new(s)
         })
         .collect())
+}
+
+fn product_width(a: u8, b: u8) -> u8 {
+    if a == 0 || b == 0 {
+        0
+    } else {
+        (a + b - 1).min(64)
+    }
 }

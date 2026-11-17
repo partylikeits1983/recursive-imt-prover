@@ -97,8 +97,12 @@ fn periodic_successor_addresses_match_their_actual_tables() {
 
 #[test]
 fn bounded_coordinates_bind_current_and_successor_openings() {
-    let widths = [vec![1, 8, 1, 16, 64], vec![3, 16]];
-    let shapes = [TableShape::new(8, 5), TableShape::new(4, 2)];
+    let widths = [vec![1, 8, 1, 16, 64], vec![3, 0, 16], vec![0, 0]];
+    let shapes = [
+        TableShape::new(8, 5),
+        TableShape::new(4, 3),
+        TableShape::new(4, 2),
+    ];
     let encodings: Vec<_> = widths
         .iter()
         .map(|v| TableEncoding::new(v.clone()).unwrap())
@@ -116,7 +120,11 @@ fn bounded_coordinates_bind_current_and_successor_openings() {
                     (0..rows).map(move |row| {
                         let raw = ((row as u64 + 1).wrapping_mul(0x9e3779b97f4a7c15))
                             .rotate_left(column as u32 * 7);
-                        F::from_repr(raw & (u64::MAX >> (64 - width)))
+                        F::from_repr(if width == 0 {
+                            0
+                        } else {
+                            raw & (u64::MAX >> (64 - width))
+                        })
                     })
                 })
                 .collect();
@@ -128,7 +136,11 @@ fn bounded_coordinates_bind_current_and_successor_openings() {
             shapes[0],
             vec![OpeningBatch::new(vec![4, 1, 0, 2], vec![3, 2])],
         ),
-        TableSpec::new(shapes[1], vec![OpeningBatch::new(vec![1, 0], vec![0, 1])]),
+        TableSpec::new(
+            shapes[1],
+            vec![OpeningBatch::new(vec![2, 1, 0], vec![0, 1, 2])],
+        ),
+        TableSpec::new(shapes[2], vec![OpeningBatch::new(vec![1, 0], vec![0, 1])]),
     ]);
     let points: Vec<_> = shapes
         .iter()
@@ -180,7 +192,17 @@ fn bounded_coordinates_bind_current_and_successor_openings() {
     }
     // A source column outside its declared subspace must not be truncated into
     // a different statement, including a Boolean column after dense columns.
-    for (table, column) in [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1)] {
+    for (table, column) in [
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (2, 0),
+        (2, 1),
+    ] {
         let mut invalid = tables.clone();
         let rows = 1 << shapes[table].num_variables();
         let mut values: Vec<_> = (0..shapes[table].width())
@@ -190,7 +212,7 @@ fn bounded_coordinates_bind_current_and_successor_openings() {
         invalid[table] = Table::new(RowMajorMatrix::new(values, rows));
         assert!(pcs.commit(invalid, &mut challenger(seed)).is_err());
     }
-    for invalid in [vec![], vec![0], vec![65]] {
+    for invalid in [vec![], vec![65]] {
         assert!(TableEncoding::new(invalid).is_err());
     }
     for (width, column) in [(4, 0), (6, 0)] {
@@ -200,6 +222,7 @@ fn bounded_coordinates_bind_current_and_successor_openings() {
                 vec![OpeningBatch::new(vec![column], vec![])],
             ),
             TableSpec::new(shapes[1], vec![OpeningBatch::new(vec![0], vec![])]),
+            TableSpec::new(shapes[2], vec![OpeningBatch::new(vec![0], vec![])]),
         ]);
         let mut verifier = challenger(seed);
         pcs.observe_commitment(&commitment, &mut verifier);

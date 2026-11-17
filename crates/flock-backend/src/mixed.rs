@@ -231,7 +231,9 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
                         .iter()
                         .map(|&column| {
                             let range = encoding.columns[column].clone();
-                            if encoding.widths[column] == 1 {
+                            if encoding.widths[column] == 0 {
+                                EF::ZERO
+                            } else if encoding.widths[column] == 1 {
                                 values[range.start]
                             } else {
                                 // v(r) = sum_k c_k(r) * embed(e_k)

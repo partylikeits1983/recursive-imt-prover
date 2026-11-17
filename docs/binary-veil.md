@@ -724,6 +724,58 @@ checkpoint openings, and include the GKR reduction in the security ledger.
 Plonky3's inspected `p3-gkr` currently supplies product-tree GKR, not this Keccak
 layer protocol; no such integration is implemented or claimed here.
 
+## Aggregate v4: partitioned tables and bounded opening work
+
+The adapter separates whole fanout ID groups by coordinate width and partitions
+independent arithmetic rows by their fixed per-column bounds. Groups merge under
+a 10% bit-cell budget to reduce opening work; groups just above a padding boundary
+split when this saves at least 25% of padded cells. All original live rows and
+witness-bus occurrences remain. Fixed-zero columns use no coordinates, and only
+bus declarations with an identically zero fixed activation are removed.
+Protocol v4 / backend v6 reject prior aggregate artifacts. The child format,
+Johnson parameters and conditional security floors are unchanged.
+
+The intermediate v3 layout demonstrated why fewer committed cells alone are not
+a latency guarantee: depth-32 N=2 produced a valid 1,872,708-byte aggregate in
+295.82 s, with 262.97 ms decode/verification. That diagnostic was interrupted after
+its first cold sample; it is not a repeated benchmark. A one-second profile
+identified deferred ring-switch suffix-bank sweeps as the hot path. See
+[`flock-partitions-d32-n2-diagnostic.json`](../benchmarks/binary/masked-aggregate/flock-partitions-d32-n2-diagnostic.json).
+
+N=4 initial codewords fell from 10 GiB to 6 GiB, passing the existing 8 GiB guard.
+Both the fine partition and coalesced layout nevertheless exceeded the machine's
+working-memory capacity before producing an aggregate. The coalesced attempt
+reached an observed 46,182,924,032-byte physical footprint (including compressed
+and swapped memory), then macOS killed it under low swap. The four child proofs
+had generated and verified successfully. Raw incomplete reports:
+[`fine partition`](../benchmarks/binary/masked-aggregate/flock-compact-d32-n4-failure.json),
+[`coalesced`](../benchmarks/binary/masked-aggregate/flock-coalesced-d32-n4-failure.json).
+These are failed aggregate attempts, not four-child performance results.
+
+Two narrow patches then address measured or directly identified allocation costs:
+
+- [Deferred openings](../vendor/p3-sumcheck/LOCAL_CHANGES.md) restrict equality
+  sweeps to the fixed-prefix support. Dense differential tests cover the exact
+  Poly64/Poly192 tensor formula, including prefixes extending into suffix banks.
+- [Product-bus materialization](../vendor/p3-multi-stark/LOCAL_CHANGES.md) releases
+  each temporary block after appending it to a preallocated prefix, instead of
+  keeping all blocks and their concatenation alive together.
+
+With these patches, depth-32 N=2 completed three samples and fresh-process
+verification: cold aggregation 58.72 s, warm median 57.50 s (57.29–57.70 s), warm
+decode/verification 114.75 ms (114.32–115.17 ms), and about 1.30 MB per aggregate.
+Fresh verifier setup took 13.18 s and cryptographic verification 117.44 ms.
+The observed peak physical footprint was 26,242,179,008 bytes. Only lightweight
+process-memory reads ran during this benchmark; compilation and profiling were
+excluded. The conditional outer algebraic ledger is 146.55 bits.
+[`Raw three-sample report`](../benchmarks/binary/masked-aggregate/flock-support-d32-n2.json).
+This improves proving over v2 but regresses verification and size; reducing
+openings of redundant public copies is the next optimization.
+
+Neither patch changes verifier equations, proof messages, challenges or security
+parameters. Both vendored crates retain the pinned upstream sources, licenses and
+standalone regression tests; only one source file in each differs from upstream.
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

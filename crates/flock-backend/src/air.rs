@@ -28,6 +28,7 @@ pub struct ImportedAir {
     shard: Option<Arc<FanoutShard>>,
     gates: Option<Arc<GateShard>>,
     successor_bus: String,
+    zero_columns: Vec<bool>,
     log_height: usize,
     constraints: Vec<SymbolicExpression<OldF>>,
     interactions: Vec<SymbolicBusInteraction<OldF>>,
@@ -48,6 +49,11 @@ impl Chip {
         let Self::Native(mut air) = Self::import(source, shard.log_height)? else {
             unreachable!()
         };
+        air.zero_columns = shard.zero_columns.clone();
+        air.interactions.retain(|i| {
+            !matches!(&i.activation, OldActivation::Boolean(v)
+            if fixed_value(v, &air.zero_columns) == Some(OldF::from_repr(0)))
+        });
         air.gates = Some(shard);
         Ok(Self::Native(air))
     }
@@ -84,6 +90,7 @@ impl Chip {
             ),
             shard,
             gates: None,
+            zero_columns: vec![],
             log_height,
             source,
             constraints: symbolic.base_constraints(),
@@ -201,14 +208,14 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                     b.when(last).assert_eq(row[0], row[1]);
                 }
                 for c in &a.constraints {
-                    let value = resolve(c, b, a.successor);
+                    let value = resolve(c, b, a.successor, &a.zero_columns);
                     b.assert_zero(value);
                 }
                 for i in &a.interactions {
                     let fields: Vec<_> = i
                         .fields
                         .iter()
-                        .map(|v| resolve(v, b, a.successor))
+                        .map(|v| resolve(v, b, a.successor, &a.zero_columns))
                         .collect();
                     let activation = match &i.activation {
                         OldActivation::Always => BusActivation::Always,
@@ -217,7 +224,7 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                             OldBoundary::Last => BusBoundary::Last,
                         }),
                         OldActivation::Boolean(v) => {
-                            BusActivation::Boolean(resolve(v, b, a.successor))
+                            BusActivation::Boolean(resolve(v, b, a.successor, &a.zero_columns))
                         }
                     };
                     b.push_bus_interaction(
@@ -266,6 +273,7 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
     e: &SymbolicExpression<OldF>,
     b: &AB,
     successor: bool,
+    zero_columns: &[bool],
 ) -> AB::Expr {
     match e {
         SymbolicExpr::Leaf(leaf) => match leaf {
@@ -280,7 +288,11 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
                     b.main().current(1).unwrap().into()
                 }
                 BaseEntry::Preprocessed { offset: 0 } => {
-                    b.preprocessed().current(v.index).unwrap().into()
+                    if zero_columns.get(v.index) == Some(&true) {
+                        AB::Expr::ZERO
+                    } else {
+                        b.preprocessed().current(v.index).unwrap().into()
+                    }
                 }
                 BaseEntry::Preprocessed { offset: 1 } => {
                     b.preprocessed().next(v.index).unwrap().into()
@@ -289,10 +301,16 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
                 _ => panic!("unsupported trusted AIR variable"),
             },
         },
-        SymbolicExpr::Add { x, y, .. } => resolve(x, b, successor) + resolve(y, b, successor),
-        SymbolicExpr::Sub { x, y, .. } => resolve(x, b, successor) - resolve(y, b, successor),
-        SymbolicExpr::Mul { x, y, .. } => resolve(x, b, successor) * resolve(y, b, successor),
-        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor),
+        SymbolicExpr::Add { x, y, .. } => {
+            resolve(x, b, successor, zero_columns) + resolve(y, b, successor, zero_columns)
+        }
+        SymbolicExpr::Sub { x, y, .. } => {
+            resolve(x, b, successor, zero_columns) - resolve(y, b, successor, zero_columns)
+        }
+        SymbolicExpr::Mul { x, y, .. } => {
+            resolve(x, b, successor, zero_columns) * resolve(y, b, successor, zero_columns)
+        }
+        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor, zero_columns),
     }
 }
 
@@ -308,4 +326,35 @@ pub(crate) fn successor_values<EF: ExtensionField<F>>(point: &[EF]) -> Vec<EF> {
         carry *= x;
     }
     vec![current, next]
+}
+
+// Partial evaluation uses only fixed preprocessing; witness-dependent terms
+// remain unknown. Removing a bus declaration is permitted only for exact zero.
+fn fixed_value(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> Option<OldF> {
+    match e {
+        SymbolicExpr::Leaf(BaseLeaf::Constant(v)) => Some(*v),
+        SymbolicExpr::Leaf(BaseLeaf::Variable(v))
+            if v.entry == (BaseEntry::Preprocessed { offset: 0 })
+                && zero_columns.get(v.index) == Some(&true) =>
+        {
+            Some(OldF::from_repr(0))
+        }
+        SymbolicExpr::Add { x, y, .. } => {
+            Some(fixed_value(x, zero_columns)? + fixed_value(y, zero_columns)?)
+        }
+        SymbolicExpr::Sub { x, y, .. } => {
+            Some(fixed_value(x, zero_columns)? - fixed_value(y, zero_columns)?)
+        }
+        SymbolicExpr::Mul { x, y, .. } => {
+            let x = fixed_value(x, zero_columns);
+            let y = fixed_value(y, zero_columns);
+            if x == Some(OldF::from_repr(0)) || y == Some(OldF::from_repr(0)) {
+                Some(OldF::from_repr(0))
+            } else {
+                Some(x? * y?)
+            }
+        }
+        SymbolicExpr::Neg { x, .. } => Some(-fixed_value(x, zero_columns)?),
+        _ => None,
+    }
 }

@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/flock-backend"]
-exclude = ["vendor/p3-recursion"]
+exclude = ["vendor/p3-recursion", "vendor/p3-sumcheck", "vendor/p3-multi-stark"]
 resolver = "2"
 
 [package]
@@ -80,3 +80,7 @@ wildcard_imports = "warn"
 [[example]]
 name = "binary-upstream"
 path = "vendor/p3-recursion/examples/native_binary_recursion.rs"
+
+[patch."https://github.com/Plonky3/Plonky3"]
+p3-sumcheck = { path = "vendor/p3-sumcheck" }
+p3-multi-stark = { path = "vendor/p3-multi-stark" }

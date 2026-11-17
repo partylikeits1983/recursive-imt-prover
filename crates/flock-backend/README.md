@@ -4,6 +4,10 @@ Final, non-hiding proof backend. Uses the official Plonky3
 [PR #2582](https://github.com/Plonky3/Plonky3/pull/2582) at
 `708900d7a730d6ce4d5421d43e2193f2301920fa` (package version 0.8.0).
 This is an open experimental upstream change, not a released recursion backend.
+Two narrow upstream prover patches avoid retaining all temporary bus blocks and
+restrict deferred opening sweeps to their nonzero support. Their proof equations
+and verifier are unchanged; see [sumcheck](../../vendor/p3-sumcheck/LOCAL_CHANGES.md)
+and [multi-STARK](../../vendor/p3-multi-stark/LOCAL_CHANGES.md).
 
 The application and native circuit compiler stay on 0.9.0-rc.2. `air.rs` imports
 that compiler's actual symbolic constraints, public values, bus declarations and
@@ -21,7 +25,9 @@ Local adaptations:
   use linear expansion and recombination; WHIR and Flock are unchanged.
 - `encoding.rs`: trusted per-column coordinate widths. Keccak bridge values use
   16 coordinates; each preprocessing column uses the highest bit present in the
-  fixed trusted table, with a minimum of one. Unbounded arithmetic values retain
+  fixed trusted table. Zero-width columns reconstruct the constant zero; the
+  prover rejects any nonzero value in them. An entirely zero table has one
+  dummy committed bit column. Unbounded arithmetic values retain
   all 64 coordinates. The prover rejects values outside the declared subspace instead
   of truncating them, and the verifier recombines exactly the declared bits.
   Widths are bound into the verifier identity. They never come from the witness.
@@ -34,8 +40,13 @@ Local adaptations:
 - `gates.rs` groups independent arithmetic rows by their per-column bounds.
   All selectors, constants and witness IDs remain fixed and unchanged. The
   grouping retains every live row; padding has inactive selectors. A group is
-  split once when that saves at least 25% of its padded cells. Compact
+  split once when that saves at least 25% of its padded cells. Groups are merged
+  to reduce opening work, allowing at most 10% more gate coordinates than the
+  initial fine partition. Compact
   byte storage for fixed preprocessing expands losslessly before proving.
+  Preprocessing columns that are identically zero are substituted with zero;
+  bus entries are removed only when their activation is provably zero from
+  that fixed preprocessing. No witness-dependent entry is pruned.
 - The native fanout table's successor read is an extra current-row column.
   A product bus matches `(next row address, next value)` to the following row's
   `(row address, value)`; the final value repeats locally. Public row addresses
@@ -59,7 +70,7 @@ including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
 Tests check exact occurrence preservation, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
-swap across partitions. Aggregate protocol v3 / backend identity v5 reject
+swap across partitions. Aggregate protocol v4 / backend identity v6 reject
 previous aggregate artifacts. Child proof formats and security parameters are
 unchanged.
 

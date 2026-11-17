@@ -14,10 +14,14 @@ fn main() -> io::Result<()> {
         PathBuf::from("rust-toolchain.toml"),
         PathBuf::from(".cargo/config.toml"),
         PathBuf::from("vendor/p3-recursion/Cargo.toml"),
+        PathBuf::from("vendor/p3-sumcheck/Cargo.toml"),
+        PathBuf::from("vendor/p3-multi-stark/Cargo.toml"),
     ];
     collect_sources(&root, Path::new("src"), &mut files)?;
     collect_sources(&root, Path::new("crates/flock-backend/src"), &mut files)?;
     collect_sources(&root, Path::new("vendor/p3-recursion/src"), &mut files)?;
+    collect_sources(&root, Path::new("vendor/p3-sumcheck/src"), &mut files)?;
+    collect_sources(&root, Path::new("vendor/p3-multi-stark/src"), &mut files)?;
     files.sort();
     let mut keccak = Keccak256::new();
     let mut sha3 = Sha3_256::new();

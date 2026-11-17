@@ -210,7 +210,7 @@ impl Prepared {
         }
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
-        identity.update(b"imt-flock-backend-v5/708900d7a730d6ce4d5421d43e2193f2301920fa");
+        identity.update(b"imt-flock-backend-v6/708900d7a730d6ce4d5421d43e2193f2301920fa");
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());
@@ -235,7 +235,7 @@ impl Prepared {
                 pp_encoding.push(TableEncoding::new(
                     coordinates
                         .into_iter()
-                        .map(|v| (64 - v.leading_zeros() as usize).max(1))
+                        .map(|v| 64 - v.leading_zeros() as usize)
                         .collect(),
                 )?);
             } else {

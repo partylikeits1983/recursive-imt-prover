@@ -1285,7 +1285,6 @@ dependencies = [
 [[package]]
 name = "p3-multi-stark"
 version = "0.8.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
 dependencies = [
  "hashbrown",
  "itertools",
@@ -1550,7 +1549,6 @@ dependencies = [
 [[package]]
 name = "p3-sumcheck"
 version = "0.8.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
 dependencies = [
  "itertools",
  "p3-binary-field 0.8.0",
