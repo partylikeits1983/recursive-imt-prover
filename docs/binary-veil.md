@@ -776,6 +776,59 @@ Neither patch changes verifier equations, proof messages, challenges or security
 parameters. Both vendored crates retain the pinned upstream sources, licenses and
 standalone regression tests; only one source file in each differs from upstream.
 
+## Aggregate v5: eliminate redundant public openings
+
+The native public table repeats each public field element on every row and
+constrains it equal to the supplied value. The adapter now verifies that exact
+symbolic form at import and substitutes the public value into every original
+bus field and constraint. The statement and witness-bus declarations remain;
+only uniquely determined committed copies are removed. A single constrained-zero
+placeholder satisfies the PCS table interface. This uses full field values and
+does not depend on assuming that public inputs are small integers.
+
+The transformation has a direct equivalence argument: any old satisfying trace
+has those copies equal to the publics, and any new satisfying trace extends to
+an old one by inserting those copies. The copy bus still binds each public value
+to its corresponding witness ID. Tests reject both a changed public value and a
+nonzero placeholder. Protocol v5 / backend v7 bind the transformed AIR; child
+proofs and security parameters remain unchanged.
+
+Depth-32 N=2, three samples on the same M2 Pro / four-thread configuration:
+
+| Measurement | v5 result |
+|---|---:|
+| Cold aggregation | 58.27 s |
+| Warm aggregation | 60.12 s median; 59.57–60.68 s |
+| Warm verification including decoding | 118.22 ms median; 117.07–119.37 ms |
+| Aggregate size | about 1.29 MB |
+| Fresh verifier setup | 13.15 s |
+| Fresh cryptographic verification | 116.44 ms |
+
+All samples and the independent verifier passed. Public-copy elimination saves
+about 18 KB here but does not materially improve verification latency; the extra
+partitioned AIRs remain a verification tradeoff. The v2 layout's 29 ms result is
+still faster for verification, while v5 reduces initial codewords from 5 GiB to
+3 GiB and warm aggregation from 82.6 s to about 60 s. These are small repeated
+samples on one laptop, not an exhaustive comparison. The 64-child target remains
+unmeasured. [Raw v5 report](../benchmarks/binary/masked-aggregate/flock-public-d32-n2.json).
+
+Depth 16 also passed a single cold end-to-end run and fresh-process verification:
+aggregation 54.55 s, decode/verification 103.11 ms, and a 1,234,514-byte
+aggregate. Child proving was 1.89 s and 1.76 s. This is one cold observation, not a warm comparison.
+[Raw depth-16 report](../benchmarks/binary/masked-aggregate/flock-public-d16-n2.json).
+
+A depth-32 N=4 diagnostic with the same v5 source generated and verified all
+four children, but produced no aggregate. A controller interrupted it after its
+current physical footprint crossed a 40 GiB diagnostic budget; the sampled
+lifetime peak was 45,754,121,536 bytes. This was a controlled SIGINT, not a verifier
+rejection or OS kill. A one-second profile during the attempt showed
+`BusPlan::prove -> PreparedProductGkr::new_owned -> ProductLayers::from_leaves ->
+IdentityPrefix::reduce`. Thus product-bus layer construction remains a concrete
+memory bottleneck after the temporary-allocation patch. The codeword guard alone
+is insufficient to predict working memory. See the
+[incomplete diagnostic report](../benchmarks/binary/masked-aggregate/flock-public-d32-n4-failure.json).
+No successful four- or 64-child aggregate is claimed.
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

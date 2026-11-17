@@ -64,8 +64,11 @@ These requirements do not change when inspecting other implementations.
    for depth-32 N=4 from 10 GiB to 6 GiB. This passes the allocation guard but
    does not bound total prover memory: initial attempts were killed under swap
    pressure. Deferred opening sweeps and product-bus materialization now have
-   narrow upstream optimizations. Measure actual memory and latency before
-   increasing batch limits. Checkpointed Keccak GKR remains a research lead
+   narrow upstream optimizations. A v5 four-child profile still reaches the
+   memory limit while building product-bus GKR layers. Reduce retained bus leaves
+   and layer storage before increasing batch limits; also reduce the number of
+   AIR opening reductions to recover verification speed. Checkpointed Keccak
+   GKR remains a research lead
    (`binary-veil.md`), retaining the 128-bit target and existing hash.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch

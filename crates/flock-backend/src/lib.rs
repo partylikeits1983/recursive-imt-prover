@@ -210,7 +210,7 @@ impl Prepared {
         }
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
-        identity.update(b"imt-flock-backend-v6/708900d7a730d6ce4d5421d43e2193f2301920fa");
+        identity.update(b"imt-flock-backend-v7/708900d7a730d6ce4d5421d43e2193f2301920fa");
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());
@@ -263,6 +263,9 @@ impl Prepared {
             .iter()
             .enumerate()
             .map(|(i, shape)| {
+                if airs[i].is_public_table() {
+                    return TableEncoding::new(vec![0]);
+                }
                 if let Some(gates) = &sources[i].gates {
                     return TableEncoding::new(gates.coordinate_widths.clone());
                 }
@@ -437,6 +440,13 @@ impl Prepared {
                 continue;
             }
             let height = 1 << table.num_variables();
+            if self.airs[i].is_public_table() {
+                tables.push(Some(Table::new(RowMajorMatrix::new(
+                    vec![F::ZERO; height],
+                    height,
+                ))));
+                continue;
+            }
             let mut values: Vec<_> = (0..table.num_polys())
                 .flat_map(|c| {
                     let column = table.column(c);

@@ -25,6 +25,7 @@ pub enum Chip {
 pub struct ImportedAir {
     source: NativeBusCircuitAir<OldF>,
     successor: bool,
+    public_table: bool,
     shard: Option<Arc<FanoutShard>>,
     gates: Option<Arc<GateShard>>,
     successor_bus: String,
@@ -37,6 +38,9 @@ pub struct ImportedAir {
 impl Chip {
     pub fn has_successor(&self) -> bool {
         matches!(self, Self::Native(a) if a.successor)
+    }
+    pub fn is_public_table(&self) -> bool {
+        matches!(self, Self::Native(a) if a.public_table)
     }
     pub fn import(source: NativeBusCircuitAir<OldF>, log_height: usize) -> Result<Self> {
         Self::import_shard(source, log_height, None)
@@ -82,8 +86,24 @@ impl Chip {
             source.preprocessed_next_row_columns().is_empty(),
             "unsupported preprocessing successor"
         );
+        let constraints = symbolic.base_constraints();
+        let public_table = source.num_public_values() > 0;
+        if public_table {
+            ensure!(
+                source.width() == source.num_public_values()
+                    && source.preprocessed_width() == 0
+                    && !successor
+                    && constraints.len() == source.width()
+                    && constraints
+                        .iter()
+                        .enumerate()
+                        .all(|(i, e)| is_public_copy(e, i)),
+                "unexpected native public-copy table"
+            );
+        }
         Ok(Self::Native(Box::new(ImportedAir {
             successor,
+            public_table,
             successor_bus: shard.as_ref().map_or_else(
                 || "imt.successor".to_owned(),
                 |s| format!("imt.successor.{}", s.coordinate_width),
@@ -93,7 +113,7 @@ impl Chip {
             zero_columns: vec![],
             log_height,
             source,
-            constraints: symbolic.base_constraints(),
+            constraints,
             interactions: symbolic.interactions().to_vec(),
         })))
     }
@@ -102,6 +122,7 @@ impl Chip {
 impl BaseAir<F> for Chip {
     fn width(&self) -> usize {
         match self {
+            Self::Native(a) if a.public_table => 1,
             Self::Native(a) => a.source.width() + usize::from(a.successor),
             Self::Keccak { .. } => 232,
         }
@@ -207,15 +228,20 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                     );
                     b.when(last).assert_eq(row[0], row[1]);
                 }
+                if a.public_table {
+                    // The only committed column is a zero placeholder. Original
+                    // main columns were uniquely fixed to public values.
+                    b.assert_zero(b.main().current(0).unwrap());
+                }
                 for c in &a.constraints {
-                    let value = resolve(c, b, a.successor, &a.zero_columns);
+                    let value = resolve(c, b, a.successor, &a.zero_columns, a.public_table);
                     b.assert_zero(value);
                 }
                 for i in &a.interactions {
                     let fields: Vec<_> = i
                         .fields
                         .iter()
-                        .map(|v| resolve(v, b, a.successor, &a.zero_columns))
+                        .map(|v| resolve(v, b, a.successor, &a.zero_columns, a.public_table))
                         .collect();
                     let activation = match &i.activation {
                         OldActivation::Always => BusActivation::Always,
@@ -223,9 +249,13 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                             OldBoundary::First => BusBoundary::First,
                             OldBoundary::Last => BusBoundary::Last,
                         }),
-                        OldActivation::Boolean(v) => {
-                            BusActivation::Boolean(resolve(v, b, a.successor, &a.zero_columns))
-                        }
+                        OldActivation::Boolean(v) => BusActivation::Boolean(resolve(
+                            v,
+                            b,
+                            a.successor,
+                            &a.zero_columns,
+                            a.public_table,
+                        )),
                     };
                     b.push_bus_interaction(
                         BusName::new(&i.bus_name),
@@ -274,6 +304,7 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
     b: &AB,
     successor: bool,
     zero_columns: &[bool],
+    public_table: bool,
 ) -> AB::Expr {
     match e {
         SymbolicExpr::Leaf(leaf) => match leaf {
@@ -282,7 +313,13 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
             BaseLeaf::IsLastRow => b.is_last_row(),
             BaseLeaf::IsTransition => b.is_transition(),
             BaseLeaf::Variable(v) => match v.entry {
-                BaseEntry::Main { offset: 0 } => b.main().current(v.index).unwrap().into(),
+                BaseEntry::Main { offset: 0 } => {
+                    if public_table {
+                        b.public_values()[v.index].into()
+                    } else {
+                        b.main().current(v.index).unwrap().into()
+                    }
+                }
                 BaseEntry::Main { offset: 1 } => {
                     assert!(successor && v.index == 0);
                     b.main().current(1).unwrap().into()
@@ -302,15 +339,18 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
             },
         },
         SymbolicExpr::Add { x, y, .. } => {
-            resolve(x, b, successor, zero_columns) + resolve(y, b, successor, zero_columns)
+            resolve(x, b, successor, zero_columns, public_table)
+                + resolve(y, b, successor, zero_columns, public_table)
         }
         SymbolicExpr::Sub { x, y, .. } => {
-            resolve(x, b, successor, zero_columns) - resolve(y, b, successor, zero_columns)
+            resolve(x, b, successor, zero_columns, public_table)
+                - resolve(y, b, successor, zero_columns, public_table)
         }
         SymbolicExpr::Mul { x, y, .. } => {
-            resolve(x, b, successor, zero_columns) * resolve(y, b, successor, zero_columns)
+            resolve(x, b, successor, zero_columns, public_table)
+                * resolve(y, b, successor, zero_columns, public_table)
         }
-        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor, zero_columns),
+        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor, zero_columns, public_table),
     }
 }
 
@@ -357,4 +397,16 @@ fn fixed_value(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> Option<Ol
         SymbolicExpr::Neg { x, .. } => Some(-fixed_value(x, zero_columns)?),
         _ => None,
     }
+}
+
+// Only eliminate columns whose imported equation is exactly main[i] = public[i].
+// This is substitution of a uniquely fixed value, not dropping a proof obligation.
+fn is_public_copy(e: &SymbolicExpression<OldF>, i: usize) -> bool {
+    let SymbolicExpr::Sub { x, y, .. } = e else {
+        return false;
+    };
+    matches!(x.as_ref(), SymbolicExpr::Leaf(BaseLeaf::Variable(v))
+        if v.entry == (BaseEntry::Main { offset: 0 }) && v.index == i)
+        && matches!(y.as_ref(), SymbolicExpr::Leaf(BaseLeaf::Variable(v))
+            if v.entry == BaseEntry::Public && v.index == i)
 }

@@ -357,6 +357,11 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     for i in 2..bus.airs().len() {
         airs.push(Chip::import(bus.airs()[i].clone(), bus.log_heights()[i]).unwrap());
         let height = 1 << original[i].num_variables();
+        if airs.last().unwrap().is_public_table() {
+            rows.push(RowMajorMatrix::new(vec![F::ZERO; height], 1));
+            publics.push(original_public[i].iter().copied().map(convert).collect());
+            continue;
+        }
         let width = original[i].num_polys();
         let values = (0..height)
             .flat_map(|r| (0..width).map(move |c| (r, c)))
@@ -366,6 +371,14 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         publics.push(original_public[i].iter().copied().map(convert).collect());
     }
     assert_eq!(fanout_diagnostics(&airs, &rows, &publics), (true, true));
+    // Substituting public copies must still bind their values to witness reads.
+    let public_index = airs.iter().position(Chip::is_public_table).unwrap();
+    let mut altered_public = publics.clone();
+    altered_public[public_index][0] += F::ONE;
+    assert!(!fanout_diagnostics(&airs, &rows, &altered_public).1);
+    let mut altered_dummy = rows.clone();
+    altered_dummy[public_index].values[0] = F::ONE;
+    assert!(!fanout_diagnostics(&airs, &altered_dummy, &publics).0);
     // Corrupt a real copy; keeping its successor consistent cannot hide the
     // changed witness-bus multiset or the equality to other copies of this ID.
     for i in 0..shards.len() {

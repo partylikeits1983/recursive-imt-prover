@@ -54,6 +54,13 @@ Local adaptations:
   distinct successor bus, preventing cross-table cancellation. This avoids materializing
   next-row ring-switch tensors. The extra bus arguments are included in the
   security report; successor values are authenticated by those arguments.
+- Public-copy tables are eliminated by exact substitution. Import first checks
+  that every original main column has the equation `main[i] = public[i]`, with
+  no preprocessing or successor reads. All imported bus fields then read the
+  supplied public values directly. One constrained-zero placeholder column
+  remains for the PCS table interface. This removes redundant public openings
+  while preserving their wiring checks; altered public values still unbalance
+  the witness bus.
 - The transcript seed binds imported constraints, bus declarations, dimensions,
   preprocessing, periodic definitions, Flock circuit, protocol and caller domain.
 
@@ -70,7 +77,7 @@ including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
 Tests check exact occurrence preservation, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
-swap across partitions. Aggregate protocol v4 / backend identity v6 reject
+swap across partitions. Aggregate protocol v5 / backend identity v7 reject
 previous aggregate artifacts. Child proof formats and security parameters are
 unchanged.
 
