@@ -29,6 +29,9 @@ pub enum Chip {
 
 pub struct ImportedAir {
     copies: CopySelectors,
+    instances: usize,
+    hash_stride: usize,
+    bindings: Vec<InstanceBinding>,
     source: NativeBusCircuitAir<OldF>,
     successor: bool,
     public_table: bool,
@@ -41,7 +44,43 @@ pub struct ImportedAir {
     interactions: Vec<SymbolicBusInteraction<OldF>>,
 }
 
+struct InstanceBinding {
+    successor_bus: String,
+    bus_names: Vec<String>,
+}
+
 impl Chip {
+    pub fn repeat(&mut self, instances: usize, hash_stride: usize) {
+        if let Self::Native(a) = self {
+            a.instances = instances;
+            a.hash_stride = hash_stride;
+            a.bindings = (0..instances)
+                .map(|instance| InstanceBinding {
+                    successor_bus: format!("{}.{}", a.successor_bus, instance),
+                    bus_names: a
+                        .interactions
+                        .iter()
+                        .map(|i| {
+                            if i.bus_name == "imt.keccak" {
+                                i.bus_name.clone()
+                            } else {
+                                format!("{}.{}", i.bus_name, instance)
+                            }
+                        })
+                        .collect(),
+                })
+                .collect();
+        }
+    }
+
+    pub fn instance_width(&self) -> usize {
+        match self {
+            Self::Native(a) if a.public_table => 1,
+            Self::Native(a) => a.source.width() + usize::from(a.successor),
+            Self::Keccak { .. } => 232,
+        }
+    }
+
     pub fn prune_copies(&mut self, pruner: &mut CopyPruner) -> Result<()> {
         if !matches!(self, Self::Native(a) if a.shard.is_none()) {
             return Ok(());
@@ -49,7 +88,9 @@ impl Chip {
         let pp = self.preprocessed_trace();
         if let Self::Native(a) = self {
             ensure!(
-                a.copies.columns.is_empty() && a.copies.replacements.is_empty(),
+                a.copies.columns.is_empty()
+                    && a.copies.replacements.is_empty()
+                    && a.bindings.is_empty(),
                 "copies already pruned"
             );
             a.copies = pruner.prune(
@@ -178,6 +219,9 @@ impl Chip {
             successor = false;
         }
         Ok(Self::Native(Box::new(ImportedAir {
+            instances: 1,
+            hash_stride: 0,
+            bindings: vec![],
             copies: CopySelectors {
                 columns: vec![],
                 replacements: vec![],
@@ -209,7 +253,7 @@ impl BaseAir<F> for Chip {
     fn width(&self) -> usize {
         match self {
             Self::Native(a) if a.public_table => 1,
-            Self::Native(a) => a.source.width() + usize::from(a.successor),
+            Self::Native(a) => self.instance_width() * a.instances,
             Self::Keccak { .. } => 232,
         }
     }
@@ -256,7 +300,7 @@ impl BaseAir<F> for Chip {
     }
     fn num_public_values(&self) -> usize {
         match self {
-            Self::Native(a) => a.source.num_public_values(),
+            Self::Native(a) => a.source.num_public_values() * a.instances,
             Self::Keccak { .. } => 0,
         }
     }
@@ -317,87 +361,100 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
     fn eval(&self, b: &mut AB) {
         match self {
             Self::Native(a) => {
-                if a.successor {
-                    let row = b.main().current_slice().to_vec();
-                    let addresses = b.periodic_values().to_vec();
-                    // Every next-value is matched to the following row at its unique
-                    // trusted address. The repeat-last endpoint is constrained locally.
-                    let first = b.is_first_row();
-                    let last = b.is_last_row();
-                    b.push_bus_interaction(
-                        BusName::new(&a.successor_bus),
-                        BusDirection::Push,
-                        [addresses[0].into(), row[0].into()],
-                        BusActivation::Boolean(AB::Expr::ONE - first),
-                    );
-                    b.push_bus_interaction(
-                        BusName::new(&a.successor_bus),
-                        BusDirection::Pull,
-                        [addresses[1].into(), row[1].into()],
-                        BusActivation::Boolean(AB::Expr::ONE - last.clone()),
-                    );
-                    b.when(last).assert_eq(row[0], row[1]);
-                }
-                if a.public_table {
-                    // The only committed column is a zero placeholder. Original
-                    // main columns were uniquely fixed to public values.
-                    b.assert_zero(b.main().current(0).unwrap());
-                }
-                for c in &a.constraints {
-                    let value = resolve(c, b, a.successor, &a.preprocessed_map, a.public_table);
-                    b.assert_zero(value);
-                }
-                for (index, i) in a.interactions.iter().enumerate() {
-                    let fields: Vec<_> = i
-                        .fields
-                        .iter()
-                        .map(|v| resolve(v, b, a.successor, &a.preprocessed_map, a.public_table))
-                        .collect();
-                    let activation = if let Some(Some(column)) = a.copies.replacements.get(index) {
-                        let offset = a.preprocessed_map.iter().filter(|c| c.is_some()).count();
-                        BusActivation::Boolean(
-                            b.preprocessed().current(offset + column).unwrap().into(),
-                        )
-                    } else {
-                        match &i.activation {
-                            OldActivation::Always => BusActivation::Always,
-                            OldActivation::Boundary(v) => BusActivation::Boundary(match v {
-                                OldBoundary::First => BusBoundary::First,
-                                OldBoundary::Last => BusBoundary::Last,
-                            }),
-                            OldActivation::Boolean(v) => BusActivation::Boolean(resolve(
-                                v,
-                                b,
-                                a.successor,
-                                &a.preprocessed_map,
-                                a.public_table,
-                            )),
-                        }
+                for instance in 0..a.instances {
+                    let main_offset = instance * self.instance_width();
+                    let binding = a.bindings.get(instance);
+                    let successor_bus =
+                        binding.map_or(a.successor_bus.as_str(), |b| &b.successor_bus);
+                    let bus = |index: usize| {
+                        binding.map_or(a.interactions[index].bus_name.as_str(), |b| {
+                            &b.bus_names[index]
+                        })
                     };
-                    b.push_bus_interaction(
-                        BusName::new(&i.bus_name),
-                        match i.direction {
-                            OldDirection::Push => BusDirection::Push,
-                            OldDirection::Pull => BusDirection::Pull,
-                        },
-                        fields,
-                        activation,
-                    );
-                }
-                if let Some(shard) = &a.shard {
-                    // The first occurrence is the original imported pull.
-                    // Additional occurrences use the SAME constrained value,
-                    // with trusted Boolean selectors for the exact count.
-                    let id = b.preprocessed().current(0).unwrap();
-                    let value = b.main().current(0).unwrap();
-                    for copy in 1..shard.copies_per_row() {
-                        let active = b.preprocessed().current(2 + copy).unwrap();
+                    if a.successor {
+                        let row = b.main().current_slice().to_vec();
+                        let addresses = b.periodic_values().to_vec();
+                        // Every next-value is matched to the following row at its unique
+                        // trusted address. The repeat-last endpoint is constrained locally.
+                        let first = b.is_first_row();
+                        let last = b.is_last_row();
                         b.push_bus_interaction(
-                            BusName::new(&a.interactions[0].bus_name),
-                            BusDirection::Pull,
-                            [id.into(), value.into()],
-                            BusActivation::Boolean(active.into()),
+                            BusName::new(successor_bus),
+                            BusDirection::Push,
+                            [addresses[0].into(), row[main_offset].into()],
+                            BusActivation::Boolean(AB::Expr::ONE - first),
                         );
+                        b.push_bus_interaction(
+                            BusName::new(successor_bus),
+                            BusDirection::Pull,
+                            [addresses[1].into(), row[main_offset + 1].into()],
+                            BusActivation::Boolean(AB::Expr::ONE - last.clone()),
+                        );
+                        b.when(last)
+                            .assert_eq(row[main_offset], row[main_offset + 1]);
+                    }
+                    if a.public_table {
+                        // The only committed column is a zero placeholder. Original
+                        // main columns were uniquely fixed to public values.
+                        b.assert_zero(b.main().current(0).unwrap());
+                    }
+                    for c in &a.constraints {
+                        let value = resolve(c, b, a, instance);
+                        b.assert_zero(value);
+                    }
+                    for (index, i) in a.interactions.iter().enumerate() {
+                        let mut fields: Vec<_> = i
+                            .fields
+                            .iter()
+                            .map(|v| resolve(v, b, a, instance))
+                            .collect();
+                        if i.bus_name == "imt.keccak" {
+                            fields[0] += F::from_repr((instance * a.hash_stride) as u64);
+                        }
+                        let activation = if let Some(Some(column)) =
+                            a.copies.replacements.get(index)
+                        {
+                            let offset = a.preprocessed_map.iter().filter(|c| c.is_some()).count();
+                            BusActivation::Boolean(
+                                b.preprocessed().current(offset + column).unwrap().into(),
+                            )
+                        } else {
+                            match &i.activation {
+                                OldActivation::Always => BusActivation::Always,
+                                OldActivation::Boundary(v) => BusActivation::Boundary(match v {
+                                    OldBoundary::First => BusBoundary::First,
+                                    OldBoundary::Last => BusBoundary::Last,
+                                }),
+                                OldActivation::Boolean(v) => {
+                                    BusActivation::Boolean(resolve(v, b, a, instance))
+                                }
+                            }
+                        };
+                        b.push_bus_interaction(
+                            BusName::new(bus(index)),
+                            match i.direction {
+                                OldDirection::Push => BusDirection::Push,
+                                OldDirection::Pull => BusDirection::Pull,
+                            },
+                            fields,
+                            activation,
+                        );
+                    }
+                    if let Some(shard) = &a.shard {
+                        // The first occurrence is the original imported pull.
+                        // Additional occurrences use the SAME constrained value,
+                        // with trusted Boolean selectors for the exact count.
+                        let id = b.preprocessed().current(0).unwrap();
+                        let value = b.main().current(main_offset).unwrap();
+                        for copy in 1..shard.copies_per_row() {
+                            let active = b.preprocessed().current(2 + copy).unwrap();
+                            b.push_bus_interaction(
+                                BusName::new(bus(0)),
+                                BusDirection::Pull,
+                                [id.into(), value.into()],
+                                BusActivation::Boolean(active.into()),
+                            );
+                        }
                     }
                 }
             }
@@ -452,10 +509,11 @@ fn uses_next_main(e: &SymbolicExpression<OldF>) -> bool {
 fn resolve<AB: BusInteractionBuilder<F = F>>(
     e: &SymbolicExpression<OldF>,
     b: &AB,
-    successor: bool,
-    preprocessed_map: &[Option<usize>],
-    public_table: bool,
+    air: &ImportedAir,
+    instance: usize,
 ) -> AB::Expr {
+    let main_offset = instance * (air.source.width() + usize::from(air.successor));
+    let public_offset = instance * air.source.num_public_values();
     match e {
         SymbolicExpr::Leaf(leaf) => match leaf {
             BaseLeaf::Constant(v) => AB::Expr::from(convert(*v)),
@@ -464,41 +522,38 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
             BaseLeaf::IsTransition => b.is_transition(),
             BaseLeaf::Variable(v) => match v.entry {
                 BaseEntry::Main { offset: 0 } => {
-                    if public_table {
-                        b.public_values()[v.index].into()
+                    if air.public_table {
+                        b.public_values()[public_offset + v.index].into()
                     } else {
-                        b.main().current(v.index).unwrap().into()
+                        b.main().current(main_offset + v.index).unwrap().into()
                     }
                 }
                 BaseEntry::Main { offset: 1 } => {
-                    assert!(successor && v.index == 0);
-                    b.main().current(1).unwrap().into()
+                    assert!(air.successor && v.index == 0);
+                    b.main().current(main_offset + 1).unwrap().into()
                 }
-                BaseEntry::Preprocessed { offset: 0 } => match preprocessed_map[v.index] {
+                BaseEntry::Preprocessed { offset: 0 } => match air.preprocessed_map[v.index] {
                     Some(column) => b.preprocessed().current(column).unwrap().into(),
                     None => AB::Expr::ZERO,
                 },
-                BaseEntry::Preprocessed { offset: 1 } => match preprocessed_map[v.index] {
+                BaseEntry::Preprocessed { offset: 1 } => match air.preprocessed_map[v.index] {
                     Some(column) => b.preprocessed().next(column).unwrap().into(),
                     None => AB::Expr::ZERO,
                 },
-                BaseEntry::Public => b.public_values()[v.index].into(),
+                BaseEntry::Public => b.public_values()[public_offset + v.index].into(),
                 _ => panic!("unsupported trusted AIR variable"),
             },
         },
         SymbolicExpr::Add { x, y, .. } => {
-            resolve(x, b, successor, preprocessed_map, public_table)
-                + resolve(y, b, successor, preprocessed_map, public_table)
+            resolve(x, b, air, instance) + resolve(y, b, air, instance)
         }
         SymbolicExpr::Sub { x, y, .. } => {
-            resolve(x, b, successor, preprocessed_map, public_table)
-                - resolve(y, b, successor, preprocessed_map, public_table)
+            resolve(x, b, air, instance) - resolve(y, b, air, instance)
         }
         SymbolicExpr::Mul { x, y, .. } => {
-            resolve(x, b, successor, preprocessed_map, public_table)
-                * resolve(y, b, successor, preprocessed_map, public_table)
+            resolve(x, b, air, instance) * resolve(y, b, air, instance)
         }
-        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor, preprocessed_map, public_table),
+        SymbolicExpr::Neg { x, .. } => -resolve(x, b, air, instance),
     }
 }
 

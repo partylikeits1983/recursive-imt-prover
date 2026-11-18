@@ -85,6 +85,15 @@ Local adaptations:
 - The transcript seed binds imported constraints, bus declarations, dimensions,
   preprocessing, periodic definitions, Flock circuit, protocol and caller domain.
 
+`Prepared::repeated` compiles one circuit and runs it for each child. Native
+witness columns are concatenated; fixed preprocessing is committed once. Each
+child has distinct witness and successor bus names. Keccak roles use disjoint
+power-of-two ranges in one shared permutation batch. Public values have fixed
+per-child offsets, so swapping children changes the authenticated relation.
+The trusted key still fixes N. Witness and operation guards apply to the single
+template; the aggregate keeps its Keccak-call, codeword and conditional-security
+limits. Verifier AIRs allow up to 8,192 columns for the repeated layout.
+
 The optional `Prepared::new_checkpoint` path encodes one aggregate containing a
 Plonky3 arithmetic multi-STARK and a Keccak GKR subargument, linked through
 authenticated port openings. The final verifier requires no child proofs.
@@ -100,7 +109,7 @@ This is a local encoding argument, not a full proof-system security theorem.
 Tests check retained occurrences, direct pairs, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
 swap across partitions. The checkpoint aggregate uses protocol v7 / backend
-identity v3; Flock retains protocol v6 / backend identity v10. Both export verifier
+identity v4; Flock retains protocol v6 / backend identity v11. Both export verifier
 snapshot v2, rejecting older key snapshots. Child proof formats and security
 parameters are unchanged.
 

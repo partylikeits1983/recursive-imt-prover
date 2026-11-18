@@ -63,10 +63,11 @@ transcripts, polynomial commitments, sumcheck, AIR and consistency checks. The
 aggregate authenticates the exact number and order of `(root, amount)` statements.
 Independent final verification requires no child proofs or original witnesses.
 
-There is one final aggregate verifier. Its trusted key fixes the tree depth and
-batch size. The current circuit instantiates the child verification relation N
-times; reusing one child-verifier template across a batch is a planned optimization,
-not an implemented feature.
+There is one final aggregate verifier. The child-verifier circuit is compiled
+once and reused across the batch, sharing its fixed tables. Every child still
+has separate witness values, wiring checks and public inputs. The trusted key
+fixes the tree depth and batch size; one key accepting arbitrary N is not yet
+implemented.
 
 Two experimental backends implement the outer proof:
 
@@ -88,17 +89,17 @@ are warm medians; fresh verification includes authenticated verifier-key loading
 
 | Backend / children | Aggregation | Proof size | Fresh verification |
 |---|---:|---:|---:|
-| Flock / 2 | 34.6 s | 1.35 MB | 141 ms |
-| Checkpoint / 2 | 27.4 s | 1.75 MB | 153 ms |
+| Flock / 2 | 30.9 s | 1.42 MB | 144 ms |
+| Checkpoint / 2 | 25.1 s | 1.82 MB | 156 ms |
 | Checkpoint / 8 | 202.2 s | 1.91 MB | 187 ms |
 
 Batches through eight have verified end to end. Scaling to 16–64 children remains
-a research target. The eight-child result predates the latest bus-evaluation
+a research target. The eight-child result predates the shared-template
 optimization; it has not been remeasured with that change.
 
-Aggregation remains expensive. Peak physical footprint ranges from about 9.2 GB
+Aggregation remains expensive. Peak physical footprint ranges from about 6.4 GB
 to 35.7 GB, including compressed/swapped memory. Filesystem caches were not reset.
-[Raw measurements, ranges and optimization history](docs/binary-veil.md#affine-bus-round-coefficients).
+[Raw measurements, ranges and optimization history](docs/binary-veil.md#shared-child-verifier-template).
 
 ## Running locally
 

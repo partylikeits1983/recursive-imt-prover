@@ -195,7 +195,8 @@ mod tests {
         )
         .unwrap();
         for (source, &log) in bus.airs().iter().zip(bus.log_heights()) {
-            let air = Chip::import(source.clone(), log).unwrap();
+            let mut air = Chip::import(source.clone(), log).unwrap();
+            air.repeat(3, 8);
             let original = BusSymbolicBuilder::<F, F>::from_air(&air, AirLayout::from_air(&air));
             let snapshot = VerifierAir::capture(&air, log).unwrap();
             let bytes = postcard::to_allocvec(&snapshot).unwrap();

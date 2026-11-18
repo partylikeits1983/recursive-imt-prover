@@ -18,6 +18,7 @@ mod keccak;
 mod known_openings_tests;
 mod mixed;
 mod verifier;
+mod witness;
 
 pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
 #[cfg(test)]
@@ -46,7 +47,7 @@ use p3_multi_stark::{
     MultiStarkProof, ProverInstance, ProverInstances, ProvingKey, VerifierInstance,
     VerifierInstances, VerifyingKey, prove, security_report, setup, verify,
 };
-use p3_sumcheck::{TableShape, layout::Table};
+use p3_sumcheck::TableShape;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::{sync::Arc, time::Instant};
@@ -65,6 +66,7 @@ pub struct Prepared {
     backend: HashBackend,
     checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
+    instances: usize,
     bus: NativeBusCircuit<OldF>,
     airs: Vec<Chip>,
     hash: BooleanCircuit,
@@ -91,6 +93,8 @@ pub struct Geometry {
     pub hash_backend: HashBackend,
     pub checkpoint_codeword_cells: usize,
     pub witnesses: u32,
+    pub template_instances: usize,
+    pub template_witnesses: u32,
     pub single_use_copies_removed: usize,
     pub paired_copy_ids: usize,
     pub fanout_rows_by_width: Vec<(usize, usize)>,
@@ -119,14 +123,24 @@ pub struct Metrics {
 
 impl Prepared {
     pub fn new(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
-        Self::with_backend(circuit, domain, HashBackend::Flock)
+        Self::repeated(circuit, 1, domain, HashBackend::Flock)
     }
 
     pub fn new_checkpoint(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
-        Self::with_backend(circuit, domain, HashBackend::Checkpoint)
+        Self::repeated(circuit, 1, domain, HashBackend::Checkpoint)
     }
 
-    fn with_backend(circuit: Circuit<OldF>, domain: &[u8], backend: HashBackend) -> Result<Self> {
+    pub fn repeated(
+        circuit: Circuit<OldF>,
+        instances: usize,
+        domain: &[u8],
+        backend: HashBackend,
+    ) -> Result<Self> {
+        ensure!((1..=64).contains(&instances), "unsupported instance count");
+        let witnesses = circuit
+            .witness_count
+            .checked_mul(instances as u32)
+            .ok_or_else(|| anyhow::anyhow!("witness count overflow"))?;
         let bus = NativeBusCircuit::with_compact_options(
             &circuit,
             "imt",
@@ -192,9 +206,12 @@ impl Prepared {
             .collect();
         eprintln!("Fanout (coordinate width, copies per row, rows): {fanout_copy_layout:?}");
         ensure!(
-            calls > 0 && calls <= 1 << 20,
+            calls > 0 && calls * instances <= 1 << 20,
             "unsupported Keccak call count"
         );
+        let hash_stride = (2 * calls + 1).next_power_of_two();
+        let calls_per_instance = calls;
+        let calls = calls * instances;
         let hash = keccak::circuit();
         let log_calls = calls.next_power_of_two().trailing_zeros() as usize;
         let log_calls = log_calls.max(4);
@@ -206,9 +223,10 @@ impl Prepared {
             .take(calls)
             .enumerate()
         {
+            let role = (i / calls_per_instance) * hash_stride + 2 * (i % calls_per_instance);
             row.copy_from_slice(&[
-                F::from_repr((2 * i + 1) as u64),
-                F::from_repr((2 * i + 2) as u64),
+                F::from_repr((role + 1) as u64),
+                F::from_repr((role + 2) as u64),
                 F::ONE,
             ]);
         }
@@ -262,6 +280,9 @@ impl Prepared {
             air.prune_copies(&mut copies)?;
         }
         let copy_stats = copies.finish()?;
+        for air in &mut airs {
+            air.repeat(instances, hash_stride);
+        }
         eprintln!(
             "Eliminated {} singleton copies; directly matched {} pairs",
             copy_stats.single_use, copy_stats.pairs
@@ -270,10 +291,10 @@ impl Prepared {
         let mut identity = Keccak256::new();
         identity.update(match backend {
             HashBackend::Flock => {
-                b"imt-flock-backend-v10/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-flock-backend-v11/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
             HashBackend::Checkpoint => {
-                b"imt-checkpoint-backend-v3/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-checkpoint-backend-v4/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
         identity.update((domain.len() as u64).to_le_bytes());
@@ -332,7 +353,7 @@ impl Prepared {
                     return TableEncoding::new(vec![0]);
                 }
                 if let Some(gates) = &sources[i].gates {
-                    return TableEncoding::new(gates.coordinate_widths.clone());
+                    return TableEncoding::new(gates.coordinate_widths.repeat(instances));
                 }
                 let width = if let Some(shard) = &sources[i].shard {
                     shard.coordinate_width
@@ -387,7 +408,7 @@ impl Prepared {
             .iter()
             .map(|a| vec![F::ZERO; a.num_public_values()])
             .collect();
-        let instances = verifier_instances(
+        let security_instances = verifier_instances(
             &airs,
             &hash,
             hash_index,
@@ -396,7 +417,7 @@ impl Prepared {
             &public,
             backend,
         );
-        let report = security_report(&config, &instances)?;
+        let report = security_report(&config, &security_instances)?;
         ensure!(
             report.unassessed_components().is_empty(),
             "unassessed binary security components: {:?}",
@@ -426,9 +447,11 @@ impl Prepared {
         let geometry = Geometry {
             hash_backend: backend,
             checkpoint_codeword_cells,
-            witnesses: circuit.witness_count,
-            single_use_copies_removed: copy_stats.single_use,
-            paired_copy_ids: copy_stats.pairs,
+            witnesses,
+            template_instances: instances,
+            template_witnesses: circuit.witness_count,
+            single_use_copies_removed: copy_stats.single_use * instances,
+            paired_copy_ids: copy_stats.pairs * instances,
             fanout_rows_by_width,
             fanout_copy_layout,
             gate_rows_by_width,
@@ -447,6 +470,7 @@ impl Prepared {
             backend,
             checkpoint,
             circuit,
+            instances,
             bus,
             airs,
             hash,
@@ -469,24 +493,7 @@ impl Prepared {
 
     pub fn prove(&self, public: &[OldF], private: &[OldF]) -> Result<(Vec<u8>, Metrics)> {
         let start = Instant::now();
-        let mut runner = self.circuit.runner();
-        runner.set_public_inputs(public)?;
-        runner.set_private_inputs(private)?;
-        let witness = runner.run_witness()?;
-        let mut source: Vec<_> = self
-            .bus
-            .column_major_tables(&witness)?
-            .into_iter()
-            .map(Some)
-            .collect();
-        drop(witness);
-        // Release the legacy Keccak trace before constructing the selected
-        // hash witness and the partitioned native tables.
-        drop(source[self.source_hash_index].take());
-        let bridge = source[self.source_hash_index + 1].as_ref().unwrap();
-        let rows: Vec<[u64; 100]> = (0..self.calls)
-            .map(|i| core::array::from_fn(|j| bridge.column(j).value(2 * i).to_repr()))
-            .collect();
+        let (mut tables, rows) = self.witness_tables(public, private)?;
         let mut hash_witness = (self.backend == HashBackend::Flock).then(|| {
             Witness::generate(
                 &self.hash,
@@ -510,73 +517,8 @@ impl Prepared {
         } else {
             None
         };
-        let mut hash_table = boundaries.as_ref().map(BoundaryWitness::ports);
+        tables[self.hash_index] = boundaries.as_ref().map(BoundaryWitness::ports);
         drop(rows);
-        let mut tables = Vec::new();
-        for (i, mapping) in self.sources.iter().enumerate() {
-            if i == self.hash_index {
-                tables.push(hash_table.take());
-                continue;
-            }
-            // Table clones share storage. Release each original after its last
-            // partition, avoiding simultaneous retention of both full layouts.
-            let table = source[mapping.index].as_ref().unwrap().clone();
-            if self
-                .sources
-                .get(i + 1)
-                .is_none_or(|next| next.index != mapping.index)
-            {
-                drop(source[mapping.index].take());
-            }
-            if let Some(shard) = &mapping.shard {
-                let height = 1 << shard.log_height;
-                let column = table.column(0);
-                let width = self.airs[i].width();
-                let mut values = vec![F::ZERO; width * height];
-                for (r, row) in shard.rows.iter().enumerate() {
-                    values[r + 1] = convert(column.value(row.source_row as usize));
-                }
-                if self.airs[i].has_successor() {
-                    for r in 0..height {
-                        values[height + r] = values[(r + 1).min(height - 1)];
-                    }
-                }
-                tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
-                continue;
-            }
-            if let Some(shard) = &mapping.gates {
-                let height = 1 << shard.log_height;
-                let mut values = vec![F::ZERO; height * table.num_polys()];
-                for c in 0..table.num_polys() {
-                    let column = table.column(c);
-                    for (r, &source_row) in shard.source_rows.iter().enumerate() {
-                        values[c * height + r] = convert(column.value(source_row as usize));
-                    }
-                }
-                tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
-                continue;
-            }
-            let height = 1 << table.num_variables();
-            if self.airs[i].is_public_table() {
-                tables.push(Some(Table::new(RowMajorMatrix::new(
-                    vec![F::ZERO; height],
-                    height,
-                ))));
-                continue;
-            }
-            let mut values: Vec<_> = (0..table.num_polys())
-                .flat_map(|c| {
-                    let column = table.column(c);
-                    (0..height).map(move |r| convert(column.value(r)))
-                })
-                .collect();
-            if self.airs[i].has_successor() {
-                let column = table.column(0);
-                values.extend((0..height).map(|r| convert(column.value((r + 1).min(height - 1)))));
-            }
-            tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
-        }
-        drop(source);
         let public = self.public(public)?;
         let instances = ProverInstances::new(
             tables
@@ -692,11 +634,21 @@ impl Prepared {
     }
 
     fn public(&self, values: &[OldF]) -> Result<Vec<Vec<F>>> {
-        let original = self.bus.public_values(values)?;
+        ensure!(
+            values.len() == self.circuit.public_flat_len * self.instances,
+            "incorrect public input count"
+        );
+        let values: Vec<_> = values.iter().copied().map(convert).collect();
         Ok(self
-            .sources
+            .airs
             .iter()
-            .map(|s| original[s.index].iter().copied().map(convert).collect())
+            .map(|air| {
+                if air.num_public_values() == 0 {
+                    vec![]
+                } else {
+                    values.clone()
+                }
+            })
             .collect())
     }
 }

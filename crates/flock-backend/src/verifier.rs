@@ -127,7 +127,7 @@ impl Verifier {
         for air in &data.airs {
             ensure!(
                 air.log_height <= 30
-                    && (1..=1024).contains(&air.width)
+                    && (1..=8192).contains(&air.width)
                     && air.preprocessed_width <= 1024
                     && air.public_count <= 4096,
                 "invalid trusted AIR shape"

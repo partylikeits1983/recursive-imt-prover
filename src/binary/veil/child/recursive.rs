@@ -1,7 +1,9 @@
 //! Complete masked-child verification relation. Every input other than the
 //! root/amount is serialized child-proof data, never an original IMT witness.
 use anyhow::{Result, ensure};
-use p3_circuit::{Circuit, CircuitBuilder, ExprId, ops::NativePoly192Target};
+use p3_circuit::{
+    Circuit, CircuitBuilder, CircuitConstructionLimits, ExprId, ops::NativePoly192Target,
+};
 use p3_field::PrimeCharacteristicRing;
 
 use super::{MaskedMembershipProof, PROTOCOL, PreparedMembership};
@@ -41,7 +43,12 @@ impl PreparedMaskedVerifier {
     }
 
     pub fn circuit(&self) -> Result<Circuit<F>> {
-        let mut b = CircuitBuilder::<F>::new();
+        let mut b = CircuitBuilder::<F>::with_construction_limits(CircuitConstructionLimits {
+            max_expression_nodes: 1 << 27,
+            max_pending_connects: 1 << 26,
+            max_non_primitive_calls: 1 << 21,
+            max_non_primitive_slots: 1 << 29,
+        })?;
         b.enable_native_keccak_f1600()?;
         let public = b.alloc_public_input_array::<40>("root-and-amount-bytes");
         self.verify_in(&mut b, public)?;

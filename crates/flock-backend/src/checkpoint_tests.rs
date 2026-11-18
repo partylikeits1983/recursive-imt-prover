@@ -128,3 +128,41 @@ fn flock_backend_still_verifies_with_versioned_snapshot() {
     .unwrap();
     cached.verify(&bytes, &public).unwrap();
 }
+
+#[test]
+fn shared_template_binds_each_instance_and_its_order() {
+    for backend in [HashBackend::Checkpoint, HashBackend::Flock] {
+        let prepared = Prepared::repeated(circuit(), 3, b"shared-template-test", backend).unwrap();
+        let private = (0..600)
+            .map(|i| OldF::from_repr(((i + 1) * 317) as u64 & 0xffff))
+            .collect::<Vec<_>>();
+        let public = public(&private);
+        let (bytes, _) = prepared.prove(&public, &private).unwrap();
+        let key = prepared.export_verifier(b"shared-template").unwrap();
+        let cached = Verifier::from_bytes(
+            &key,
+            &verifier_key_digest(&key),
+            &prepared.identity(),
+            b"shared-template",
+        )
+        .unwrap();
+        cached.verify(&bytes, &public).unwrap();
+        for instance in 0..3 {
+            let mut changed = public.clone();
+            changed[232 * instance] += OldF::from_repr(1);
+            assert!(cached.verify(&bytes, &changed).is_err());
+        }
+        let mut swapped = public.clone();
+        let (first, rest) = swapped.split_at_mut(232);
+        first.swap_with_slice(&mut rest[..232]);
+        assert!(cached.verify(&bytes, &swapped).is_err());
+        assert!(cached.verify(&bytes, &public[..464]).is_err());
+        let mut extra = public.clone();
+        extra.extend_from_slice(&public[..232]);
+        assert!(cached.verify(&bytes, &extra).is_err());
+        let repeated_private = private[..200].repeat(3);
+        let repeated_public = public[..232].repeat(3);
+        let (repeated, _) = prepared.prove(&repeated_public, &repeated_private).unwrap();
+        cached.verify(&repeated, &repeated_public).unwrap();
+    }
+}

@@ -3,11 +3,9 @@ use std::time::Instant;
 
 use anyhow::{Result, ensure};
 use imt_flock_backend::{Geometry, HashBackend, Metrics, Prepared, Verifier};
-use p3_circuit::{CircuitBuilder, CircuitConstructionLimits};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    F,
     child::{MaskedMembershipProof, recursive::PreparedMaskedVerifier},
     parameters::Parameters,
 };
@@ -60,22 +58,10 @@ impl PreparedMaskedAggregate {
         validate_configuration(settings, &parameters)?;
         let binding = configuration_binding(settings, &parameters, backend)?;
         let verifier = PreparedMaskedVerifier::new(settings.depth, parameters)?;
-        let mut b = CircuitBuilder::<F>::with_construction_limits(CircuitConstructionLimits {
-            max_expression_nodes: 1 << 27,
-            max_pending_connects: 1 << 26,
-            max_non_primitive_calls: 1 << 21,
-            max_non_primitive_slots: 1 << 29,
-        })?;
-        b.enable_native_keccak_f1600()?;
-        for _ in 0..settings.batch_size {
-            let public = core::array::from_fn(|_| b.public_input());
-            verifier.verify_in(&mut b, public)?;
-            b.check_construction_limits()?;
-        }
-        let circuit = b.build()?;
+        let circuit = verifier.circuit()?;
         eprintln!(
-            "Complete batch verifier: {} witnesses",
-            circuit.witness_count
+            "Child verifier template: {} witnesses, {} instances",
+            circuit.witness_count, settings.batch_size
         );
         let domain = format!(
             "{}/{}/{}",
@@ -83,10 +69,7 @@ impl PreparedMaskedAggregate {
             settings.depth,
             settings.batch_size
         );
-        let outer = match backend {
-            HashBackend::Flock => Prepared::new(circuit, domain.as_bytes())?,
-            HashBackend::Checkpoint => Prepared::new_checkpoint(circuit, domain.as_bytes())?,
-        };
+        let outer = Prepared::repeated(circuit, settings.batch_size, domain.as_bytes(), backend)?;
         Ok(Self {
             verifier,
             outer,
