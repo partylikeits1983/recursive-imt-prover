@@ -112,8 +112,9 @@ first-aggregation authority; larger inputs use the carried merge authority. Coun
 strictly decrease, and every input carries the same merge authority as the output.
 Final verification derives that authority from its independently trusted key.
 This final check is essential: first aggregates deliberately permit arbitrary
-authority metadata to avoid a setup cycle. The eight-child run exercises both
-branches and rejects a foreign carried authority. See [cyclic design](aggregation-tree.md).
+authority metadata to avoid a setup cycle. The 64-child run exercises both
+branches across five merge levels and rejects a foreign carried authority.
+See [cyclic design](aggregation-tree.md).
 
 Relevant references: [native binary recursion](https://plonky3.github.io/Plonky3-recursion/advanced_topics/binary_fields.html),
 [VEIL](https://blog.succinct.xyz/veil/), and its

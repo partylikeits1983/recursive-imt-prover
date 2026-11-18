@@ -91,11 +91,14 @@ incompatible layouts. This component test does not replace the full tree run.
 
 ## Validation and acceptance
 
-The eight-child run passed: four first aggregates, two four-child merges and one
-eight-child merge reused one merge circuit/key. The final 1,485,890-byte proof
-verified in a fresh process; statement, proof and foreign-authority checks passed.
-The full 64-child acceptance test remains pending.
-[Raw run and timing limitations](../benchmarks/binary/tree-merge/cyclic-eight.json).
+The 64-child integration test passed: 64 real child proofs, 32 first aggregates
+and 31 merges across five levels. The merge circuit was constructed once and its
+key bytes remained identical at every level. They also match the earlier
+eight-child run. The final 1,484,866-byte proof verified in a fresh process with
+only the final proof, ordered statements and trusted verifier files. Invalid
+child statements/proofs, foreign authority, altered statements and damaged
+aggregate encodings were rejected.
+[Raw run and timing limitations](../benchmarks/binary/tree-merge/cyclic-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
@@ -118,5 +121,5 @@ checks fresh-process verification and statement mutations there.
 Acceptance requires 64 real children, 32 first aggregates and 31 merges, one
 merge construction, identical key bytes throughout, and independent final
 verification. Different keys per level do not meet it. Keep resource and security
-guards in place. Stop implementation once this run and its negative tests pass;
-optimization and formal privacy analysis are subsequent work.
+guards in place. This establishes the correctness baseline; the
+[performance targets](development.md#next-work) require further optimization.

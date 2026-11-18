@@ -140,6 +140,22 @@ impl Packing {
 }
 
 impl PackedShard {
+    pub fn geometric_rows(&self) -> usize {
+        self.rows
+            .iter()
+            .filter(|row| {
+                let mut expected = F::from_repr(row.coefficients[0]);
+                row.coefficients[..row.sources.len()]
+                    .iter()
+                    .all(|&coefficient| {
+                        let matches = coefficient == expected.to_repr();
+                        expected *= F::from_repr(2);
+                        matches
+                    })
+            })
+            .count()
+    }
+
     pub fn preprocessing(&self) -> RowMajorMatrix<F> {
         let mut values = vec![F::ZERO; PP_WIDTH * (1 << self.log_height)];
         for (output, row) in values

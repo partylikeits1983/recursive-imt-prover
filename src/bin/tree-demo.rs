@@ -49,6 +49,8 @@ struct Args {
     out: PathBuf,
     #[arg(long)]
     verify: bool,
+    #[arg(long, conflicts_with = "verify")]
+    setup_only: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -125,6 +127,13 @@ fn main() -> Result<()> {
         "full_zk_established": false, "end_to_end_security_bits": null
     });
     write_json(&args.out.join("report.json"), &report)?;
+    if args.setup_only {
+        println!(
+            "{}",
+            json!({"setup_only":true,"report":args.out.join("report.json")})
+        );
+        return Ok(());
+    }
     let t = Instant::now();
     let notes = fixtures(IMT_DEPTH, args.batch_size)?;
     report["fixture_ms"] = json!(ms(t));

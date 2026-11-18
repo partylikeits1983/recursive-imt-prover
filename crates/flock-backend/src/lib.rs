@@ -105,6 +105,7 @@ pub struct Geometry {
     pub template_instances: usize,
     pub template_witnesses: u32,
     pub packed_rows: usize,
+    pub packed_geometric_rows: usize,
     pub packing_intermediates_removed: usize,
     pub single_use_copies_removed: usize,
     pub paired_copy_ids: usize,
@@ -230,6 +231,7 @@ impl Prepared {
             shard.log_height = recursive_layout::PACKED_ROWS_LOG;
         }
         let packed_rows = packing.shard.as_ref().map_or(0, |s| s.rows.len());
+        let packed_geometric_rows = packing.shard.as_ref().map_or(0, |s| s.geometric_rows());
         let packing_intermediates_removed = packing.removed_ids.iter().filter(|&&v| v).count();
         eprintln!(
             "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"
@@ -566,6 +568,7 @@ impl Prepared {
             template_instances: instances,
             template_witnesses: circuit.witness_count,
             packed_rows: packed_rows * instances,
+            packed_geometric_rows: packed_geometric_rows * instances,
             packing_intermediates_removed: packing_intermediates_removed * instances,
             single_use_copies_removed: copy_stats.single_use * instances,
             paired_copy_ids: copy_stats.pairs * instances,

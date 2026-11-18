@@ -1,0 +1,68 @@
+{
+  "description": "Coefficient census for the unchanged cyclic verifier layout; setup only, no proof timing.",
+  "environment": {
+    "compile_time_included": false,
+    "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+    "hardware": "Apple M2 Pro",
+    "legacy_prime_enabled": false,
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "profile": "release",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "release_profile": {
+      "codegen_units": 16,
+      "lto": "thin"
+    },
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags_runtime": "",
+    "source_keccak256": "46286d48596df5309f1939deff30276f65011ba855ea82918cbb4a465f5acb77",
+    "threads": 4
+  },
+  "setup_ms": {
+    "child": 18.720125,
+    "first_aggregation": 11514.700625,
+    "merge": 22465.056333
+  },
+  "circuits": {
+    "first_aggregation": {
+      "template_instances": 2,
+      "template_witnesses": 7290252,
+      "packed_rows": 73538,
+      "packed_geometric_rows": 61774,
+      "initial_codeword_cells": 553648128,
+      "main_codeword_cells": 268435456,
+      "preprocessed_codeword_cells": 268435456
+    },
+    "merge": {
+      "template_instances": 2,
+      "template_witnesses": 15333091,
+      "packed_rows": 585856,
+      "packed_geometric_rows": 584168,
+      "initial_codeword_cells": 553648128,
+      "main_codeword_cells": 268435456,
+      "preprocessed_codeword_cells": 268435456
+    }
+  },
+  "same_first_key_as_64_child_baseline": true,
+  "same_merge_key_as_64_child_baseline": true,
+  "process": {
+    "command": [
+      "target/release/tree-demo",
+      "--setup-only",
+      "--batch-size",
+      "8",
+      "--threads",
+      "4",
+      "--out",
+      "run/cyclic-layout-census-a"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 36.65333420899697,
+    "peak_tree_physical_footprint_bytes": 16233194112,
+    "peak_single_process_physical_footprint_bytes": 16227999104,
+    "stopped_at_40_gib_budget": false
+  }
+}

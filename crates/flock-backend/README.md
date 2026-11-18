@@ -231,8 +231,8 @@ encodings rather than dimensions alone. Capacity overflow is rejected.
 
 The cyclic tree pins the first-aggregation authority for count-two inputs and
 uses its carried merge authority for larger inputs. Final verification derives
-the expected authority from an independently trusted key. Eight children have
-passed two merge levels with one circuit/key; the 64-child acceptance run is pending.
+the expected authority from an independently trusted key. The 64-child acceptance
+run passed all five merge levels with one circuit/key and independent final verification.
 
 The shared boundary PCS wrappers live beside the backend's Keccak verifier;
 `src/binary/checkpoint.rs` re-exports the component interfaces. Checkpoint v6 uses

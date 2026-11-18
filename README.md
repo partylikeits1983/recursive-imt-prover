@@ -18,7 +18,7 @@ real funds. No on-chain verifier.
 |---|---|---|
 | IMT child | Prove private membership in a depth-32 Keccak IMT | Implemented with experimental masking |
 | First aggregation | Verify two child proofs and produce a standard aggregate | Implemented in the common recursive format |
-| Recursive merge | Verify two aggregates and produce another aggregate | Same circuit/key verified at two levels with eight children; 64-child test pending |
+| Recursive merge | Verify two aggregates and produce another aggregate | One circuit/key verified across all five levels of a 64-child tree |
 
 ```text
 64 IMT children → 32 first aggregates → 16 → 8 → 4 → 2 → 1
@@ -39,13 +39,11 @@ statements are valid. Spending, spent-nullifier tracking and accepted-root histo
 scope.
 
 The tree is designed for balanced batches of 2, 4, 8, 16, 32 or 64 children.
-`tree-demo` has verified eight children end to end: four first aggregates, two
-four-child merges and one eight-child merge, using one merge circuit/key.
-Fresh-process verification and statement, proof and authority rejection checks
-passed. Completion requires the 64-child integration test using the exact same
-merge circuit/key at all five higher levels, followed by fresh-process verification
-and tamper tests. A tree with different merge keys per level does not meet this test.
-See the [implementation plan](docs/aggregation-tree.md).
+The 64-child integration test passed: 64 children, 32 first aggregates and 31
+merges, with one merge circuit/key across all five higher levels. Independent
+final verification and statement, proof and authority rejection checks passed.
+The key bytes also match the earlier eight-child run.
+See the [architecture and acceptance test](docs/aggregation-tree.md).
 
 Aggregates are intentionally non-ZK. Their inputs are child proofs and public
 statements; they add no privacy guarantee beyond the child construction.
@@ -118,39 +116,28 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-The eight-child cyclic correctness run produced a **1,485,890-byte** final proof.
-Native verification took 121 ms; fresh-process verification took 134 ms including
-startup and trusted-key loading. Its three merges took 42.7–50.4 s each. Peak
-physical footprint was 25.5 GB, including compressed/swapped memory. Concurrent
-compilation affected the first-aggregation phase, so this is not a controlled
-performance comparison. [Raw run](benchmarks/binary/tree-merge/cyclic-eight.json).
+The 64-child correctness run used an Apple M2 Pro with four threads. These are
+per-proof medians and ranges within one sequential run, excluding compilation:
 
-Earlier fixed-source-key depth-32 measurements on an Apple M2 Pro.
-These precede the normalized cyclic format and do not measure same-key recursion.
-Each row uses one cold and two warm samples; aggregation is the warm median.
-Fresh verification includes process startup and authenticated verifier-key loading.
+| Operation | Median | Range |
+|---|---:|---:|
+| Child proving (64 proofs) | 4.07 s | 3.39–4.89 s |
+| First aggregation (32 proofs) | 46.15 s | 42.94–51.59 s |
+| Merge (31 proofs) | 45.55 s | 43.66–54.12 s |
 
-| Backend / children | Threads | Aggregation | Aggregate size | Fresh verification |
-|---|---:|---:|---:|---:|
-| Checkpoint tree pair / 2 | 4 | 20.6 s | 1.42 MB | 150 ms |
-| Checkpoint merge / 4 | 8 | 28.9 s | 1.37 MB | 124 ms |
+The final proof is **1,484,866 bytes**. Native verification took 121 ms;
+fresh-process verification took 135 ms including startup and trusted-key loading.
+Proof sizes exclude public statements and trusted verifier data. Peak physical
+footprint was 25.5 GB, including compressed/swapped memory. A short profiling
+sample overlapped the first merge level; this was not a controlled performance comparison.
+[Raw measurements and test results](benchmarks/binary/tree-merge/cyclic-sixty-four.json).
 
-Children took 3.1–3.3 s warm and 3.3–3.9 s cold, producing approximately 1.13 MB
-proofs. Aggregation excludes setup: 6.4 s for the pair and 17.8 s for the merge.
-The merge consumes two already-created first aggregates; its timing excludes
-child and first-aggregate proving. Warm merges ranged from 28.8–28.9 s.
-
-Packing linear constraints reduced the merge's initial codeword cells from
-688 million to 419 million. Fused extension multiplication removes a redundant
-addition. Peak physical footprint was 14.9 GB (6.87 GB maximum RSS), including
-compressed/swapped memory. A separate comparison using identical source proofs
-measured 34.8 s with four threads and 26.4 s with eight, producing identical proof
-bytes. Timings vary on this shared machine.
-
-Both aggregate sizes meet the 1.5 MB target. The 1 MB and sub-10-second targets
-remain unmet; a tree speed advantage has not been demonstrated. Compilation is
-excluded; filesystem caches were not reset.
-[Raw measurements and optimization history](docs/binary-veil.md#four-child-tree-merge).
+The 63 aggregation operations took 48.9 minutes in total. Full sequential elapsed
+time was 54.5 minutes excluding negative-test overhead, or 55.4 minutes including
+it. Targets are **at most 10 s per merge and 60 s for 64-to-1 aggregation**, ideally
+30 s. These remain unmet. The proof meets the 1.5 MB target; 1 MB remains a target.
+[Earlier benchmarks and optimization history](docs/binary-veil.md#four-child-tree-merge)
+use different verifier layouts and do not measure the current reusable circuit.
 
 ## Running locally
 

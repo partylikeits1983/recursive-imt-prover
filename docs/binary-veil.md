@@ -64,9 +64,9 @@ The new `--tree-pair` format verifies two children and authenticates a fixed-siz
 Keccak commitment plus count. Both template instances bind the same parent and
 have fixed left/right roles. The full ordered public list remains available.
 `tree-demo` adds the cyclic format: first aggregation and merge share a fixed
-verifier layout and carry authenticated merge-authority metadata. Eight children
-have passed two merge levels with one circuit/key, including fresh verification.
-The 64-child acceptance test remains pending; see the
+verifier layout and carry authenticated merge-authority metadata. The 64-child
+integration test passed five merge levels with one circuit/key, including
+independent final verification and tamper checks; see the
 [three-circuit design](aggregation-tree.md).
 
 The backend imports actual symbolic constraints and product-bus declarations.
@@ -97,20 +97,42 @@ See [the backend implementation](../crates/flock-backend/README.md).
 - Encode aggregate field elements at fixed width and use outer rate 1/4 to reduce
   opening traffic. Johnson, the PCS target and the conditional floor are unchanged.
 
-## Cyclic eight-child tree
+## Cyclic 64-child tree
 
-The correctness run creates eight independent depth-32 child proofs, four first
-aggregates, two four-child merges and one eight-child merge. The merge circuit
-is built once; the same key verifies all three merge proofs. The final proof is
-1,485,890 bytes, with 121 ms native verification and 134 ms fresh-process wall time.
-Statement, proof and foreign-authority rejection checks pass.
+The integration test passed with 64 independent depth-32 child proofs, 32 first
+aggregates and 31 merges across five levels. One merge circuit was built and its
+exact key bytes were reused throughout. The final proof is 1,484,866 bytes, with
+121.145 ms native verification and 135.490 ms fresh-process wall time. A separate
+directory containing only the final proof, ordered statements and trusted key
+files also passed fresh verification and rejected statement mutations.
 
-The normalized format uses 553,648,128 initial codeword cells. Merge times were
-42.7, 43.1 and 50.4 seconds on four threads. Peak physical footprint was 25.5 GB,
-including compressed/swapped memory. Concurrent compilation overlapped the first
-aggregation phase and was stopped; this is not a controlled timing comparison.
-The common format trades some cost for exact key reuse.
-[Raw run](../benchmarks/binary/tree-merge/cyclic-eight.json).
+Apple M2 Pro, 16 GiB RAM, Rust 1.98.1, release with thin LTO and four threads:
+
+| Operation | Median | Range |
+|---|---:|---:|
+| Child proving (64 proofs) | 4.066 s | 3.390–4.893 s |
+| First aggregation (32 proofs) | 46.152 s | 42.941–51.590 s |
+| Merge (31 proofs) | 45.552 s | 43.663–54.122 s |
+| Warm merges (after the first) | 45.532 s | 43.663–54.122 s |
+
+First-aggregation setup took 13.182 s; merge setup took 29.793 s. The first
+normal pair followed an additional foreign-authority proof used for rejection
+testing. Aggregation times include witness import, witness generation, proving
+and native verification, but exclude setup and child generation. These are
+per-node statistics from one serial tree, not repeated full-tree measurements.
+
+The 63 aggregation operations total 2,933.576 s. Full serial elapsed time was
+3,270.401 s excluding negative-test overhead, or 3,324.149 s including it.
+All aggregate proofs were 1,484,802–1,487,522 bytes. The fixed format uses
+553,648,128 initial codeword cells. Peak process-tree physical footprint was
+25.456 GB, including compressed/swapped memory; maximum prover RSS was 7.904 GB.
+A 45-second stack sample overlapped first-level merges, so this is a correctness
+baseline rather than a controlled performance comparison. Compilation is excluded.
+[Raw measurements, environment and checks](../benchmarks/binary/tree-merge/cyclic-sixty-four.json).
+
+The final key is byte-identical to the earlier eight-child run, whose final proof
+was 1,485,890 bytes. That run had concurrent compilation during the first stage.
+[Earlier eight-child run](../benchmarks/binary/tree-merge/cyclic-eight.json).
 
 ## Four-child tree merge
 
@@ -331,7 +353,9 @@ to reject them. The old Flock path also verifies through the new key format.
 Verifier snapshot `imt-binary-trusted-verifier-v4` authenticates the selected
 backend along with the constraints, preprocessing, coordinate layout and
 authority. Earlier snapshots and previous aggregate formats are deliberately
-rejected. Trusted key/digest provisioning remains unchanged. Recursive merging through 64 children and joint child statistical-ZK analysis remain open.
+rejected. Trusted key/digest provisioning remains unchanged. The later cyclic
+64-child run above completes recursive composition; joint child statistical-ZK
+analysis remains open.
 
 ### Fixed-width checkpoint transcript regression
 

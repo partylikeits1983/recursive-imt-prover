@@ -88,8 +88,8 @@ half-distance cap. See [security accounting](binary-security.md).
 3. **Recursive merge:** constrain two aggregate verifiers and combine their
    statements. First aggregation and merge now share a fixed verifier layout.
    The cyclic implementation carries authenticated verifier data so one merge
-   circuit can verify its own outputs. An eight-child run has verified two merge
-   levels with the same circuit/key; the 64-child test is still pending.
+   circuit can verify its own outputs. The 64-child integration test passed all
+   five merge levels with the same circuit/key and independent final verification.
 
 Statement commitments are:
 
@@ -169,10 +169,11 @@ counts, proof encoding and authority are rejected. The real depth-32 source
 proof also passes the verifier circuit directly; changed public data fails.
 See the [merge measurements](binary-veil.md#four-child-tree-merge).
 
-The cyclic eight-child run also passes independent final verification with one
-merge circuit/key reused at both higher levels. It rejects altered statements,
-ordering, counts, proof encodings and a foreign carried authority.
-[Raw cyclic run](../benchmarks/binary/tree-merge/cyclic-eight.json).
+The cyclic 64-child integration test passes independent final verification with
+one merge circuit/key reused at all five higher levels. It rejects invalid child
+proofs, altered statements, ordering, counts, proof encodings and a foreign
+carried authority. The final key bytes match the earlier eight-child run.
+[Raw cyclic run](../benchmarks/binary/tree-merge/cyclic-sixty-four.json).
 
 ## What might be publishable?
 
@@ -194,5 +195,5 @@ to investigate are the precise binary-field masking adaptation, the authenticate
 Keccak GKR/port link, and bounded cyclic recursion at these parameters. A paper
 would need a clear distinction from prior work, a completed construction, security
 arguments for any new protocol, and matched-security benchmarks with ablations.
-The current evidence supports implementation results, not a claim of a new ZK
-theorem or completion of the 64-child acceptance test.
+The 64-child acceptance test establishes an implementation result, not a new ZK
+theorem. The low-latency proving targets remain unmet.
