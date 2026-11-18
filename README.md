@@ -1,64 +1,146 @@
 # recursive-imt-prover
 
-Research PoC: private Keccak IMT membership candidates over binary fields,
-aggregated into one non-ZK proof authenticating the ordered roots and amounts.
-No on-chain verifier.
+**Recursive IMT membership proofs over binary fields, with experimental statistical ZK.**
 
-The masked child path uses **Poly64/Poly192, Keccak-256, additive WHIR and
-VEIL-style statistical masking**. The aggregate proves the complete child
-verification relation with Plonky3's native product bus and Flock Keccak circuits.
-The aggregator receives child proofs and public statements only.
+A research proof of concept for aggregating Keccak-256 incremental Merkle tree
+(IMT) membership proofs into one proof authenticating an ordered list of public
+roots and amounts. Each child proves a private note-preimage and membership
+relation. The aggregator receives child proofs and public statements, never the
+original private witnesses.
 
-**Experimental security:** Johnson bounds and conservative algebraic budgets
-support a 128-bit classical target. Joint statistical ZK, Fiat–Shamir knowledge
-soundness and end-to-end 128-bit security still need review. Do not use this PoC
-for real funds. The child privacy claim is a candidate, not an established theorem.
+**Status:** Experimental. Child statistical zero knowledge and end-to-end
+128-bit security have not been established. Not suitable for production or
+real funds. No on-chain verifier.
 
-Requires Rust 1.98.1. Use fresh output directories; default: four threads.
+## How it works
+
+### Child proofs
+
+Given a public root and amount, the child relation asserts knowledge of a secret,
+nonce and authentication path satisfying:
+
+```text
+leaf = Keccak256(
+    "IMT-KECCAK-LEAF1" || secret[32] || amount_u64_le || nonce[32]
+)
+
+parent = Keccak256(
+    "IMT-KECCAK-NODE1" || left[32] || right[32]
+)
+
+MerkleRoot(leaf, path, leaf_index) == root
+```
+
+Domain tags are fixed ASCII bytes, without a terminator. The amount is exactly
+eight bytes in little-endian order. The tree is binary and append-only; the
+masked proof path supports depths 16 and 32.
+
+| Public inputs | Private witness |
+|---|---|
+| Merkle root | Secret (32 bytes) |
+| Amount (u64) | Nonce (32 bytes) |
+| | Merkle siblings |
+| | Leaf index / path directions |
+
+Children use **Poly64/Poly192**, Keccak-256, additive WHIR and VEIL-inspired
+masking. The intended privacy property is statistical zero knowledge; its joint
+security argument remains unfinished. Johnson bounds and conservative algebraic
+budgets support a **128-bit classical target**, not an established end-to-end
+security guarantee.
+
+### Recursive aggregation
+
+```text
+Child proof 1 ──┐
+Child proof 2 ──┤
+Child proof 3 ──┼── Recursive verifier ── Aggregate proof
+       ...     │
+Child proof N ──┘
+```
+
+The recursive circuit constrains the complete child verification relation:
+transcripts, polynomial commitments, sumcheck, AIR and consistency checks. The
+aggregate authenticates the exact number and order of `(root, amount)` statements.
+Independent final verification requires no child proofs or original witnesses.
+
+There is one final aggregate verifier. Its trusted key fixes the tree depth and
+batch size. The current circuit instantiates the child verification relation N
+times; reusing one child-verifier template across a batch is a planned optimization,
+not an implemented feature.
+
+Two experimental backends implement the outer proof:
+
+- **Flock (default):** Plonky3 native product bus with Flock Keccak circuits.
+- **Checkpoint:** The same arithmetic verifier with a linked Keccak GKR argument
+  and authenticated openings binding it to the arithmetic proof.
+
+The aggregate is intentionally non-ZK. Child proofs can be sent directly to the
+aggregator; publication is not required. The outer proof adds no privacy guarantee
+beyond the child construction.
+
+Children may use different roots. Accepted-root history, spending and nullifiers
+are outside scope; this PoC proves membership relative to the supplied roots.
+
+## Benchmarks
+
+Depth-32 measurements on an Apple M2 Pro with four threads. Aggregation figures
+are warm medians; fresh verification includes authenticated verifier-key loading.
+
+| Backend / children | Aggregation | Proof size | Fresh verification |
+|---|---:|---:|---:|
+| Flock / 2 | 34.6 s | 1.35 MB | 141 ms |
+| Checkpoint / 2 | 27.4 s | 1.75 MB | 153 ms |
+| Checkpoint / 8 | 202.2 s | 1.91 MB | 187 ms |
+
+Batches through eight have verified end to end. Scaling to 16–64 children remains
+a research target. The eight-child result predates the latest bus-evaluation
+optimization; it has not been remeasured with that change.
+
+Aggregation remains expensive. Peak physical footprint ranges from about 9.2 GB
+to 35.7 GB, including compressed/swapped memory. Filesystem caches were not reset.
+[Raw measurements, ranges and optimization history](docs/binary-veil.md#affine-bus-round-coefficients).
+
+## Running locally
+
+Requires Rust 1.98.1. The default is four threads; use fresh output directories.
 
 ```sh
 cargo test --locked --release --workspace
+
+# Two masked children and one aggregate; verify again in a fresh process.
 cargo run --locked --release --bin masked-demo -- --depth 16 --batch-size 2 --out run/masked16
 cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --out run/masked32
-# Repeated benchmark, excluding compilation and separating cold/warm samples:
-cargo run --locked --release --bin masked-demo -- --depth 16 --batch-size 2 --samples 3 --out run/bench
-# Eight-child comparison using the linked Keccak GKR backend:
+
+# Repeated checkpoint benchmark, separating cold and warm samples.
+cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --samples 3 --keccak-backend checkpoint --out run/bench
+
+# Eight-child checkpoint benchmark; substantial memory required.
 cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 8 --keccak-backend checkpoint --out run/eight
-# Independent verification; keep verifier.key with the trusted data:
+
+# Independent verification of saved artifacts.
 cargo run --locked --release --bin masked-demo -- --verify --out run/masked16
 ```
 
-Depths: 16/32. Batches through eight have verified end to end. Batches 16–64
-remain a scaling target; current construction and memory limits restrict them.
-Reports include per-child timings, aggregation, verification, proof sizes and RSS.
-Depth-32 measurements on an M2 Pro with four threads:
+The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
+and a timing report. Keep the verifier key and `trusted.json` with independently
+trusted verifier data. A key and matching digest supplied only by an untrusted
+prover do not establish authority.
 
-| Backend / children | Aggregation | Proof | Fresh verification |
-|---|---:|---:|---:|
-| Flock / 2 | 34.6 s warm median | 1.35 MB | 141 ms |
-| Checkpoint / 2 | 27.4 s warm median | 1.75 MB | 153 ms |
-| Checkpoint / 8 | 202.2 s warm median | 1.91 MB | 187 ms |
+`demo` and `bench` retain the original **non-ZK child** baseline.
+`masked-demo --components` produces a diagnostic proof bundle, not one aggregate.
 
-Proving remains above the latency target. Peak physical footprint, including
-compressed/swapped memory, ranges from 9.2 GB for checkpoint N=2 to about
-35.7 GB for N=8. [Raw measurements and limits](docs/binary-veil.md#affine-bus-round-coefficients).
-Fresh verification includes authenticated key loading; filesystem caches were
-not reset. Keep `verifier.key` and independently trusted `trusted.json` (v2).
-A key/digest pair supplied by an untrusted prover is insufficient.
+## Implementation and dependencies
 
-`demo` / `bench` retain the original **non-ZK child** baseline.
-`masked-demo --components` is a diagnostic bundle, not a single aggregate.
-Both aggregate backends remain experimental. Flock is the default; checkpoint
-uses a linked Keccak GKR argument and is the measured eight-child path.
-
-[Implementation and remaining work](docs/development.md) ·
+[Development map](docs/development.md) ·
 [Masking and aggregation report](docs/binary-veil.md) ·
 [Security limitations](docs/binary-security.md)
 
-Pins: Plonky3 `=0.9.0-rc.2` (`fe5e46d755b8a7d9069778361e21b33e5978b377`);
-recursion `3a69ba61f713c8400b14eb3d8f0e52caa13512c7`;
-experimental Flock backend [PR #2582](https://github.com/Plonky3/Plonky3/pull/2582)
-`708900d7a730d6ce4d5421d43e2193f2301920fa`.
-[Recursion patches](vendor/p3-recursion/LOCAL_CHANGES.md) and
-[Flock adapter](crates/flock-backend/README.md), including its narrow upstream
-prover patches, document local changes.
+Pinned revisions:
+
+- Plonky3 `=0.9.0-rc.2`: `fe5e46d755b8a7d9069778361e21b33e5978b377`.
+- Plonky3-recursion: `3a69ba61f713c8400b14eb3d8f0e52caa13512c7`.
+- Experimental Flock [PR #2582](https://github.com/Plonky3/Plonky3/pull/2582):
+  `708900d7a730d6ce4d5421d43e2193f2301920fa`.
+
+[Recursion patches](vendor/p3-recursion/LOCAL_CHANGES.md) and the
+[Flock adapter](crates/flock-backend/README.md) document local upstream changes.
