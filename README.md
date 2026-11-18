@@ -29,14 +29,14 @@ cargo run --locked --release --bin masked-demo -- --verify --out run/masked16
 Depths: 16/32. Batch schema: powers of two through 64; construction and memory
 limits apply. Large batches are a scaling target, not a measured capability.
 Reports record per-child timings, aggregation, verification, proof sizes and RSS.
-On an M2 Pro with four threads, depth-32 aggregation takes **54.2 s for N=2**
-(warm median) and **135.7 s for N=4** (one cold sample). Aggregate sizes are
-1.29/1.33 MB. Proving remains above the latency target; N=4 used 43.4 GB peak
+On an M2 Pro with four threads, depth-32 aggregation takes **55.7 s for N=2**
+(warm median) and **129.8 s for N=4** (one cold sample). Aggregate sizes are
+1.29/1.33 MB. Proving remains above the latency target; N=4 used 40.5 GB peak
 physical footprint, including compressed/swapped memory.
 
-Fresh verification loads a compact authenticated key: **138 ms for N=2** and
-**140 ms median for N=4**, using about 34 MB RSS. The first measured N=4 launch
-took 888 ms; later launches took 138–144 ms. Keep `verifier.key` and independently
+Fresh verification loads a compact authenticated key: **141 ms for N=2** and
+**154 ms for N=4** in the latest runs, using about 34 MB RSS. Filesystem caches
+were not reset. Keep `verifier.key` and independently
 trusted `trusted.json`; a key/digest pair supplied by an untrusted prover is
 insufficient. [Raw measurements and limits](docs/binary-veil.md#authenticated-verifier-only-loading).
 

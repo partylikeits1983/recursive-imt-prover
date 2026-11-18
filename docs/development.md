@@ -59,10 +59,11 @@ These requirements do not change when inspecting other implementations.
    trusted setup and final verification. Profile before changing the design;
    compare a recursion tree only if the fixed batch hits a measured limit.
    Depth-32 N=4 now completes end to end, with 6 GiB of initial codewords and
-   about 43.4 GB peak physical footprint including compressed/swapped pages.
+   about 40.5 GB peak physical footprint including compressed/swapped pages.
    The local prover patches regenerate product-bus leaves, factor equality
    weights, omit fixed-zero preprocessing columns and release unused folded
-   capacity. Larger batches still need lower simultaneous sumcheck storage;
+   capacity; large bus columns defer their first extension-field allocation.
+   Larger batches still need lower simultaneous sumcheck storage;
    the current construction/codeword guards remain in place. Authenticated
    verifier snapshots now avoid rebuilding proving tables: a fresh N=4 verifier
    takes about 140 ms total and 34 MB RSS. Reduce AIR opening reductions and

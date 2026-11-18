@@ -66,3 +66,15 @@ preprocessing commitment and verifier metadata only, never proving tables.
 It does not change aggregate proof encoding, transcript messages or equations.
 The application authenticates the complete verifier snapshot before decoding it
 and checks its configuration binding, authority identity and algebraic budget.
+
+`src/bus/composition.rs`: committed columns with at least 65,536 rows defer
+materializing their first extension-field fold. They retain the borrowed base
+column and the first challenge, evaluating the same line on demand. The second
+fold writes the quarter-height table directly, avoiding the larger intermediate
+allocation. Packed Boolean columns use the existing four-value interpolation
+identity. Subsequent folds and affine projections are unchanged.
+
+`src/bus/deferred_tests.rs` compares every remaining evaluation and round with
+dense folding for both Poly64/Poly192 and a prime-field extension, including
+packed columns and zero/one challenges. Aggregate equations, parameters, proof
+encoding and verifier behavior are unchanged.

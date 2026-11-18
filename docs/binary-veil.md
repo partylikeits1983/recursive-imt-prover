@@ -1032,6 +1032,55 @@ entire ordered AIR constraint list, including bus activation checks. The full
 release workspace suite passes 71 tests, with 11 expensive tests opt-in; formatting
 and Clippy also pass. [Negative results](../benchmarks/binary/masked-aggregate/flock-cached-verifier-negative.json).
 
+## Deferred bus-column folds
+
+The bus sumcheck now keeps large committed columns in their base-field storage
+for one extra round. After binding `r`, it evaluates the original line
+`low + r * (high - low)` on demand; the following fold materializes only the
+quarter-height table. This avoids the half-height extension-field allocation.
+The original committed values remain borrowed throughout. Periodic columns,
+affine projections and all proof equations are unchanged.
+
+The regression compares every subsequent evaluation and round against dense
+folding, including packed Boolean columns, Poly64/Poly192, a prime-field
+extension and zero/one challenges. All 480 enabled upstream multi-STARK tests
+pass (one opt-in test remains ignored), as do formatting and workspace Clippy.
+
+One depth-32 N=4 cold run passed full and cached verification, negative checks
+and fresh-process verification. Aggregation took 129.77 s, versus 135.69 s in
+the preceding cold run; this is not a repeated timing comparison. Observed
+lifetime physical footprint fell from 43,444,315,520 to 40,477,003,904 bytes
+(about 6.8%). The same memory controller was used and did not interrupt the run.
+The aggregate was 1,330,882 bytes; fresh verification took 154.09 ms total,
+including 22.58 ms setup and 124.18 ms decoding/verification, with 33,898,496
+bytes RSS. [Raw report](../benchmarks/binary/masked-aggregate/flock-deferred-bus-d32-n4.json).
+
+The three-sample depth-32 N=2 run also completed. Cold aggregation took 54.16 s;
+warm aggregation took 55.38–56.07 s (median 55.72 s), versus the earlier 54.16 s
+warm median. Warm decoding/verification took 117.05–118.58 ms (median 117.81 ms).
+Observed peak physical footprint fell from 22,100,967,552 to 20,704,867,392 bytes
+(about 6.3%). Fresh verification took 140.82 ms total and 34,078,720 bytes RSS.
+The change is retained for its lower intermediate storage; these samples do not
+establish a general proving-speed improvement.
+[Raw report](../benchmarks/binary/masked-aggregate/flock-deferred-bus-d32-n2.json).
+
+Additional cold checks passed the same full/cached negative tests and independent
+verification:
+
+| Configuration | Child proving | Aggregation | Fresh verification, whole process | Aggregate bytes | Peak prover physical footprint |
+|---|---:|---:|---:|---:|---:|
+| Depth 32, N=1 | 3.41 s | 20.78 s | 125.52 ms | 1,229,410 | 10,382,139,584 bytes |
+| Depth 16, N=2 | 1.68–1.96 s | 52.88 s | 120.50 ms | 1,234,453 | 20,756,411,072 bytes |
+
+Each is one cold sample, not a median. The corresponding fresh verifiers used
+34,144,256 and 31,801,344 bytes RSS. Raw reports retain the exact settings and
+source fingerprint: [one-child baseline](../benchmarks/binary/masked-aggregate/flock-deferred-bus-d32-n1.json),
+[depth-16 batch](../benchmarks/binary/masked-aggregate/flock-deferred-bus-d16-n2.json).
+
+This remains a memory-heavy prover. Batches 8–64 are still unvalidated and the
+construction/codeword guards remain in place. Child privacy claims and the
+conditional security ledger are unchanged.
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

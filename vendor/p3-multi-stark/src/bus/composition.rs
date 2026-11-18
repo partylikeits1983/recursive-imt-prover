@@ -13,8 +13,9 @@
 //! half-height fold. Other declarations read their committed columns or period vectors in place.
 //!
 //! The first challenge that binds one of its table's row variables folds it in half.
-//! A shorter table therefore stays in place while it is dormant.
-//! The fold is a half-height polynomial over the representation field.
+//! Large committed columns retain that challenge and their borrowed base-field view
+//! for one extra round; the second fold materializes the quarter-height polynomial.
+//! A shorter table stays in place while it is dormant.
 //!
 //! The generic path keeps row selectors in closed form; affine projections absorb them.
 //!
@@ -40,6 +41,10 @@ use crate::bus::BusContext;
 use crate::bus::equality::FactoredEquality;
 use crate::compact::compact_poly;
 use crate::selectors::BoundaryEvals;
+
+// Avoid a half-height extension-field allocation for large committed columns.
+// The next fold materializes their quarter-height table directly.
+const DEFERRED_FOLD_ROWS: usize = 1 << 16;
 
 /// Prover state for the mixed-height bus composition polynomial.
 pub(crate) struct BusCompositionProver<'a, F: Field, EF: ExtensionField<F>, R> {
@@ -219,6 +224,11 @@ impl<R: Field> ProjectedAir<R> {
 enum Source<'a, F: Field, EF> {
     /// A committed column, decoding Boolean words where the table packs them.
     Committed(ColumnView<'a, F>),
+    /// One challenge bound while retaining the borrowed base-field column.
+    Deferred {
+        column: ColumnView<'a, F>,
+        challenge: EF,
+    },
     /// A periodic column, which repeats its period vector down the whole table.
     ///
     /// The period is a power of two dividing the height, so row `r` reads entry `r mod period`.
@@ -238,6 +248,16 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
     fn at(&self, row: usize) -> EF {
         match self {
             Self::Committed(column) => column.value(row).into(),
+            Self::Deferred { column, challenge } => {
+                let half = column.len() / 2;
+                if matches!(column, ColumnView::Boolean { .. }) {
+                    let low = usize::from(column.boolean_bit(row).unwrap());
+                    let high = usize::from(column.boolean_bit(row + half).unwrap());
+                    return [EF::ZERO, *challenge, EF::ONE - *challenge, EF::ONE][2 * low + high];
+                }
+                let low = column.value(row);
+                *challenge * (column.value(row + half) - low) + low
+            }
             Self::Periodic { period, .. } => period[row & (period.len() - 1)].into(),
             Self::Folded(poly) => poly.as_slice()[row],
         }
@@ -263,6 +283,10 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
                 let low = column.value(row);
                 node * (column.value(row + half) - low) + low
             }
+            Self::Deferred { .. } => {
+                let low = self.at(row);
+                low + (self.at(row + half) - low) * node
+            }
             Self::Periodic { period, .. } => {
                 let mask = period.len() - 1;
                 let low = period[row & mask];
@@ -277,7 +301,26 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
 
     /// Binds the leading row variable, moving a column read in place into `EF`.
     fn fold(&mut self, challenge: EF) {
+        if let Self::Committed(column) = self
+            && column.len() >= DEFERRED_FOLD_ROWS
+        {
+            *self = Self::Deferred {
+                column: *column,
+                challenge,
+            };
+            return;
+        }
         let folded = match self {
+            Self::Deferred { column, .. } => {
+                let half = column.len() / 4;
+                Poly::new((0..half).into_par_iter().map_collect_min_task_bytes(
+                    4 * size_of::<F>() + size_of::<EF>(),
+                    |row| {
+                        let low = self.at(row);
+                        low + (self.at(row + half) - low) * challenge
+                    },
+                ))
+            }
             Self::Committed(column @ ColumnView::Boolean { .. }) => {
                 let column = *column;
                 let half = column.len() / 2;
@@ -547,7 +590,9 @@ where
                             *value += coefficient * period[row & mask];
                         }
                     }
-                    Source::Folded(_) => unreachable!("projection precedes every fold"),
+                    Source::Deferred { .. } | Source::Folded(_) => {
+                        unreachable!("projection precedes every fold")
+                    }
                 }
             }
         }
@@ -987,6 +1032,10 @@ where
 #[cfg(test)]
 #[path = "composition_projection_tests.rs"]
 mod projection_tests;
+
+#[cfg(test)]
+#[path = "deferred_tests.rs"]
+mod deferred_tests;
 
 #[cfg(test)]
 mod tests {
