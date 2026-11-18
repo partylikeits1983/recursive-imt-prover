@@ -1112,8 +1112,10 @@ All 12 cases rejected altered statements, authority data or proof bytes.
 permutation-batch proof. It follows the checkpoint idea investigated in LeanVM,
 using Plonky3's cubic sumcheck, Poly64/Poly192 and the existing additive-WHIR PCS.
 It does not port LeanVM's RMFE implementation or inherit its formal claims.
-The selected aggregate still uses Flock; this component is not yet connected to
-its native product bus.
+The standalone component has a separate benchmark interface. An optional
+aggregate backend now uses its linked variant, described below, with the native
+product bus retaining all arithmetic and copy constraints. Flock remains the
+default pending a measured benefit from switching.
 
 The prover commits two Boolean tables containing the ordered input and output
 states, each padded from 1600 to 2048 bits per permutation. One commitment covers
@@ -1131,8 +1133,8 @@ weights to one ordinary multilinear opening. Its endpoint product must match
 the verifier's known weight evaluation times the PCS-authenticated input value.
 A verifier receives the commitment and proof, not the original states. The raw
 `prove` and `verify` reduction functions alone do **not** constitute acceptance;
-`CommittedBatch` closes both boundaries through WHIR. The commitment still needs
-to be linked to application inputs before this can prove an IMT or an aggregate.
+`CommittedBatch` closes both boundaries through WHIR. Application inputs require
+the additional link below; a standalone permutation proof alone is insufficient.
 
 For `l = log2(batch)`, the reduction's conditional error numerator is
 `24 * (3 * (l + 11) + 2)` over `|Poly192|`. The standalone component adds
@@ -1177,8 +1179,96 @@ the benchmark executable source digest:
 [4,096 permutations](../benchmarks/binary/checkpoint-keccak/committed-4096.json),
 [65,536 permutations](../benchmarks/binary/checkpoint-keccak/committed-65536.json).
 
-Aggregate integration must authenticate the native Keccak port words against
-these boundary tables, preserve all bus/copy constraints, bind the trusted
-circuit identity and add the reduction to the aggregate's security ledger.
-A separately valid permutation proof is not sufficient. The 64-child aggregate
-target and joint child statistical-ZK analysis remain open.
+### Link to the aggregate's native ports
+
+Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v7` replaces
+the Flock Boolean wire table with an ordinary native port table and a committed
+Keccak GKR subargument. The one aggregate encoding contains both subarguments;
+neither is sufficient on its own. The complete child verifier and its public
+root/amount wiring remain in the arithmetic relation. No child witness or child
+proof is needed by final verification.
+
+The boundary commitment and fixed authority identity seed the arithmetic
+transcript before its trace commitment and row challenges. Only after complete
+arithmetic verification does `verify_with_trace_openings` return the authenticated
+port values at the table's row-point suffix. These values and the row point are
+bound into the Keccak transcript. Eight fresh coordinates form a random
+multilinear combination of all 232 ports: 100 input limbs, 100 output limbs and
+16 byte-swapped limbs on each side. Each limb is expanded into its exact 16
+binary coordinates. A 12-round degree-two sumcheck reduces that functional to
+one input and one output opening at the same row point. Together with the
+permutation's input/output openings, four ordinary openings close the WHIR proof.
+
+Both commitments precede the row challenges, so a false port link is a
+nonzero polynomial of degree at most `l + 8` in those row/port coordinates,
+where `l` is the padded permutation batch's log height. The link closing adds
+`2 * 12`. The ledger conservatively charges this total over the product of
+the arithmetic and boundary PCS candidate sets, then unions it with the Keccak
+and arithmetic error terms. The initial candidate bound depends on committed
+geometry and the Johnson/rate configuration, not on how many openings are
+requested; later OOD samples are not used to shrink it. The combined conditional
+floor remains 144 bits. This reasoning is a proposed conditional argument,
+not a proof of adaptive Fiat–Shamir or knowledge composition.
+
+Tests prove a real two-permutation arithmetic circuit and reject changed public
+ports, altered arithmetic openings, boundary counts, swapped subarguments,
+authority bindings and key digests. Separate tests generate invalid port-link
+proofs without a native rejection gate and require the cryptographic verifier
+to reject them. The old Flock path also verifies through the new key format.
+
+Verifier snapshot `imt-binary-trusted-verifier-v2` authenticates the selected
+backend along with the constraints, preprocessing, coordinate layout and
+authority. Version-1 snapshots and previous aggregate formats are deliberately
+rejected. Trusted key/digest provisioning remains unchanged. The 64-child
+aggregate target and joint child statistical-ZK analysis remain open.
+
+### Linked aggregate measurements
+
+Run the complete masked-child flow with the optional backend:
+
+```sh
+cargo build --locked --release --bin masked-demo
+target/release/masked-demo --depth 32 --batch-size 2 --samples 3 --threads 4 --keccak-backend checkpoint --out run/checkpoint32
+target/release/masked-demo --verify --threads 4 --out run/checkpoint32
+```
+
+M2 Pro, 16 GiB, four threads, Rust 1.98.1; compilation excluded and filesystem
+caches not reset. Three depth-32 samples use the same child format and parameter
+targets as the retained Flock comparison. The new complete aggregate verifies
+both actual masked child proofs and authenticates their ordered public statements.
+
+| Depth 32, N=2 | Flock, retained run | Linked checkpoint |
+|---|---:|---:|
+| Cold aggregation wall | 54.160 s | 70.081 s |
+| Warm median (range) | 55.725 s (55.378–56.072) | 70.561 s (68.936–72.187) |
+| Aggregate proof | about 1.29 MB | 1,734,857–1,735,899 bytes |
+| Fresh verifier wall | 140.8 ms | 145.4 ms |
+| Peak physical footprint | 20.70 GB | 18.74 GB |
+
+The checkpoint run's warm decoding/verification median is 124.34 ms; its fresh
+verifier uses 28.36 MB RSS. Setup takes 12.35 s and the trusted key is 23,067 bytes.
+The conditional outer ledger is 146.16 bits, above the unchanged 144-bit floor.
+The raw report records each child's proving/verification time, all three samples,
+the source fingerprint and process memory measurement:
+[linked checkpoint](../benchmarks/binary/masked-aggregate/checkpoint-linked-d32-n2.json),
+[retained Flock](../benchmarks/binary/masked-aggregate/flock-deferred-bus-d32-n2.json).
+
+This is a working alternative, **not a speedup**. Flock stays the default.
+The reduced Keccak witness saves some peak memory, but the arithmetic commitment
+still pads to the same size and the boundary/link PCS adds a second opening
+argument. The complete circuit still has 14,415,389 witness values, more than
+33 million fanout rows and 51,376 Keccak calls. The standalone permutation
+component's timings cannot be substituted for these aggregate measurements.
+The latency and 64-child scaling targets remain unmet.
+
+Depth 16, N=2 also passes end to end: one cold sample takes 67.726 s to aggregate,
+produces 1,687,695 bytes and verifies in a fresh process in 127.4 ms. Peak physical
+footprint is 19.02 GB. This is one sample, not a median or a scaling improvement:
+[raw depth-16 report](../benchmarks/binary/masked-aggregate/checkpoint-linked-d16-n2.json).
+
+Fresh-process checks accept the valid depth-32 aggregate and reject 13 changes:
+amount, root, order, removed/inserted children, corrupted/truncated/trailing proof
+bytes, authority, key digest, key bytes, backend, and backend plus protocol.
+[Negative-check results](../benchmarks/binary/masked-aggregate/checkpoint-linked-negative.json).
+Unit tests additionally construct false port-link proofs and mismatched valid
+subarguments, requiring rejection by the actual linked verifier.

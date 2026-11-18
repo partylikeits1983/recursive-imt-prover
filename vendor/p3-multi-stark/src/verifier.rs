@@ -10,6 +10,7 @@ use p3_challenger::{CanObserve, CanSampleUniformBits, FieldChallenger, GrindingC
 use p3_commit::MultilinearPcs;
 use p3_field::{ExtensionField, Field};
 use p3_lookup::{IndexedLookups, InteractionSymbolicBuilder, Lookups, TraceWindow};
+use p3_multilinear_util::point::Point;
 use p3_sumcheck::{OpeningEvals, PrescribedPointPcs};
 use thiserror::Error;
 
@@ -28,6 +29,15 @@ use crate::transcript::{
     MultiStarkShape, MultiStarkTranscriptFailure, MultiStarkVerifierTranscript,
 };
 use crate::zerocheck::{AirZerocheck, BusFamily, ZerocheckError};
+
+/// Current-row values returned only after the entire proof has verified.
+/// Each table is evaluated at the suffix of `point` matching its row arity.
+/// These are not a replacement for verification or a separate proof object.
+#[derive(Clone, Debug)]
+pub struct VerifiedTraceOpenings<EF> {
+    pub point: Point<EF>,
+    pub current: Vec<Vec<EF>>,
+}
 
 /// Reasons the multilinear AIR verifier rejects a proof.
 #[derive(Debug, Error)]
@@ -259,6 +269,29 @@ pub fn verify<'a, C, A>(
     pow_bits: usize,
     challenger: &mut C::Challenger,
 ) -> Result<(), VerificationError<PcsError<C>>>
+where
+    C: MultiStarkConfig,
+    C::Pcs: PrescribedPointPcs<C::Challenge, C::Challenger>,
+    C::Challenger: FieldChallenger<C::Val>
+        + GrindingChallenger<Witness = C::Val>
+        + CanSampleUniformBits<C::Val>
+        + CanObserve<Commitment<C>>,
+    Commitment<C>: Clone,
+    A: VerifierAir<C::Val, C::Challenge>,
+{
+    verify_with_trace_openings(config, instances, proof, pow_bits, challenger).map(|_| ())
+}
+
+/// Verify the complete proof, then return its authenticated current-row readings.
+/// Transcript messages, equations and proof encoding are identical to `verify`.
+#[tracing::instrument(skip_all)]
+pub fn verify_with_trace_openings<'a, C, A>(
+    config: &C,
+    instances: VerifierInstances<'a, C, A>,
+    proof: &MultiStarkProof<C>,
+    pow_bits: usize,
+    challenger: &mut C::Challenger,
+) -> Result<VerifiedTraceOpenings<C::Challenge>, VerificationError<PcsError<C>>>
 where
     C: MultiStarkConfig,
     C::Pcs: PrescribedPointPcs<C::Challenge, C::Challenger>,
@@ -781,7 +814,14 @@ where
             lookup.as_ref(),
             bus_family,
         )
-        .map_err(VerificationError::Zerocheck)
+        .map_err(VerificationError::Zerocheck)?;
+    Ok(VerifiedTraceOpenings {
+        point: reduction.point,
+        current: main_openings
+            .iter()
+            .map(|opening| opening.local.to_vec())
+            .collect(),
+    })
 }
 
 /// What every AIR declares to the two lookup plans, in caller order.

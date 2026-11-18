@@ -7,8 +7,8 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use clap::Parser;
-use imt_flock_backend::{MAX_VERIFIER_BYTES, verifier_key_digest};
+use clap::{Parser, ValueEnum};
+use imt_flock_backend::{HashBackend, MAX_VERIFIER_BYTES, verifier_key_digest};
 use mimalloc::MiMalloc;
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ use recursive_imt_prover::{
         relation::AggregatePublic,
         veil::{
             aggregate::{
-                MaskedAggregateVerifier, MaskedChildInput, PROTOCOL, PreparedMaskedAggregate,
+                MaskedAggregateVerifier, MaskedChildInput, PreparedMaskedAggregate, protocol,
             },
             child::{MaskedMembershipProof, PreparedMembership},
             components::{
@@ -37,6 +37,14 @@ use recursive_imt_prover::{
 
 #[global_allocator]
 static ALLOCATOR: MiMalloc = MiMalloc;
+
+#[derive(Clone, Copy, Default, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+enum KeccakBackend {
+    #[default]
+    Flock,
+    Checkpoint,
+}
 
 #[derive(Parser)]
 #[command(
@@ -58,6 +66,9 @@ struct Args {
     /// Run the three-proof correctness baseline; this is not a compressed aggregate.
     #[arg(long)]
     components: bool,
+    /// Aggregate Keccak prover; checkpoint is an experimental memory/time comparison.
+    #[arg(long, value_enum, default_value_t = KeccakBackend::Flock)]
+    keccak_backend: KeccakBackend,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -71,6 +82,8 @@ struct Trusted {
     identities: Vec<String>,
     #[serde(default)]
     verifier_digest: Option<[u8; 32]>,
+    #[serde(default)]
+    keccak_backend: KeccakBackend,
 }
 
 #[derive(Serialize)]
@@ -97,16 +110,34 @@ enum PreparedBatch {
     Components(Box<PreparedComponentBatch>),
 }
 
+impl From<KeccakBackend> for HashBackend {
+    fn from(backend: KeccakBackend) -> Self {
+        match backend {
+            KeccakBackend::Flock => Self::Flock,
+            KeccakBackend::Checkpoint => Self::Checkpoint,
+        }
+    }
+}
+
 impl PreparedBatch {
-    fn new(settings: &Settings, parameters: Parameters, components: bool) -> Result<Self> {
+    fn new(
+        settings: &Settings,
+        parameters: Parameters,
+        components: bool,
+        backend: KeccakBackend,
+    ) -> Result<Self> {
         if components {
+            ensure!(
+                matches!(backend, KeccakBackend::Flock),
+                "components use the Flock backend"
+            );
             Ok(Self::Components(Box::new(PreparedComponentBatch::new(
                 settings, parameters,
             )?)))
         } else {
-            Ok(Self::Recursive(Box::new(PreparedMaskedAggregate::new(
-                settings, parameters,
-            )?)))
+            Ok(Self::Recursive(Box::new(
+                PreparedMaskedAggregate::with_backend(settings, parameters, backend.into())?,
+            )))
         }
     }
     fn identities(&self) -> Vec<String> {
@@ -179,7 +210,7 @@ fn main() -> Result<()> {
     let protocol = if args.components {
         COMPONENT_PROTOCOL
     } else {
-        PROTOCOL
+        protocol(args.keccak_backend.into())
     };
     let parameters = Parameters::default();
     let child = PreparedMembership::new(args.depth, parameters.clone())?;
@@ -194,12 +225,22 @@ fn main() -> Result<()> {
         if args.components {
             "linked component baseline (not a succinct aggregate)"
         } else {
-            "Flock aggregate of complete masked verifiers"
+            match args.keccak_backend {
+                KeccakBackend::Flock => "Flock aggregate of complete masked verifiers",
+                KeccakBackend::Checkpoint => {
+                    "Binary aggregate of complete masked verifiers with linked Keccak GKR"
+                }
+            }
         },
         args.batch_size
     );
     let start = Instant::now();
-    let aggregate = PreparedBatch::new(&settings, parameters.clone(), args.components)?;
+    let aggregate = PreparedBatch::new(
+        &settings,
+        parameters.clone(),
+        args.components,
+        args.keccak_backend,
+    )?;
     report["setup_ms"] = json!(ms(start));
     report["geometry"] = aggregate.geometry();
     write_json(&args.out.join("report.json"), &report)?;
@@ -222,16 +263,18 @@ fn main() -> Result<()> {
         components: args.components,
         identities: aggregate.identities(),
         verifier_digest,
+        keccak_backend: args.keccak_backend,
     };
     write_json(&args.out.join("trusted.json"), &trusted)?;
     let cached = if let Some(digest) = trusted.verifier_digest {
         let key = read_bounded(&args.out.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-        Some(MaskedAggregateVerifier::from_bytes(
+        Some(MaskedAggregateVerifier::with_backend(
             &trusted.settings,
             &trusted.child_parameters,
             &key,
             &digest,
             &trusted.identities[0],
+            trusted.keccak_backend.into(),
         )?)
     } else {
         None
@@ -344,7 +387,7 @@ fn verify_files(directory: &Path) -> Result<()> {
     let expected_protocol = if trusted.components {
         COMPONENT_PROTOCOL
     } else {
-        PROTOCOL
+        protocol(trusted.keccak_backend.into())
     };
     ensure!(
         trusted.protocol == expected_protocol,
@@ -375,12 +418,13 @@ fn verify_files(directory: &Path) -> Result<()> {
             "invalid cached verifier authority"
         );
         let key = read_bounded(&directory.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-        let verifier = MaskedAggregateVerifier::from_bytes(
+        let verifier = MaskedAggregateVerifier::with_backend(
             &trusted.settings,
             &trusted.child_parameters,
             &key,
             &digest,
             &trusted.identities[0],
+            trusted.keccak_backend.into(),
         )?;
         let setup_ms = ms(start);
         let check = Instant::now();
@@ -395,6 +439,7 @@ fn verify_files(directory: &Path) -> Result<()> {
         &trusted.settings,
         trusted.child_parameters,
         trusted.components,
+        trusted.keccak_backend,
     )?;
     ensure!(
         aggregate.identities() == trusted.identities,

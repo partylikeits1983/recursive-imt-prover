@@ -2,7 +2,7 @@
 use std::time::Instant;
 
 use anyhow::{Result, ensure};
-use imt_flock_backend::{Geometry, Metrics, Prepared, Verifier};
+use imt_flock_backend::{Geometry, HashBackend, Metrics, Prepared, Verifier};
 use p3_circuit::{CircuitBuilder, CircuitConstructionLimits};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +20,7 @@ use crate::{
 };
 
 pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v6";
+pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v7";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MaskedChildInput {
@@ -48,8 +49,16 @@ pub struct AggregationMetrics {
 
 impl PreparedMaskedAggregate {
     pub fn new(settings: &Settings, parameters: Parameters) -> Result<Self> {
+        Self::with_backend(settings, parameters, HashBackend::Flock)
+    }
+
+    pub fn with_backend(
+        settings: &Settings,
+        parameters: Parameters,
+        backend: HashBackend,
+    ) -> Result<Self> {
         validate_configuration(settings, &parameters)?;
-        let binding = configuration_binding(settings, &parameters)?;
+        let binding = configuration_binding(settings, &parameters, backend)?;
         let verifier = PreparedMaskedVerifier::new(settings.depth, parameters)?;
         let mut b = CircuitBuilder::<F>::with_construction_limits(CircuitConstructionLimits {
             max_expression_nodes: 1 << 27,
@@ -68,10 +77,16 @@ impl PreparedMaskedAggregate {
             "Complete batch verifier: {} witnesses",
             circuit.witness_count
         );
-        let outer = Prepared::new(
-            circuit,
-            format!("{PROTOCOL}/{}/{}", settings.depth, settings.batch_size).as_bytes(),
-        )?;
+        let domain = format!(
+            "{}/{}/{}",
+            protocol(backend),
+            settings.depth,
+            settings.batch_size
+        );
+        let outer = match backend {
+            HashBackend::Flock => Prepared::new(circuit, domain.as_bytes())?,
+            HashBackend::Checkpoint => Prepared::new_checkpoint(circuit, domain.as_bytes())?,
+        };
         Ok(Self {
             verifier,
             outer,
@@ -137,13 +152,31 @@ impl MaskedAggregateVerifier {
         digest: &[u8; 32],
         identity: &str,
     ) -> Result<Self> {
+        Self::with_backend(
+            settings,
+            parameters,
+            bytes,
+            digest,
+            identity,
+            HashBackend::Flock,
+        )
+    }
+
+    pub fn with_backend(
+        settings: &Settings,
+        parameters: &Parameters,
+        bytes: &[u8],
+        digest: &[u8; 32],
+        identity: &str,
+        backend: HashBackend,
+    ) -> Result<Self> {
         validate_configuration(settings, parameters)?;
         Ok(Self {
             outer: Verifier::from_bytes(
                 bytes,
                 digest,
                 identity,
-                &configuration_binding(settings, parameters)?,
+                &configuration_binding(settings, parameters, backend)?,
             )?,
             count: settings.batch_size,
         })
@@ -162,8 +195,23 @@ impl MaskedAggregateVerifier {
     }
 }
 
-fn configuration_binding(settings: &Settings, parameters: &Parameters) -> Result<Vec<u8>> {
-    Ok(postcard::to_allocvec(&(PROTOCOL, settings, parameters))?)
+pub const fn protocol(backend: HashBackend) -> &'static str {
+    match backend {
+        HashBackend::Flock => PROTOCOL,
+        HashBackend::Checkpoint => CHECKPOINT_PROTOCOL,
+    }
+}
+
+fn configuration_binding(
+    settings: &Settings,
+    parameters: &Parameters,
+    backend: HashBackend,
+) -> Result<Vec<u8>> {
+    Ok(postcard::to_allocvec(&(
+        protocol(backend),
+        settings,
+        parameters,
+    ))?)
 }
 
 fn validate_configuration(settings: &Settings, parameters: &Parameters) -> Result<()> {
@@ -173,7 +221,7 @@ fn validate_configuration(settings: &Settings, parameters: &Parameters) -> Resul
             && settings.pow_bits == 16
             && settings.log_inv_rate == 1
             && settings.fold == 4,
-        "Flock outer parameters are fixed: PCS 152, PoW 16, rate 1/2, fold 4"
+        "binary outer parameters are fixed: PCS 152, PoW 16, rate 1/2, fold 4"
     );
     ensure!(matches!(settings.depth, 16 | 32), "depth must be 16 or 32");
     ensure!(

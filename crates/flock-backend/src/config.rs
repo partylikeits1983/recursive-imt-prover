@@ -12,7 +12,7 @@ use p3_keccak::Keccak256Hash;
 use p3_merkle_tree::MerkleTreeMmcs;
 use p3_multi_stark::config::MultiStarkConfig;
 use p3_sumcheck::{
-    TableShape,
+    OpeningBatch, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec,
     layout::{Table, plan_stacked_layout},
 };
 use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
@@ -32,6 +32,7 @@ pub struct Config {
     pub initial_codeword_cells: usize,
     pub main_codeword_cells: usize,
     pub preprocessed_codeword_cells: usize,
+    pub main_log2_candidates: f64,
 }
 
 impl Config {
@@ -54,14 +55,33 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("codeword budget overflow"))?;
         ensure!(
             initial_codeword_cells <= 1 << 30,
-            "Flock initial codeword cells {initial_codeword_cells} exceed this prototype's 2^30 budget"
+            "binary initial codeword cells {initial_codeword_cells} exceed this prototype's 2^30 budget"
+        );
+        let main_pcs = pcs(main, main_encoding)?;
+        let protocol = OpeningProtocol::new(
+            main.iter()
+                .map(|&shape| {
+                    TableSpec::new(
+                        shape,
+                        vec![OpeningBatch::new((0..shape.width()).collect(), vec![])],
+                    )
+                })
+                .collect(),
+        );
+        let security = main_pcs
+            .prescribed_security(&protocol)
+            .ok_or_else(|| anyhow::anyhow!("missing main PCS candidate bound"))?;
+        ensure!(
+            security.candidates().is_some(),
+            "invalid main PCS candidate bound"
         );
         Ok(Self {
-            main: pcs(main, main_encoding)?,
+            main: main_pcs,
             preprocessed: pcs(pp, pp_encoding)?,
             initial_codeword_cells,
             main_codeword_cells,
             preprocessed_codeword_cells,
+            main_log2_candidates: security.log2_max_candidates,
         })
     }
 }

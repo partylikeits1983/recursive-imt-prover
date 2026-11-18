@@ -1,4 +1,4 @@
-# Experimental Flock outer prover
+# Experimental binary outer prover
 
 Final, non-hiding proof backend. Uses the official Plonky3
 [PR #2582](https://github.com/Plonky3/Plonky3/pull/2582) at
@@ -64,10 +64,11 @@ Local adaptations:
 - The transcript seed binds imported constraints, bus declarations, dimensions,
   preprocessing, periodic definitions, Flock circuit, protocol and caller domain.
 
-The proof is one Plonky3 multi-STARK containing Flock, product-bus, sumcheck and
-WHIR subarguments. The final verifier requires no child proofs. It loads an
-authenticated compact verifier-only key, or reconstructs trusted setup from the
-fixed circuit for older artifacts. See the snapshot trust model below.
+The optional `Prepared::new_checkpoint` path encodes one aggregate containing a
+Plonky3 arithmetic multi-STARK and a Keccak GKR subargument, linked through
+authenticated port openings. The final verifier requires no child proofs.
+`Prepared::new` retains Flock as the default. Both load an
+authenticated compact verifier-only key. See the snapshot trust model below.
 
 The coordinate map is injective on each declared binary linear subspace. Shorter
 widths restrict the witness domain and preserve every original AIR equation;
@@ -77,9 +78,10 @@ including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
 Tests check exact occurrence preservation, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
-swap across partitions. Aggregate protocol v6 / backend identity v8 reject
-previous aggregate artifacts. Child proof formats and security parameters are
-unchanged.
+swap across partitions. The checkpoint aggregate uses protocol v7 / backend
+identity v1; Flock retains protocol v6 / backend identity v8. Both export verifier
+snapshot v2, rejecting older key snapshots. Child proof formats and security
+parameters are unchanged.
 
 Arithmetic partitions omit preprocessing columns that are identically zero.
 The trusted compiler records the original-to-compact column map, substitutes
@@ -127,12 +129,26 @@ changed public inputs, key bytes, key digest, configuration binding, authority
 identity and proof bytes. This preserves the original relation; it is not a
 new proof system or a substitute for child privacy analysis.
 
-## Isolated Keccak GKR component
+## Linked Keccak GKR
 
 `checkpoint_keccak::CommittedBatch` proves an ordered batch of Keccak-f
 permutations using cubic sumcheck and the existing additive-WHIR PCS. It commits
 only the padded input/output states, recomputes intermediate rounds, and
-authenticates both boundary claims. This non-hiding experimental component is
-not yet used by `Prepared` or `Verifier`: native port/bus linkage is still needed.
-The raw reduction API requires its caller to authenticate both boundaries.
+authenticates both boundary claims. The standalone component remains useful for
+permutation benchmarks. Its raw reduction API requires its caller to authenticate
+both boundaries.
 See the [protocol, conditional bound and benchmark command](../../docs/binary-veil.md#committed-keccak-gkr-component).
+
+`Prepared::new_checkpoint` commits those boundaries before the arithmetic
+commitment/challenges. The arithmetic proof treats the 232 native ports as an
+ordinary table with 16-bit coordinates. After complete arithmetic verification,
+the verifier uses its authenticated port readings and row point. A degree-two
+sumcheck links a fresh random combination of all ports to four ordinary boundary
+PCS openings, shared with the permutation argument. Raw and byte-swapped limbs
+are included. The link cannot be replaced by a native verifier Boolean or by two
+unrelated valid proofs. `Verifier` replays the same linked checks from a v2 key.
+
+The conditional ledger charges the link over the product of both PCS candidate
+sets and combines it with the arithmetic and Keccak budgets. The complete
+construction still needs an independent soundness/Fiat–Shamir review; it makes no
+additional child privacy claim.

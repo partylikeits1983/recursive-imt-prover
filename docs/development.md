@@ -68,10 +68,19 @@ These requirements do not change when inspecting other implementations.
    verifier snapshots now avoid rebuilding proving tables: a fresh N=4 verifier
    takes about 140 ms total and 34 MB RSS. Reduce AIR opening reductions and
    simultaneous prover allocations next. Checkpointed Keccak
-   GKR now has a standalone committed component (`binary-veil.md`), retaining
-   the existing fields, hash and conditional security margin. Its authenticated
-   input/output boundaries still need linkage to the native port/bus relation
-   before replacing Flock in the selected aggregate.
+   GKR now has a standalone committed component and an optional fully linked
+   aggregate backend (`--keccak-backend checkpoint`). Its boundary commitment is
+   fixed before the arithmetic proof; authenticated native port readings close
+   an additional sumcheck/PCS link. Flock remains the default while measuring
+   the complete tradeoff. Both use authenticated v2 verifier snapshots.
+   The linked depth-32 N=2 measurement reduces physical footprint to 18.74 GB but
+   increases warm aggregation to 70.56 s, so it is not the selected fast path.
+   Next compare the pinned Plonky3 indexed-lookup/Logup* implementation with
+   the repeated fanout table. It uses challenge-weighted pushforwards rather
+   than integer multiplicities and has a binary-field security ledger. Any
+   adapter must pin positions, constrain every payload and preserve the complete
+   child verifier. Extra indexed openings may offset the storage saving;
+   benchmark before selecting it.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover before adding another recursion layer.

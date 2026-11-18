@@ -39,9 +39,12 @@ Fresh verification loads a compact authenticated key: **141 ms for N=2** and
 were not reset. Keep `verifier.key` and independently
 trusted `trusted.json`; a key/digest pair supplied by an untrusted prover is
 insufficient. [Raw measurements and limits](docs/binary-veil.md#authenticated-verifier-only-loading).
+Current keys use format v2; regenerate runs that contain older key snapshots.
 
 `demo` / `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` is a diagnostic bundle, not a single aggregate.
+`masked-demo --keccak-backend checkpoint` compares a linked Keccak GKR backend;
+it remains experimental. Flock is the default.
 
 [Implementation and remaining work](docs/development.md) ·
 [Masking and aggregation report](docs/binary-veil.md) ·

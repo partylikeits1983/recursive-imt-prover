@@ -5,7 +5,7 @@ use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_sumcheck::generic_degree::{GenericDegreeProof, RoundPolyInterpolator, RoundProver};
 
-use super::{BITS, Claim, E, F, POSITION_LOG, POSITIONS, State};
+use super::{BITS, Claim, E, F, POSITIONS, State};
 use crate::config::Challenger;
 
 pub(super) type Proof = GenericDegreeProof<F, E>;
@@ -22,8 +22,17 @@ struct DotProduct {
 }
 
 pub(super) fn prove(inputs: &[State], claim: &Claim, ch: &mut Challenger) -> (Proof, Point<E>) {
-    let equality = Point::new(claim.instance.as_slice()).equality_weights_msb();
-    let mut folded = inputs
+    let mut folded = fold_states(inputs, &claim.instance);
+    folded.resize(POSITIONS, E::ZERO);
+    let mut weights = claim.weights.clone();
+    weights.resize(POSITIONS, E::ZERO);
+    let (proof, point) = prove_functional(weights, folded, claim.value, ch);
+    (proof, full_point(claim, point))
+}
+
+pub(super) fn fold_states(inputs: &[State], point: &[E]) -> Vec<E> {
+    let equality = Point::new(point).equality_weights_msb();
+    inputs
         .par_chunks(256)
         .zip(equality.par_chunks(256))
         .map(|(states, eq)| {
@@ -47,32 +56,53 @@ pub(super) fn prove(inputs: &[State], claim: &Claim, ch: &mut Challenger) -> (Pr
                 }
                 a
             },
-        );
-    folded.resize(POSITIONS, E::ZERO);
-    let mut weights = claim.weights.clone();
-    weights.resize(POSITIONS, E::ZERO);
+        )
+}
+
+pub(super) fn prove_functional(
+    weights: Vec<E>,
+    input: Vec<E>,
+    value: E,
+    ch: &mut Challenger,
+) -> (Proof, Point<E>) {
+    assert!(weights.len().is_power_of_two() && weights.len() == input.len());
+    let log = weights.len().trailing_zeros() as usize;
     let mut prover = DotProduct {
         weights: Poly::new(weights),
-        input: Poly::new(folded),
+        input: Poly::new(input),
     };
-    let (proof, point) = prover.prove::<F, Challenger>(ch, POSITION_LOG, 2, 0, claim.value);
-    (proof, full_point(claim, point))
+    prover.prove::<F, Challenger>(ch, log, 2, 0, value)
 }
 
 pub(super) fn verify(proof: &Proof, claim: &Claim, ch: &mut Challenger) -> Result<Closing> {
+    let mut closing = verify_functional(proof, &claim.weights, claim.value, ch)?;
+    closing.point = full_point(claim, closing.point);
+    Ok(closing)
+}
+
+pub(super) fn verify_functional(
+    proof: &Proof,
+    weights: &[E],
+    value: E,
+    ch: &mut Challenger,
+) -> Result<Closing> {
     ensure!(
-        proof.claimed_sum == claim.value,
+        proof.claimed_sum == value,
         "incorrect Keccak input functional"
     );
-    let (point, product) = proof.verify(ch, POSITION_LOG, 2, 0)?;
-    let weight = claim
-        .weights
+    ensure!(
+        !weights.is_empty() && weights.len() <= 2 * POSITIONS,
+        "invalid closing weights"
+    );
+    let log = weights.len().next_power_of_two().trailing_zeros() as usize;
+    let (point, product) = proof.verify(ch, log, 2, 0)?;
+    let weight = weights
         .iter()
         .zip(point.equality_weights_msb())
         .map(|(&weight, eq)| weight * eq)
         .sum();
     Ok(Closing {
-        point: full_point(claim, point),
+        point,
         weight,
         product,
     })

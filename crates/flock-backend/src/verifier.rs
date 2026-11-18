@@ -13,19 +13,22 @@ use sha3::{Digest, Keccak256};
 
 use self::air::VerifierAir;
 use crate::{
-    F, Prepared, Proof,
+    F, HashBackend, Prepared, Proof,
     air::convert,
+    checkpoint,
+    checkpoint_keccak::linked::LinkedBatch,
     config::{Config, challenger},
     encoding::TableEncoding,
     keccak,
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
-const FORMAT: &str = "imt-flock-trusted-verifier-v1";
+const FORMAT: &str = "imt-binary-trusted-verifier-v2";
 
 #[derive(Serialize, Deserialize)]
 struct VerifierData<K> {
     format: String,
+    backend: HashBackend,
     binding: Vec<u8>,
     seed: [u8; 32],
     airs: Vec<VerifierAir>,
@@ -40,6 +43,7 @@ pub struct Verifier {
     hash: BooleanCircuit,
     config: Config,
     public_count: usize,
+    checkpoint: Option<LinkedBatch>,
 }
 
 /// The expected digest must come from trusted verifier data, never from the proof.
@@ -62,6 +66,7 @@ impl Prepared {
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
             format: FORMAT.to_owned(),
+            backend: self.backend,
             binding: binding.to_vec(),
             seed: self
                 .seed
@@ -134,7 +139,7 @@ impl Verifier {
             .iter()
             .enumerate()
             .map(|(i, air)| {
-                if i == data.hash_index {
+                if i == data.hash_index && data.backend == HashBackend::Flock {
                     TableShape::new(air.log_height + hash.k_log(), 1)
                 } else {
                     TableShape::new(air.log_height, air.width)
@@ -179,11 +184,29 @@ impl Verifier {
                 .all(|a| a.public_count == 0 || a.public_count == public_count),
             "inconsistent public input mapping"
         );
+        let checkpoint = if data.backend == HashBackend::Checkpoint {
+            ensure!(
+                data.airs[data.hash_index].width == 232,
+                "invalid native Keccak port count"
+            );
+            let scheme = LinkedBatch::new(
+                data.airs[data.hash_index].log_height,
+                config.main_log2_candidates,
+            )?;
+            ensure!(
+                config.initial_codeword_cells + scheme.initial_codeword_cells <= 1 << 30,
+                "arithmetic and checkpoint codewords exceed this prototype's budget"
+            );
+            Some(scheme)
+        } else {
+            None
+        };
         let verifier = Self {
             data,
             hash,
             config,
             public_count,
+            checkpoint,
         };
         let public: Vec<Vec<F>> = verifier
             .data
@@ -196,12 +219,15 @@ impl Verifier {
             report.unassessed_components().is_empty(),
             "unassessed cached verifier security component"
         );
-        let error: f64 = report
+        let mut error: f64 = report
             .terms()
             .iter()
             .filter(|term| term.label != "commitment-and-transcript-collision")
             .map(|term| 2f64.powf(-term.bits.bits()))
             .sum();
+        if let Some(checkpoint) = &verifier.checkpoint {
+            error += 2f64.powf(-checkpoint.conditional_algebraic_bits);
+        }
         ensure!(
             -error.log2() >= 144.0,
             "cached verifier algebraic bound below 144 bits"
@@ -215,8 +241,6 @@ impl Verifier {
             "incorrect public input count"
         );
         ensure!(bytes.len() <= 16 << 20, "oversized aggregate proof");
-        let (proof, rest): (Proof, _) = postcard::take_from_bytes(bytes)?;
-        ensure!(rest.is_empty(), "trailing aggregate proof data");
         let public: Vec<Vec<F>> = self
             .data
             .airs
@@ -229,6 +253,18 @@ impl Verifier {
                 }
             })
             .collect();
+        if let Some(scheme) = &self.checkpoint {
+            return checkpoint::verify(
+                &self.config,
+                self.instances(&public),
+                scheme,
+                &self.data.seed,
+                self.data.hash_index,
+                bytes,
+            );
+        }
+        let (proof, rest): (Proof, _) = postcard::take_from_bytes(bytes)?;
+        ensure!(rest.is_empty(), "trailing aggregate proof data");
         verify(
             &self.config,
             self.instances(&public),
@@ -245,7 +281,7 @@ impl Verifier {
                 .iter()
                 .enumerate()
                 .map(|(i, air)| {
-                    if i == self.data.hash_index {
+                    if i == self.data.hash_index && self.data.backend == HashBackend::Flock {
                         VerifierInstance::circuit(
                             air,
                             &self.hash,

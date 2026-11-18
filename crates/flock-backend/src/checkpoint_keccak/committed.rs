@@ -23,8 +23,8 @@ use crate::{
     encoding::TableEncoding,
 };
 
-type Commitment = <Pcs as MultilinearPcs<E, Challenger>>::Commitment;
-type Opening = <Pcs as MultilinearPcs<E, Challenger>>::Proof;
+pub(super) type Commitment = <Pcs as MultilinearPcs<E, Challenger>>::Commitment;
+pub(super) type Opening = <Pcs as MultilinearPcs<E, Challenger>>::Proof;
 const DOMAIN: &[u8] = b"imt-committed-checkpoint-keccak-v1";
 
 /// A claim that the committed output states are Keccak-f of the input states,
@@ -216,7 +216,7 @@ impl CommittedBatch {
     }
 }
 
-fn table(states: &[State], log_batch: usize) -> Table<F> {
+pub(super) fn table(states: &[State], log_batch: usize) -> Table<F> {
     let mut words = Vec::with_capacity(states.len() * POSITIONS / 64);
     for state in states {
         words.extend_from_slice(state);

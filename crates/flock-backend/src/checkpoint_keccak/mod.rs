@@ -3,12 +3,15 @@
 //! The raw reduction requires a caller to bind the batch's input/output
 //! commitments before sampling the initial claim and authenticate the returned
 //! input opening. `CommittedBatch` supplies that authentication with the existing
-//! additive-WHIR PCS. Neither interface is used by the aggregate yet.
+//! additive-WHIR PCS. The aggregate's linked variant also authenticates the
+//! native arithmetic ports against those boundaries.
 //! The reference prover recomputes round checkpoints instead of committing every
 //! nonlinear wire. It reuses Plonky3's cubic sumcheck and Keccak transcript.
 mod closing;
 mod committed;
 mod linear;
+pub(crate) mod linked;
+mod ports;
 mod rounds;
 #[cfg(test)]
 mod tests;

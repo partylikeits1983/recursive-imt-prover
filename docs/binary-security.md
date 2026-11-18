@@ -38,6 +38,13 @@ claim/successor-bus changes also need review; see
 [the backend notes](../crates/flock-backend/README.md). Numerical budgets and tests
 are not a security certificate, and there is no 128-bit post-quantum claim.
 
+The optional checkpoint backend replaces Flock's permutation subargument with
+committed Keccak GKR and a sumcheck link to authenticated native ports. Its
+ledger includes both PCS candidate sets and enforces the same 144-bit floor.
+This is another experimental construction requiring review; see the
+[link argument](binary-veil.md#link-to-the-aggregates-native-ports). Neither
+backend changes the child masking or supplies its missing joint simulator.
+
 ## Current implementation pass
 
 The native child and aggregate prover now use **Poly64 with Poly192 challenges**,

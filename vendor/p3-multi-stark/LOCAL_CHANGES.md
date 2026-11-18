@@ -78,3 +78,13 @@ identity. Subsequent folds and affine projections are unchanged.
 dense folding for both Poly64/Poly192 and a prime-field extension, including
 packed columns and zero/one challenges. Aggregate equations, parameters, proof
 encoding and verifier behavior are unchanged.
+
+`src/verifier.rs`: `verify_with_trace_openings` returns the zerocheck point and
+authenticated current-row readings only after every PCS, bus and zerocheck
+check succeeds. Each table uses the suffix matching its row arity, exactly as
+in `trace_suffix`. The existing `verify` calls the same implementation and
+discards those readings. Proof encoding, equations and transcript are unchanged.
+The application uses this receipt to link its Keccak boundary proof to the
+arithmetic proof; an unverified opening is never accepted as a receipt. Backend
+tests exercise actual valid arithmetic proofs, altered authenticated values,
+changed public values and mismatched Keccak subarguments.

@@ -1,7 +1,10 @@
-//! Experimental final prover using Plonky3 Flock for Keccak and the native
-//! product bus for the arithmetic circuit. This proof is deliberately non-hiding.
+//! Experimental final prover using a linked Keccak GKR argument or Plonky3 Flock,
+//! and the native product bus for arithmetic. This proof is deliberately non-hiding.
 mod air;
+mod checkpoint;
 pub mod checkpoint_keccak;
+#[cfg(test)]
+mod checkpoint_tests;
 mod config;
 mod encoding;
 mod fanout;
@@ -16,6 +19,7 @@ mod tests;
 
 use air::{Chip, convert};
 use anyhow::{Result, ensure};
+use checkpoint_keccak::linked::{BoundaryWitness, LinkedBatch, arithmetic_seed};
 use config::{Config, challenger};
 use encoding::TableEncoding;
 use fanout::FanoutShard;
@@ -37,14 +41,23 @@ use p3_multi_stark::{
     VerifierInstances, VerifyingKey, prove, security_report, setup, verify,
 };
 use p3_sumcheck::{TableShape, layout::Table};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::{sync::Arc, time::Instant};
 
 type F = Poly64;
 type Proof = MultiStarkProof<Config>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HashBackend {
+    Flock,
+    Checkpoint,
+}
+
 pub struct Prepared {
+    backend: HashBackend,
+    checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
     bus: NativeBusCircuit<OldF>,
     airs: Vec<Chip>,
@@ -69,6 +82,8 @@ struct TableSource {
 
 #[derive(Serialize)]
 pub struct Geometry {
+    pub hash_backend: HashBackend,
+    pub checkpoint_codeword_cells: usize,
     pub witnesses: u32,
     pub fanout_rows_by_width: Vec<(usize, usize)>,
     pub gate_rows_by_width: Vec<(Vec<usize>, usize)>,
@@ -94,6 +109,14 @@ pub struct Metrics {
 
 impl Prepared {
     pub fn new(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
+        Self::with_backend(circuit, domain, HashBackend::Flock)
+    }
+
+    pub fn new_checkpoint(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
+        Self::with_backend(circuit, domain, HashBackend::Checkpoint)
+    }
+
+    fn with_backend(circuit: Circuit<OldF>, domain: &[u8], backend: HashBackend) -> Result<Self> {
         let bus = NativeBusCircuit::with_compact_options(
             &circuit,
             "imt",
@@ -214,7 +237,14 @@ impl Prepared {
         }
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
-        identity.update(b"imt-flock-backend-v8/708900d7a730d6ce4d5421d43e2193f2301920fa");
+        identity.update(match backend {
+            HashBackend::Flock => {
+                b"imt-flock-backend-v8/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+            }
+            HashBackend::Checkpoint => {
+                b"imt-checkpoint-backend-v1/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+            }
+        });
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());
@@ -250,7 +280,7 @@ impl Prepared {
             .iter()
             .enumerate()
             .map(|(i, a)| {
-                if i == hash_index {
+                if i == hash_index && backend == HashBackend::Flock {
                     TableShape::new(log_calls + hash.k_log(), 1)
                 } else {
                     TableShape::new(log_heights[i], a.width())
@@ -276,7 +306,7 @@ impl Prepared {
                 let width = if let Some(shard) = &sources[i].shard {
                     shard.coordinate_width
                 } else if i == hash_index {
-                    1
+                    if backend == HashBackend::Flock { 1 } else { 16 }
                 } else if i == hash_index + 1 {
                     16
                 } else {
@@ -302,11 +332,21 @@ impl Prepared {
         }
         let seed = identity.finalize().to_vec();
         eprintln!(
-            "Flock tables: widths {:?}, log heights {:?}, {calls} Keccak calls",
+            "{backend:?} tables: widths {:?}, log heights {:?}, {calls} Keccak calls",
             airs.iter().map(BaseAir::width).collect::<Vec<_>>(),
             log_heights
         );
         let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
+        let checkpoint = if backend == HashBackend::Checkpoint {
+            Some(LinkedBatch::new(log_calls, config.main_log2_candidates)?)
+        } else {
+            None
+        };
+        let checkpoint_codeword_cells = checkpoint.as_ref().map_or(0, |c| c.initial_codeword_cells);
+        ensure!(
+            config.initial_codeword_cells + checkpoint_codeword_cells <= 1 << 30,
+            "arithmetic and checkpoint codewords exceed this prototype's 2^30 budget"
+        );
         let (pk, vk) = setup(
             &config,
             &airs.iter().collect::<Vec<_>>(),
@@ -316,18 +356,32 @@ impl Prepared {
             .iter()
             .map(|a| vec![F::ZERO; a.num_public_values()])
             .collect();
-        let instances = verifier_instances(&airs, &hash, hash_index, &log_heights, &vk, &public);
+        let instances = verifier_instances(
+            &airs,
+            &hash,
+            hash_index,
+            &log_heights,
+            &vk,
+            &public,
+            backend,
+        );
         let report = security_report(&config, &instances)?;
         ensure!(
             report.unassessed_components().is_empty(),
-            "unassessed Flock security components: {:?}",
+            "unassessed binary security components: {:?}",
             report.unassessed_components()
         );
-        let terms: Vec<_> = report
+        let mut terms: Vec<_> = report
             .terms()
             .iter()
             .map(|t| (t.label.to_string(), t.bits.bits()))
             .collect();
+        if let Some(checkpoint) = &checkpoint {
+            terms.push((
+                "checkpoint-permutation-pcs-and-port-link".to_owned(),
+                checkpoint.conditional_algebraic_bits,
+            ));
+        }
         let error: f64 = terms
             .iter()
             .filter(|(l, _)| l != "commitment-and-transcript-collision")
@@ -336,9 +390,11 @@ impl Prepared {
         let algebraic_bits = -error.log2();
         ensure!(
             algebraic_bits >= 144.0,
-            "Flock algebraic bound {algebraic_bits} below 144-bit budget"
+            "binary algebraic bound {algebraic_bits} below 144-bit budget"
         );
         let geometry = Geometry {
+            hash_backend: backend,
+            checkpoint_codeword_cells,
             witnesses: circuit.witness_count,
             fanout_rows_by_width,
             gate_rows_by_width,
@@ -346,7 +402,7 @@ impl Prepared {
             table_widths: airs.iter().map(BaseAir::width).collect(),
             log_heights: log_heights.clone(),
             algebraic_bits,
-            initial_codeword_cells: config.initial_codeword_cells,
+            initial_codeword_cells: config.initial_codeword_cells + checkpoint_codeword_cells,
             main_codeword_cells: config.main_codeword_cells,
             preprocessed_codeword_cells: config.preprocessed_codeword_cells,
             main_coordinate_widths,
@@ -354,6 +410,8 @@ impl Prepared {
             security_terms: terms,
         };
         Ok(Self {
+            backend,
+            checkpoint,
             circuit,
             bus,
             airs,
@@ -388,24 +446,42 @@ impl Prepared {
             .map(Some)
             .collect();
         drop(witness);
-        // The legacy Keccak trace is replaced by Flock. Release it before
-        // constructing Flock's witness and the partitioned native tables.
+        // Release the legacy Keccak trace before constructing the selected
+        // hash witness and the partitioned native tables.
         drop(source[self.source_hash_index].take());
         let bridge = source[self.source_hash_index + 1].as_ref().unwrap();
         let rows: Vec<[u64; 100]> = (0..self.calls)
             .map(|i| core::array::from_fn(|j| bridge.column(j).value(2 * i).to_repr()))
             .collect();
-        let hash_witness = Witness::generate(
-            &self.hash,
-            self.log_heights[self.hash_index],
-            &rows,
-            &[0; 100],
-            |row, words| words.copy_from_slice(row),
-        );
+        let mut hash_witness = (self.backend == HashBackend::Flock).then(|| {
+            Witness::generate(
+                &self.hash,
+                self.log_heights[self.hash_index],
+                &rows,
+                &[0; 100],
+                |row, words| words.copy_from_slice(row),
+            )
+        });
+        let boundaries = if self.backend == HashBackend::Checkpoint {
+            let mut inputs = rows
+                .iter()
+                .map(|row| {
+                    core::array::from_fn(|lane| {
+                        (0..4).fold(0, |word, j| word | (row[4 * lane + j] << (16 * j)))
+                    })
+                })
+                .collect::<Vec<_>>();
+            inputs.resize(1 << self.log_heights[self.hash_index], [0; 25]);
+            Some(BoundaryWitness::new(inputs))
+        } else {
+            None
+        };
+        let mut hash_table = boundaries.as_ref().map(BoundaryWitness::ports);
+        drop(rows);
         let mut tables = Vec::new();
         for (i, mapping) in self.sources.iter().enumerate() {
             if i == self.hash_index {
-                tables.push(None);
+                tables.push(hash_table.take());
                 continue;
             }
             // Table clones share storage. Release each original after its last
@@ -465,7 +541,6 @@ impl Prepared {
         }
         drop(source);
         let public = self.public(public)?;
-        let mut hash_witness = Some(hash_witness);
         let instances = ProverInstances::new(
             tables
                 .into_iter()
@@ -484,25 +559,52 @@ impl Prepared {
         );
         let witness_ms = elapsed(start);
         let start = Instant::now();
-        let proof = prove(&self.config, instances, 0, &mut challenger(&self.seed))?;
+        let pending = boundaries
+            .map(|witness| {
+                self.checkpoint
+                    .as_ref()
+                    .unwrap()
+                    .commit(witness, &self.seed)
+            })
+            .transpose()?;
+        let seed = pending.as_ref().map_or_else(
+            || Ok(self.seed.clone()),
+            |pending| arithmetic_seed(&self.seed, &pending.statement),
+        )?;
+        let proof = prove(&self.config, instances, 0, &mut challenger(&seed))?;
+        let bytes = if let Some(pending) = pending {
+            let scheme = self.checkpoint.as_ref().unwrap();
+            let ports = checkpoint::arithmetic_opening(
+                &self.config,
+                verifier_instances(
+                    &self.airs,
+                    &self.hash,
+                    self.hash_index,
+                    &self.log_heights,
+                    &self.vk,
+                    &public,
+                    self.backend,
+                ),
+                &proof,
+                &pending.statement,
+                &self.seed,
+                self.hash_index,
+                scheme.log_batch,
+            )?;
+            let statement = pending.statement.clone();
+            let keccak = scheme.prove(pending, &ports)?;
+            postcard::to_allocvec(&checkpoint::AggregateProof {
+                statement,
+                arithmetic: proof,
+                keccak,
+            })?
+        } else {
+            postcard::to_allocvec(&proof)?
+        };
         let prove_ms = elapsed(start);
         let start = Instant::now();
-        verify(
-            &self.config,
-            verifier_instances(
-                &self.airs,
-                &self.hash,
-                self.hash_index,
-                &self.log_heights,
-                &self.vk,
-                &public,
-            ),
-            &proof,
-            0,
-            &mut challenger(&self.seed),
-        )?;
+        self.verify_public(&bytes, &public)?;
         let verify_ms = elapsed(start);
-        let bytes = postcard::to_allocvec(&proof)?;
         let proof_bytes = bytes.len();
         Ok((
             bytes,
@@ -516,20 +618,35 @@ impl Prepared {
     }
 
     pub fn verify(&self, bytes: &[u8], public: &[OldF]) -> Result<()> {
+        self.verify_public(bytes, &self.public(public)?)
+    }
+
+    fn verify_public(&self, bytes: &[u8], public: &[Vec<F>]) -> Result<()> {
         ensure!(bytes.len() <= 16 << 20, "oversized aggregate proof");
+        let instances = verifier_instances(
+            &self.airs,
+            &self.hash,
+            self.hash_index,
+            &self.log_heights,
+            &self.vk,
+            public,
+            self.backend,
+        );
+        if let Some(scheme) = &self.checkpoint {
+            return checkpoint::verify(
+                &self.config,
+                instances,
+                scheme,
+                &self.seed,
+                self.hash_index,
+                bytes,
+            );
+        }
         let (proof, rest): (Proof, _) = postcard::take_from_bytes(bytes)?;
         ensure!(rest.is_empty(), "trailing aggregate proof data");
-        let public = self.public(public)?;
         verify(
             &self.config,
-            verifier_instances(
-                &self.airs,
-                &self.hash,
-                self.hash_index,
-                &self.log_heights,
-                &self.vk,
-                &public,
-            ),
+            instances,
             &proof,
             0,
             &mut challenger(&self.seed),
@@ -554,12 +671,13 @@ fn verifier_instances<'a>(
     logs: &[usize],
     vk: &'a VerifyingKey<Config>,
     public: &'a [Vec<F>],
+    backend: HashBackend,
 ) -> VerifierInstances<'a, Config, Chip> {
     VerifierInstances::new(
         airs.iter()
             .enumerate()
             .map(|(i, a)| {
-                if i == hash_index {
+                if i == hash_index && backend == HashBackend::Flock {
                     VerifierInstance::circuit(a, hash, vk, logs[i], &public[i])
                 } else {
                     VerifierInstance::new(a, vk, logs[i], &public[i])
