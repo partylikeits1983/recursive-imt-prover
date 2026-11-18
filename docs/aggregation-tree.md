@@ -115,6 +115,12 @@ cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 cargo run --locked --release --bin tree-demo -- --verify --out run/tree8
 ```
 
+`--threads` sets the total Rayon worker count. `--parallel-nodes` sets how
+many sibling pairs may use that pool at once and defaults to one. Siblings
+share the prepared key and retain their input order. The report gives wall
+time for each level and latency for each node. The integration test uses four
+threads by default and accepts an override through `RAYON_NUM_THREADS`.
+
 `tree-demo` records every proof time, circuit construction count, verifier digest,
 geometry, security parameters, environment and process peak RSS. It rejects
 invalid child statements, foreign carried authorities, altered roots/nullifier

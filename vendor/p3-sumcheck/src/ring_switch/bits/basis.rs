@@ -16,6 +16,12 @@ use crate::strategy::FromTable;
 /// Twenty-four bytes hold the 192 coordinates of the widest challenge field.
 const MAX_BYTES: usize = 24;
 
+/// Byte positions of eight inputs, reused for each scaled lookup table.
+pub(super) struct CoordinateBatch<'a, EF> {
+    blocks: Vec<[[u8; 8]; MAX_BYTES]>,
+    tail: &'a [EF],
+}
+
 /// The `F_2`-coordinates of one element, in the basis its bytes define.
 ///
 /// # Overview
@@ -162,6 +168,47 @@ pub(crate) struct CoordinateSums<EF, A> {
     _ef: PhantomData<EF>,
 }
 
+impl<'a, EF: BitCoordinates> CoordinateBatch<'a, EF> {
+    pub(super) fn new(input: &'a [EF], repetitions: usize) -> Self {
+        if EF::NUM_BYTES != MAX_BYTES || repetitions < 2 {
+            return Self {
+                blocks: Vec::new(),
+                tail: input,
+            };
+        }
+        let (groups, tail) = input.as_chunks::<8>();
+        let blocks = groups
+            .iter()
+            .map(|group| {
+                let bytes = group.map(|x| Coefficients::of(x).bytes);
+                core::array::from_fn(|p| core::array::from_fn(|lane| bytes[lane][p]))
+            })
+            .collect();
+        Self { blocks, tail }
+    }
+
+    pub(super) fn apply<A: Field + FromTable<EF>>(
+        &self,
+        sums: &CoordinateSums<EF, A>,
+        output: &mut [A],
+    ) {
+        let (head, tail) = output.split_at_mut(8 * self.blocks.len());
+        if !head.is_empty() {
+            let tables = sums.tables.as_slice().first_chunk::<MAX_BYTES>().unwrap();
+            for (indices, destination) in self.blocks.iter().zip(head.as_chunks_mut::<8>().0) {
+                let mut values = [A::ZERO; 8];
+                for (table, indices) in tables.iter().zip(indices) {
+                    for lane in 0..8 {
+                        values[lane] += table[usize::from(indices[lane])];
+                    }
+                }
+                *destination = values;
+            }
+        }
+        sums.apply_into(self.tail, tail);
+    }
+}
+
 impl<EF: BitCoordinates, A: Field> CoordinateSums<EF, A> {
     /// Tabulate the subset sums of one weight per coordinate.
     ///
@@ -282,7 +329,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
 
-    use p3_binary_field::{BinaryField16, BinaryField128, Ghash128};
+    use p3_binary_field::{BinaryField16, BinaryField128, Ghash128, Poly192};
     use p3_field::PrimeCharacteristicRing;
     use proptest::prelude::*;
     use rand::rngs::SmallRng;
@@ -316,6 +363,23 @@ mod tests {
     fn coordinate_sums_are_the_weights_over_the_set_coordinates() {
         coordinate_sums_match_the_walk::<BinaryField128>(1);
         coordinate_sums_match_the_walk::<BinaryField16>(2);
+    }
+
+    #[test]
+    fn poly192_coordinate_batches_match_individual_sums() {
+        let mut rng = SmallRng::seed_from_u64(41291);
+        let weights = core::array::from_fn::<_, 192, _>(|_| rng.random::<Poly192>());
+        let sums = CoordinateSums::new(&weights);
+        let input = core::array::from_fn::<_, 37, _>(|_| rng.random::<Poly192>());
+        let expected = input.map(|x| sums.sum(x));
+        for len in 0..=input.len() {
+            for uses in [1, 2] {
+                let mut output = vec![Poly192::ZERO; len];
+                let batch = CoordinateBatch::new(&input[..len], uses);
+                batch.apply(&sums, &mut output);
+                assert_eq!(output, expected[..len]);
+            }
+        }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use p3_multilinear_util::point::Point;
 use p3_multilinear_util::poly::Poly;
 use serde::{Deserialize, Serialize};
 
-use super::basis::{Coefficients, CoordinateSums};
+use super::basis::{Coefficients, CoordinateBatch, CoordinateSums};
 use super::equality::{FactoredEquality, scaled_sums_into};
 use super::packing::BitPacking;
 use super::products::LeftFactors;
@@ -1265,6 +1265,7 @@ impl<F: TowerLevel, EF: BitCoordinates + ExtensionField<F>> BitRingSwitchBatch<'
             .map(R::from)
             .collect();
         let sums = CoordinateSums::<EF, R>::new(&batching);
+        let input = CoordinateBatch::new(equality.inner(), equality.outer().len());
 
         // Every entry belongs to the selected slot.
         // No zero run for another slot is allocated or folded.
@@ -1285,7 +1286,7 @@ impl<F: TowerLevel, EF: BitCoordinates + ExtensionField<F>> BitRingSwitchBatch<'
                 || sums.clone(),
                 |scaled, (block, &weight)| {
                     scaled_sums_into(scaled, &sums, weight);
-                    scaled.apply_into(equality.inner(), block);
+                    input.apply(scaled, block);
                 },
             );
 
@@ -1351,6 +1352,7 @@ impl<F: TowerLevel, EF: BitCoordinates + ExtensionField<F>> BitRingSwitchBatch<'
             })
             .collect::<Vec<_>>();
         let sums = CoordinateSums::<EF, R>::new(&batching);
+        let input = CoordinateBatch::new(equality.inner(), equality.outer().len());
         let successor = self.alpha.map(|alpha| {
             let kept = self
                 .reduction
@@ -1367,7 +1369,7 @@ impl<F: TowerLevel, EF: BitCoordinates + ExtensionField<F>> BitRingSwitchBatch<'
                 || (sums.clone(), R::zero_vec(block_len)),
                 |(scaled, scratch), (index, block)| {
                     scaled_sums_into(scaled, &sums, equality.outer()[index]);
-                    scaled.apply_into(equality.inner(), scratch);
+                    input.apply(scaled, scratch);
                     if let Some((column, alpha, alpha_squared)) = successor {
                         if column <= block_len {
                             for entries in scratch.chunks_mut(column) {
@@ -1410,6 +1412,7 @@ impl<F: TowerLevel, EF: BitCoordinates + ExtensionField<F>> BitRingSwitchBatch<'
     {
         // The compact head pads the coordinates to a power of two, and the padding is zero.
         let sums = CoordinateSums::<EF, R>::new(&generators[..Coefficients::<EF>::DIMENSION]);
+        let input = CoordinateBatch::new(equality.inner(), equality.outer().len());
         let mut table = Poly::zero(equality.num_variables());
         table
             .as_mut_slice()
@@ -1419,7 +1422,7 @@ impl<F: TowerLevel, EF: BitCoordinates + ExtensionField<F>> BitRingSwitchBatch<'
                 || sums.clone(),
                 |scaled, (block, &weight)| {
                     scaled_sums_into(scaled, &sums, weight);
-                    scaled.apply_into(equality.inner(), block);
+                    input.apply(scaled, block);
                 },
             );
 

@@ -15,14 +15,14 @@ pub const MAX_COPIES_PER_ROW: u8 = 16;
 pub const RECURSIVE_LAYOUT: [(usize, usize, usize, bool); 10] = [
     (1, 2, 4, true),
     (1, 4, 14, false),
-    (1, 8, 10, false),
+    (1, 8, 9, false),
     (1, 16, 18, true),
     (16, 4, 19, false),
     (16, 8, 11, false),
     (16, 16, 15, true),
     (64, 4, 21, false),
-    (64, 8, 19, false),
-    (64, 16, 19, true),
+    (64, 8, 18, false),
+    (64, 16, 18, true),
 ];
 
 pub struct FanoutShard {

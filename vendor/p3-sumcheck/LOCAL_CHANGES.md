@@ -19,6 +19,11 @@ The added differential test compares every suffix depth and Boolean prefix lengt
 over Poly64/Poly192. It exercises zero, nonzero and alternating slot addresses.
 Upstream ring-switch tests remain available.
 
+For repeated Poly192 coordinate lookups, the prover groups eight inputs by byte
+position once and reuses those indices for every outer equality weight. Each
+lookup reads the same subset sums as the scalar implementation. A differential
+test covers every tail length and the single-use fallback.
+
 ```sh
 cargo test --locked --release --manifest-path vendor/p3-sumcheck/Cargo.toml --target-dir target --lib ring_switch::bits
 ```

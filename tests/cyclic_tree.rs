@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
@@ -19,9 +19,10 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("run/cyclic-64-test-{}-{stamp}", std::process::id()));
     let executable = env!("CARGO_BIN_EXE_tree-demo");
+    let threads = env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "4".to_owned());
     ensure!(
         Command::new(executable)
-            .args(["--batch-size", "64", "--threads", "4", "--out"])
+            .args(["--batch-size", "64", "--threads", &threads, "--out"])
             .arg(&directory)
             .status()?
             .success(),
@@ -68,7 +69,7 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     }
     let verify = || {
         Command::new(executable)
-            .args(["--verify", "--threads", "4", "--out"])
+            .args(["--verify", "--threads", &threads, "--out"])
             .arg(&independent)
             .output()
     };

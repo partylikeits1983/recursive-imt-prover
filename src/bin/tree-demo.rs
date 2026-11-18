@@ -11,7 +11,7 @@ use imt_flock_backend::{
     HashBackend, MAX_VERIFIER_BYTES, WHIR_FOLD, WHIR_LOG_INV_RATE, verifier_key_digest,
 };
 use mimalloc::MiMalloc;
-use rayon::ThreadPoolBuilder;
+use rayon::{ThreadPoolBuilder, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -27,7 +27,9 @@ use recursive_imt_prover::{
         engine::Settings,
         relation::AggregatePublic,
         veil::{
-            aggregate::{MaskedChildInput, PreparedMaskedAggregate, StatementFormat},
+            aggregate::{
+                AggregationMetrics, MaskedChildInput, PreparedMaskedAggregate, StatementFormat,
+            },
             child::{MaskedMembershipProof, PreparedMembership},
             parameters::Parameters,
         },
@@ -45,6 +47,9 @@ struct Args {
     batch_size: usize,
     #[arg(long, default_value_t = 4)]
     threads: usize,
+    /// Maximum number of sibling pairs proved concurrently in the shared thread pool.
+    #[arg(long, default_value_t = 1)]
+    parallel_nodes: usize,
     #[arg(long, default_value = "run/cyclic-tree")]
     out: PathBuf,
     #[arg(long)]
@@ -76,6 +81,10 @@ fn main() -> Result<()> {
     ensure!(
         args.batch_size.is_power_of_two() && (4..=MAX_CHILDREN).contains(&args.batch_size),
         "tree batch size must be 4, 8, 16, 32 or 64"
+    );
+    ensure!(
+        args.parallel_nodes > 0,
+        "parallel node count must be positive"
     );
     ensure!(!args.out.exists(), "output directory must be fresh");
     fs::create_dir_all(&args.out)?;
@@ -115,7 +124,7 @@ fn main() -> Result<()> {
     let verifier = CyclicVerifier::from_bytes(&key, &trusted.verifier_digest, &trusted.identity)?;
     let mut report = json!({
         "protocol": PROTOCOL, "environment": environment(), "depth": IMT_DEPTH,
-        "batch_size": args.batch_size, "field": "Poly64/Poly192", "hash": "Keccak-256", "bound": "Johnson",
+        "batch_size": args.batch_size, "parallel_nodes":args.parallel_nodes, "field": "Poly64/Poly192", "hash": "Keccak-256", "bound": "Johnson",
         "child_parameters": parameters, "child_identity": child.identity(),
         "first_verifier_digest": verifier_key_digest(&first_key), "merge_verifier_digest": trusted.verifier_digest,
         "circuit_constructions": {"child":1, "first_aggregation":1, "merge":1},
@@ -192,22 +201,29 @@ fn main() -> Result<()> {
     let (public, proof, _) = first.prove_for_merge(&inputs[..2], &foreign)?;
     let foreign_pair = TreeProof { public, proof };
     let mut validation_ms = ms(t);
-    let mut layer = Vec::new();
     let mut first_metrics = Vec::new();
-    for (i, pair) in inputs.as_chunks::<2>().0.iter().enumerate() {
-        let (public, proof, metrics) = first.prove_for_merge(pair, merge.authority())?;
-        eprintln!(
-            "First aggregate {}/{}: {:.1} ms, {} bytes",
-            i + 1,
-            args.batch_size / 2,
-            metrics.aggregation_wall_ms,
-            proof.len()
-        );
-        first_metrics.push(json!(metrics));
-        layer.push(TreeProof { public, proof });
-        report["first_aggregates"] = json!(first_metrics);
-        write_json(&args.out.join("report.json"), &report)?;
-    }
+    let first_start = Instant::now();
+    let mut layer = prove_pairs(
+        &inputs,
+        args.parallel_nodes,
+        |pair| {
+            let (public, proof, metrics) = first.prove_for_merge(pair, merge.authority())?;
+            Ok((TreeProof { public, proof }, metrics))
+        },
+        |index, proof, metrics| {
+            eprintln!(
+                "First aggregate {}/{}: {:.1} ms, {} bytes",
+                index + 1,
+                args.batch_size / 2,
+                metrics.aggregation_wall_ms,
+                proof.proof.len()
+            );
+            first_metrics.push(json!(metrics));
+            report["first_aggregates"] = json!(first_metrics);
+            write_json(&args.out.join("report.json"), &report)
+        },
+    )?;
+    report["first_aggregation_wall_ms"] = json!(ms(first_start));
     drop(first);
     drop(inputs);
     let t = Instant::now();
@@ -242,28 +258,31 @@ fn main() -> Result<()> {
             "merge key changed between levels"
         );
         let count = layer.len() / 2;
-        let mut next = Vec::new();
         let mut nodes = Vec::new();
-        let mut pairs = layer.into_iter();
-        while let Some(left) = pairs.next() {
-            let right = pairs
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("incomplete merge pair"))?;
-            let (proof, metrics) = merge.prove(&[left, right])?;
-            verifier.verify(&proof.proof, &proof.public)?;
-            eprintln!(
-                "Merge level {}, node {count_done}/{count}, {} leaves: {:.1} ms, {} bytes",
-                levels.len() + 1,
-                proof.public.children.len(),
-                metrics.aggregation_wall_ms,
-                proof.proof.len(),
-                count_done = next.len() + 1
-            );
-            merge_times.push(metrics.aggregation_wall_ms);
-            nodes.push(json!({"children":proof.public.children.len(),"metrics":metrics}));
-            next.push(proof);
-        }
-        levels.push(json!({"verifier_digest":verifier_key_digest(&merge.export_verifier_key()?),"nodes":nodes}));
+        let started = Instant::now();
+        let next = prove_pairs(
+            &layer,
+            args.parallel_nodes,
+            |pair| {
+                let (proof, metrics) = merge.prove(pair)?;
+                verifier.verify(&proof.proof, &proof.public)?;
+                Ok((proof, metrics))
+            },
+            |index, proof, metrics| {
+                eprintln!(
+                    "Merge level {}, node {}/{count}, {} leaves: {:.1} ms, {} bytes",
+                    levels.len() + 1,
+                    index + 1,
+                    proof.public.children.len(),
+                    metrics.aggregation_wall_ms,
+                    proof.proof.len()
+                );
+                merge_times.push(metrics.aggregation_wall_ms);
+                nodes.push(json!({"children":proof.public.children.len(),"metrics":metrics}));
+                Ok(())
+            },
+        )?;
+        levels.push(json!({"verifier_digest":verifier_key_digest(&merge.export_verifier_key()?), "wall_ms":ms(started), "nodes":nodes}));
         report["merge_levels"] = json!(levels);
         write_json(&args.out.join("report.json"), &report)?;
         layer = next;
@@ -312,6 +331,25 @@ fn main() -> Result<()> {
         json!({"children":args.batch_size,"merge_levels":levels.len(),"proof_bytes":proof.proof.len(),"same_key_recursion":report["same_key_recursion"],"acceptance_pass":report["acceptance_pass"],"report":args.out.join("report.json")})
     );
     Ok(())
+}
+
+fn prove_pairs<T: Sync>(
+    inputs: &[T],
+    limit: usize,
+    prove: impl Fn(&[T; 2]) -> Result<(TreeProof, AggregationMetrics)> + Sync,
+    mut record: impl FnMut(usize, &TreeProof, AggregationMetrics) -> Result<()>,
+) -> Result<Vec<TreeProof>> {
+    let (pairs, tail) = inputs.as_chunks::<2>();
+    ensure!(tail.is_empty(), "incomplete aggregate pair");
+    let mut output = Vec::with_capacity(pairs.len());
+    for group in pairs.chunks(limit) {
+        let nodes = group.par_iter().map(&prove).collect::<Result<Vec<_>>>()?;
+        for (proof, metrics) in nodes {
+            record(output.len(), &proof, metrics)?;
+            output.push(proof);
+        }
+    }
+    Ok(output)
 }
 
 fn verify_files(directory: &Path) -> Result<()> {

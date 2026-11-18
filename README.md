@@ -136,10 +136,12 @@ The 63 aggregation operations took 48.9 minutes in total. Full sequential elapse
 time was 54.5 minutes excluding negative-test overhead, or 55.4 minutes including
 it. Targets are **at most 10 s per merge and 60 s for 64-to-1 aggregation**, ideally
 30 s. These remain unmet. The proof meets the 1.5 MB target; 1 MB remains a target.
-A newer circuit stores one scale for each run of geometric coefficients. In an
-eight-child run it produced a 1,446,126-byte final proof. Fresh verification
-took 133 ms. The three merges took 46.3–53.0 s while other builds shared the
-machine. [Eight-child measurements](benchmarks/binary/tree-merge/geometric-packing.json).
+
+With smaller recursion tables and eight threads, the eight-child run took
+164.0 s to aggregate the prepared children. First aggregates took 21.8–22.6 s
+each and merges took 23.9–26.6 s each. The final proof was 1,427,010 bytes and
+verified in 117 ms in a fresh process. These timings use one active node at a
+time. [Stage times and sibling concurrency experiment](benchmarks/binary/tree-merge/paired-scheduling.json).
 
 [Earlier benchmarks and optimization history](docs/binary-veil.md#four-child-tree-merge)
 use different verifier layouts and do not measure the current reusable circuit.
