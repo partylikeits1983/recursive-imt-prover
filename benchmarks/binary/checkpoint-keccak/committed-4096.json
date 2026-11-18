@@ -1,0 +1,88 @@
+{
+  "acceptance_pass": false,
+  "aggregate_integrated": false,
+  "batch_size": 4096,
+  "conditional_algebraic_bits": 150.0935008177852,
+  "end_to_end_security_bits": null,
+  "field": "Poly64/Poly192",
+  "fresh_process": {
+    "process_wall_ms": 8.650792,
+    "verifier": {
+      "setup_decode_ms": 0.387792,
+      "valid": true,
+      "verify_ms": 5.960041
+    }
+  },
+  "hash": "Keccak-256",
+  "johnson_query_target_bits": 152,
+  "pcs": "additive-WHIR",
+  "pcs_authenticated": true,
+  "pow_bits_ceiling": 16,
+  "protocol": "experimental-committed-checkpoint-keccak-v1",
+  "samples": [
+    {
+      "decode_verify_ms": 6.13875,
+      "phase": "cold-first-proof",
+      "proof_bytes": 249691,
+      "prove_ms": 1059.4274169999999,
+      "statement_bytes": 34
+    },
+    {
+      "decode_verify_ms": 6.244917,
+      "phase": "warm",
+      "proof_bytes": 249691,
+      "prove_ms": 1044.851666,
+      "statement_bytes": 34
+    },
+    {
+      "decode_verify_ms": 5.980833,
+      "phase": "warm",
+      "proof_bytes": 249691,
+      "prove_ms": 1041.972417,
+      "statement_bytes": 34
+    }
+  ],
+  "setup_ms": 0.486709,
+  "threads_requested": "4",
+  "verification_scope": "Both boundary tables authenticated by one PCS commitment. Verifier receives the commitment and proof, no original states. Aggregate port/bus linkage is not implemented.",
+  "witness_ms": 0.068334,
+  "zero_knowledge": false,
+  "environment": {
+    "source_keccak256": "90b7f35ef47d9cc4c42bb3369cf8b852c7623ea4df6f3c902e91e703e243b91d",
+    "example_sha256": "7e7199c6e0b63d1885c7be8c7c2e678e491a027c38fa7e7e51c675e82b84d937",
+    "base_commit": "8ab359961d0b39866d93fd0fa6677924fbb744ce",
+    "dirty": true,
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "hardware": "Mac14,10\n17179869184\nApple M2 Pro",
+    "threads": 4,
+    "rustflags": null,
+    "profile": "release; opt-level=3, thin LTO, codegen-units=16",
+    "compile_excluded": true,
+    "filesystem_caches_reset": false
+  },
+  "command": "RAYON_NUM_THREADS=4 /usr/bin/time -l target/release/examples/checkpoint-keccak 4096 3 run/checkpoint-keccak-closing-4096",
+  "measurements_scope": "Standalone committed permutation component, not child proving or aggregation. First proof is cold; two subsequent samples are warm. Compilation excluded.",
+  "process": {
+    "exit_code": 0,
+    "max_rss_bytes": 462290944,
+    "peak_physical_footprint_bytes": 378882432,
+    "wall_seconds": 3.39,
+    "measurement_source": "macOS /usr/bin/time -l; process and fresh verifier child; physical footprint includes compressed pages"
+  },
+  "summary": {
+    "prove_ms": {
+      "cold": 1059.4274169999999,
+      "warm_median": 1043.4120415,
+      "warm_min": 1041.972417,
+      "warm_max": 1044.851666,
+      "warm_samples": 2
+    },
+    "decode_verify_ms": {
+      "cold": 6.13875,
+      "warm_median": 6.112875,
+      "warm_min": 5.980833,
+      "warm_max": 6.244917,
+      "warm_samples": 2
+    }
+  }
+}

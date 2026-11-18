@@ -411,11 +411,13 @@ dependencies = [
  "p3-merkle-tree 0.8.0",
  "p3-multi-stark 0.8.0",
  "p3-multilinear-util 0.8.0",
+ "p3-security 0.8.0",
  "p3-sumcheck 0.8.0",
  "p3-symmetric 0.8.0",
  "p3-whir 0.8.0",
  "postcard",
  "serde",
+ "serde_json",
  "sha3",
  "tracing",
 ]

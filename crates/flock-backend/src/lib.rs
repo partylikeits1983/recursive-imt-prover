@@ -1,6 +1,7 @@
 //! Experimental final prover using Plonky3 Flock for Keccak and the native
 //! product bus for the arithmetic circuit. This proof is deliberately non-hiding.
 mod air;
+pub mod checkpoint_keccak;
 mod config;
 mod encoding;
 mod fanout;

@@ -721,8 +721,9 @@ a VM. That revision uses F128 challenges and states a 125-bit ROM target, so it
 cannot replace this project's 128-bit path as-is. Any reuse must retain Poly192
 challenges, bind both Keccak boundaries to the native bus, authenticate the
 checkpoint openings, and include the GKR reduction in the security ledger.
-Plonky3's inspected `p3-gkr` currently supplies product-tree GKR, not this Keccak
-layer protocol; no such integration is implemented or claimed here.
+Plonky3's inspected `p3-gkr` supplies product-tree GKR, not this Keccak layer
+protocol. The [committed component below](#committed-keccak-gkr-component)
+now implements a reference reduction; aggregate integration is still pending.
 
 ## Aggregate v4: partitioned tables and bounded opening work
 
@@ -1104,3 +1105,80 @@ None of these sources certifies this new Rust adaptation or its parameters.
 Fresh-process negative checks are recorded in
 [`verification-negative.json`](../benchmarks/binary/v2/verification-negative.json).
 All 12 cases rejected altered statements, authority data or proof bytes.
+
+## Committed Keccak GKR component
+
+`crates/flock-backend/src/checkpoint_keccak` is an isolated, non-hiding
+permutation-batch proof. It follows the checkpoint idea investigated in LeanVM,
+using Plonky3's cubic sumcheck, Poly64/Poly192 and the existing additive-WHIR PCS.
+It does not port LeanVM's RMFE implementation or inherit its formal claims.
+The selected aggregate still uses Flock; this component is not yet connected to
+its native product bus.
+
+The prover commits two Boolean tables containing the ordered input and output
+states, each padded from 1600 to 2048 bits per permutation. One commitment covers
+both tables. The transcript binds the protocol, count, application context and
+commitment before sampling the output claim. It then reduces that claim backward
+through 24 rounds. Each round proves the weighted chi equation with a cubic
+sumcheck, batches its three endpoint values under a fresh Poly192 challenge,
+and applies the exact transpose of theta/rho/pi to the resulting bit weights.
+Iota is handled as its public affine constant. The prover recomputes the round
+checkpoints instead of committing nonlinear wires.
+
+The PCS authenticates the initial output evaluation and the final input
+functional. An 11-round degree-two sumcheck reduces the arbitrary input bit
+weights to one ordinary multilinear opening. Its endpoint product must match
+the verifier's known weight evaluation times the PCS-authenticated input value.
+A verifier receives the commitment and proof, not the original states. The raw
+`prove` and `verify` reduction functions alone do **not** constitute acceptance;
+`CommittedBatch` closes both boundaries through WHIR. The commitment still needs
+to be linked to application inputs before this can prove an IMT or an aggregate.
+
+For `l = log2(batch)`, the reduction's conditional error numerator is
+`24 * (3 * (l + 11) + 2)` over `|Poly192|`. The standalone component adds
+`l + 11` for the initial output evaluation and `2 * 11` for the input closing,
+charges the PCS candidate-set bound, and combines this with the prescribed-opening
+security ledger. It requires at least 144 conditional algebraic bits and keeps
+Johnson/152 PCS bits, a 16-bit
+PoW ceiling, rate 1/2 and fold 4. This is a conditional algebraic/PCS calculation,
+not a Fiat–Shamir, knowledge or end-to-end security theorem. Keccak's generic
+classical collision work factor is reported separately; no new privacy or
+post-quantum claim is made.
+
+Tests compare the linear transpose and full permutation with independent native
+Keccak, compare every optimized sumcheck round with dense evaluation, and close
+forged output claims. Committed-proof tests reject changed commitments, counts,
+contexts, output claims, GKR endpoints, PCS values and input-closing messages.
+An invalid permutation output passes through the prover without a native
+validity gate and is rejected by the actual verifier. The example serializes a
+proof and statement and launches a fresh verification process:
+
+```sh
+cargo build --locked --release -p imt-flock-backend --example checkpoint-keccak
+RAYON_NUM_THREADS=4 target/release/examples/checkpoint-keccak 4096 3 run/checkpoint4096
+RAYON_NUM_THREADS=4 target/release/examples/checkpoint-keccak --verify run/checkpoint4096
+```
+
+M2 Pro, 16 GiB RAM, four threads, Rust 1.98.1, release profile; compilation
+excluded. Three samples per size: one cold proof and two warm proofs. Filesystem
+caches were not reset. These are **permutation component** measurements, not
+child or aggregate timings:
+
+| Permutations | Cold prove | Warm median (range) | Proof bytes | Fresh verifier wall | Peak physical footprint |
+|---|---:|---:|---:|---:|---:|
+| 4,096 | 1.059 s | 1.043 s (1.042–1.045) | 249,691 | 8.7 ms | 379 MB |
+| 65,536 | 16.779 s | 15.845 s (15.688–16.001) | 335,364 | 10.0 ms | 3.62 GB |
+
+Physical footprint is reported by macOS `time -l` and includes compressed
+pages; it is separate from maximum RSS. The corresponding conditional
+algebraic/PCS bounds are 150.09 and 148.23 bits. Raw reports contain every
+sample, compiler/hardware metadata, the implementation source fingerprint and
+the benchmark executable source digest:
+[4,096 permutations](../benchmarks/binary/checkpoint-keccak/committed-4096.json),
+[65,536 permutations](../benchmarks/binary/checkpoint-keccak/committed-65536.json).
+
+Aggregate integration must authenticate the native Keccak port words against
+these boundary tables, preserve all bus/copy constraints, bind the trusted
+circuit identity and add the reduction to the aggregate's security ledger.
+A separately valid permutation proof is not sufficient. The 64-child aggregate
+target and joint child statistical-ZK analysis remain open.

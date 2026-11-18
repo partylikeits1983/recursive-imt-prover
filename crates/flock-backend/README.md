@@ -126,3 +126,13 @@ then verify an actual proof through both implementations. Negative cases cover
 changed public inputs, key bytes, key digest, configuration binding, authority
 identity and proof bytes. This preserves the original relation; it is not a
 new proof system or a substitute for child privacy analysis.
+
+## Isolated Keccak GKR component
+
+`checkpoint_keccak::CommittedBatch` proves an ordered batch of Keccak-f
+permutations using cubic sumcheck and the existing additive-WHIR PCS. It commits
+only the padded input/output states, recomputes intermediate rounds, and
+authenticates both boundary claims. This non-hiding experimental component is
+not yet used by `Prepared` or `Verifier`: native port/bus linkage is still needed.
+The raw reduction API requires its caller to authenticate both boundaries.
+See the [protocol, conditional bound and benchmark command](../../docs/binary-veil.md#committed-keccak-gkr-component).

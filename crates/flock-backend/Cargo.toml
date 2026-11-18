@@ -26,6 +26,7 @@ p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a7
 p3-multi-stark = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-multilinear-util = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-sumcheck = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-security = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-whir = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 old-air = { package = "p3-air", version = "=0.9.0-rc.2" }
@@ -33,6 +34,9 @@ old-binary-field = { package = "p3-binary-field", version = "=0.9.0-rc.2" }
 old-bus = { package = "p3-bus", version = "=0.9.0-rc.2" }
 p3-circuit = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-circuit-prover = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
+
+[dev-dependencies]
+serde_json = "1"
 
 [lints.clippy]
 items_after_statements = "warn"

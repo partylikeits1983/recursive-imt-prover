@@ -23,7 +23,7 @@ type Compress = CompressionFunctionFromHasher<Keccak256Hash, 2, 32>;
 pub type Mmcs = MerkleTreeMmcs<Poly64, u8, Hash, Compress, 2, 32>;
 pub type Challenger = BinaryChallenger<Poly64, HashChallenger<u8, Keccak256Hash, 32>>;
 type Bits = BooleanWhirPcs<Poly64, Poly192, BinaryWhirDomain<Poly64>, Mmcs, Challenger>;
-type Pcs = MixedTraceCommitment<Poly192, Bits, Poly64>;
+pub(crate) type Pcs = MixedTraceCommitment<Poly192, Bits, Poly64>;
 pub type Data = MixedTraceData<Poly64, BooleanWhirData<Poly64, Poly192, Mmcs>>;
 
 pub struct Config {

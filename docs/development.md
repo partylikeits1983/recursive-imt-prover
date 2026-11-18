@@ -68,8 +68,10 @@ These requirements do not change when inspecting other implementations.
    verifier snapshots now avoid rebuilding proving tables: a fresh N=4 verifier
    takes about 140 ms total and 34 MB RSS. Reduce AIR opening reductions and
    simultaneous prover allocations next. Checkpointed Keccak
-   GKR is a research lead (`binary-veil.md`), retaining the existing fields,
-   hash and security target.
+   GKR now has a standalone committed component (`binary-veil.md`), retaining
+   the existing fields, hash and conditional security margin. Its authenticated
+   input/output boundaries still need linkage to the native port/bus relation
+   before replacing Flock in the selected aggregate.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover before adding another recursion layer.
