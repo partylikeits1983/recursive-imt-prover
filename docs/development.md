@@ -1,114 +1,54 @@
 # Development map
 
-Keep one active direction: add a complete, analyzed binary ZK child format to
-the existing proof-only aggregation flow. The VEIL module contains the
-experimental masked child and its component checks.
-
-The acceptance target is **depths 16 and 32**, **up to 64 children in one aggregate**,
-**binary fields**, **Keccak throughout**, **statistical child ZK**, and **at least
-128-bit end-to-end classical security**. The aggregate itself may be non-ZK. Aggregation of aggregates is deferred.
-These requirements do not change when inspecting other implementations.
+The active path is a masked Keccak IMT child over Poly64/Poly192, followed by
+one non-ZK aggregate of the ordered child statements. Depths are 16 and 32.
+Batches through eight have verified independently; 16–64 remain a scaling target.
+Statistical child ZK and end-to-end 128-bit classical security remain unproved.
+See [security limits](binary-security.md) and [measurements](binary-veil.md).
 
 | Location | Purpose |
 |---|---|
-| `src/binary/tree.rs`, `relation.rs` | Keccak IMT and the child statement |
-| `src/binary/engine.rs` | Poly64/Poly192 native, non-ZK child/aggregate baseline |
-| `src/binary/security.rs` | Conditional algebraic budgets and N-child composition |
-| `crates/flock-backend/` | Isolated final prover and old/new Plonky3 AIR adapter |
-| `src/binary/veil/` | Experimental binary VEIL components and direct Keccak fixture |
-| `src/bin/` | Binary demo, benchmark and VEIL experiment entry points |
-| `src/benchmark.rs`, `files.rs` | Shared measurements and bounded artifact I/O |
-| `src/legacy/` | Archived prime-field PoC; opt-in `legacy-prime` feature |
-| `tests/legacy/` | Prime-field regressions, compiled as one optional test target |
-| `scripts/` | Reproducible benchmark drivers |
-| `benchmarks/` | Recorded measurements; no proof or private witness files |
-| `vendor/` | Pinned Plonky3 sources required by documented recursion and prover patches |
+| `src/binary/tree.rs`, `relation.rs` | Keccak IMT and membership statement |
+| `src/binary/veil/` | Masked child, recursive verifier and aggregation |
+| `crates/flock-backend/` | Native product-bus prover and linked Keccak backends |
+| `src/binary/engine.rs`, `security.rs` | Non-ZK baseline and conditional security budgets |
+| `src/bin/`, `src/benchmark.rs`, `src/files.rs` | CLI, measurements and bounded file I/O |
+| `src/legacy/`, `tests/legacy/` | Archived prime-field PoC, enabled by `legacy-prime` |
+| `scripts/`, `benchmarks/` | Benchmark drivers and retained measurements |
+| `vendor/` | Pinned sources required by documented upstream patches |
 
-## Next milestones
+## Next work
 
-1. **Online masked transcript — implemented.** Fresh masks are committed before
-   algebraic messages and challenges. One verifier replay produces the affine
-   and product constraints. Native AIR sumcheck uses upstream arithmetic.
-2. **Private oracle — implemented experimentally.** Additive WHIR authenticates
-   only a uniformly masked combination of private columns. The child now stacks
-   128 trace columns per commitment column, uses random low-degree coefficient
-   padding, and verifies a compact functional instead of a dense weight table.
-   The original interpolation oracle remains a component comparison fixture.
-3. **Complete membership relation — implemented experimentally.** A fixed AIR
-   connects adjacent Keccak hashes directly, including the amount, domains,
-   path direction, schedule and root. It needs no product bus. The upstream
-   zerocheck, private current/successor openings, public preprocessing and masked
-   endpoint algebra are linked in one serialized child proof. Depths 16/32
-   have independent-process measurements. This establishes the implemented
-   relation, not the full privacy or composed security theorem.
-4. **One-proof masked-child aggregation — implemented experimentally.**
-   `masked-demo` compiles the complete child verifier for the fixed ordered batch.
-   `crates/flock-backend` proves its arithmetic on the native product bus and its
-   Keccak calls with the pinned upstream Flock circuit-table prover. Two- and
-   four-child Flock aggregates, and an eight-child checkpoint aggregate, have
-   passed independent-process verification and negative
-   public-statement checks. The component bundle remains an explicitly non-succinct
-   diagnostic. See the measurements and resource limits in `binary-veil.md`.
-5. **Privacy/security review follows integration.** The user accepts a plausible
-   statistical-ZK candidate for this milestone. Keep unproved claims labelled:
-   joint simulation, adaptive/ROM composition, abort probabilities, salted-leaf
-   lifetime budgets, and end-to-end 128-bit security remain to be established.
-   Retain binary fields, Keccak, Johnson bounds and conservative algebraic
-   parameters. Do not turn the conditional budget into a security certificate.
-6. **Measure and optimize.** Benchmark depths 16/32 and batches 1/2/4/8/16/32/64,
-   separately reporting circuit construction, proof generation, decoding,
-   trusted setup and final verification. Profile before changing the design;
-   compare a recursion tree only if the fixed batch hits a measured limit.
-   Current depth-32 checkpoint results: N=2 takes 29.69 s warm with 9.23 GB
-   peak physical footprint; N=8 takes 202.22 s with 35.73 GB. Flock retains the
-   smaller proof and slightly faster verification. See `binary-veil.md` for raw
-   measurements, ranges and the Flock proving regression.
-   Product-bus leaves are regenerated in chunks; known Boolean PCS evaluations
-   avoid full equality vectors. Fixed-zero preprocessing is omitted, repeated
-   copies share rows, and single-use/pair auxiliary copies are eliminated.
-   Verifier snapshots avoid reconstructing prover tables in the final process.
-   Next, reduce simultaneous sumcheck storage and circuit construction memory.
-   Investigate one child-verifier template instantiated over an ordered batch,
-   with separately authenticated wire/port namespaces. Keep resource guards.
-   Avoid two rejected approaches: indexed Logup* required large transmitted
-   pushforwards, and a shared AIR expression DAG produced only about 2%
-   improvement with overlapping warm timing ranges.
+1. Reduce aggregate proving time. Profile arithmetic, bus evaluation, PCS and
+   Keccak separately. Keep parameters fixed and report cold/warm ranges, setup,
+   proof size, memory and independent verification. Current results exceed
+   the latency target.
+2. Reduce construction memory. Investigate one child-verifier template reused
+   across a batch with authenticated wire and port namespaces. Keep resource
+   guards. Add another recursion layer only after measuring the fixed-batch limit.
+3. Complete the joint privacy and security analysis: simulation, abort
+   probabilities, adaptive Fiat–Shamir composition and lifetime error budgets.
+   Keep binary fields, Keccak and Johnson bounds. Conditional algebraic budgets
+   are not an end-to-end security proof.
 
-Do not implement Ethereum verification yet. Optimize the measured fixed-batch
-prover before adding another recursion layer.
-
-The exact obligations and existing measurements live in
-[binary-veil.md](binary-veil.md). Avoid copying status and security explanations
-into additional documents; keep the README as the entry point.
+Avoid repeating two rejected experiments: indexed Logup* required large
+transmitted pushforwards; a shared AIR expression DAG gave about 2% improvement
+with overlapping timing ranges. Do not implement Ethereum verification yet.
 
 ## Checks
 
-GitHub CI has one Linux job: formatting, default-feature Clippy across targets,
-and library unit tests. It uses the pinned Rust toolchain and a dependency cache.
-Proof benchmarks and the full release regression suite remain local checks.
-
 ```sh
-# Normal binary development: excludes the old prime CLI and its slow tests.
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --release --workspace
-
-# Before publishing changes that also affect shared or legacy code.
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-cargo test --locked --release --workspace --all-features
 ```
 
-The binary `demo`, `bench` and `veil-demo --verify` command names are retained.
-Their v2 proof/trust formats deliberately reject v1 artifacts. A plain `cargo run` now selects the binary demo. The prime CLI retains
-its executable name but requires `--features legacy-prime --bin recursive-imt-prover`.
-Library callers use the `legacy` namespace for that implementation.
+Use `--all-features` for changes affecting the archived prime implementation.
+Vendored prover patches have targeted checks in their `LOCAL_CHANGES.md` files.
+GitHub CI runs formatting, default-feature Clippy and library tests in one job.
+Benchmarks and release regressions run locally.
 
-Source fingerprints are computed once by `build.rs`; executables contain only
-the digest, not copies of the source files. Keccak and legacy SHA3 fingerprints
-retain their respective framing. Benchmark reports share environment and RSS
-collection. Historical reports retain the metadata from their original run.
-
-Generated runs, proofs and private fixtures belong under ignored `run/`.
-Keep the current reports and diagnostics supporting documented results.
-Retrieve superseded measurements from Git history; remove duplicate logs.
-Do not rewrite retained timings or fingerprints after refactoring.
+Keep generated proofs and private fixtures under ignored `run/`. Commit only
+measurements supporting documented results; recover superseded reports from Git.
+`build.rs` records source fingerprints without embedding source in executables.
+Never rewrite retained timings or fingerprints after a refactor.

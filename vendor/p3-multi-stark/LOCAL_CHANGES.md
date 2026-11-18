@@ -90,3 +90,12 @@ tests exercise actual valid arithmetic proofs, altered authenticated values,
 changed public values and mismatched Keccak subarguments.
 
 Unused development dependencies removed: `criterion`, `p3-binary-pcs`, `tracing-forest`, `tracing-subscriber`.
+
+`src/bus/composition.rs`: affine declarations that exceed the projection storage
+limit now compute quadratic round coefficients directly from their folded
+sources. Terms sharing an activation are combined once. Compact projections
+use the same coefficient accumulator; nonlinear declarations keep the generic
+evaluator. This changes prover work only, with no new full-height tables.
+The existing differential test compares every round against generic evaluation,
+including Poly64/Poly192, mixed heights, packed columns, selectors, cancellation
+and zero/one challenges. Run the bus tests above.

@@ -1490,3 +1490,42 @@ produce real proofs and verify with cached authority. The fresh-process suites
 accept valid aggregates and reject all 13 tampering cases for
 [checkpoint N=8](../benchmarks/binary/masked-aggregate/checkpoint-direct-pairs-negative.json)
 and [Flock N=2](../benchmarks/binary/masked-aggregate/flock-direct-pairs-negative.json).
+
+## Affine bus round coefficients
+
+Affine bus terms now compute their quadratic round coefficients directly.
+Terms sharing an activation are combined once. Compact groups retain their
+materialized projections; larger groups read folded sources, and nonlinear
+terms retain the generic evaluator. No full-height tables are added. The
+polynomial, transcript, verifier, proof format and security parameters are
+unchanged. Differential tests compare every round with generic evaluation,
+including Poly64/Poly192, mixed heights, selectors and zero/one challenges.
+
+Depth-32 checkpoint N=2 takes **27.703 s cold** and **27.241–27.574 s warm**,
+median **27.408 s**, 7.7% below the preceding 29.690 s. Peak physical footprint
+is **9.186 GB**; proofs are 1,752,239–1,753,865 bytes. Fresh verification takes
+**153.33 ms** including 133.58 ms decoding/verification and 13.99 ms key setup,
+at 28.21 MB RSS. Construction takes 12.628 s and the warm batch critical-path
+median is 34.974 s. The three-sample process takes 120.847 s.
+[Raw checkpoint report](../benchmarks/binary/masked-aggregate/checkpoint-affine-coefficients-d32-n2.json).
+
+Flock N=2 takes **33.212 s cold** and **34.047–35.127 s warm**, median
+**34.587 s**, 12.2% below the preceding 39.384 s. Peak physical footprint is
+**16.447 GB**; proofs are 1,351,378–1,351,807 bytes. Fresh verification takes
+**141.43 ms** including 122.97 ms decoding/verification and 13.50 ms setup,
+at 34.34 MB RSS. Construction takes 12.097 s; warm batch critical-path median
+is 41.499 s. The three-sample process takes 139.151 s.
+[Raw Flock report](../benchmarks/binary/masked-aggregate/flock-affine-coefficients-d32-n2.json).
+
+Measurements use the same M2 Pro, four threads, Rust 1.98.1 and parameters,
+without concurrent compilation or profiling. Source fingerprint:
+`1fc755ec36c54f5ca819fed02cd5c36b77356b333ce78c0afa94bba176d4f2a2`.
+Filesystem caches were not reset. N=8 has not been remeasured for this change;
+its retained result above is from the preceding copy optimization.
+
+All 52 active library tests, 18 bus tests, formatting and workspace/vendor
+Clippy pass. Fresh-process checks accept valid proofs and reject all 13
+statement, proof and verifier-data mutations for
+[checkpoint](../benchmarks/binary/masked-aggregate/checkpoint-affine-coefficients-negative.json)
+and [Flock](../benchmarks/binary/masked-aggregate/flock-affine-coefficients-negative.json).
+The sub-ten-second aggregate target remains unmet.

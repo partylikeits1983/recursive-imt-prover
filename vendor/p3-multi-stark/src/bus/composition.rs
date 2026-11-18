@@ -1,27 +1,8 @@
-//! Bus family of the shared AIR sumcheck, binding product-GKR leaf claims to committed traces.
-//!
-//! For each direction, ProductGKR leaves a claim `L(q)`. This family proves
-//! `L(q) - 1` equals the weighted sum of the rowwise bus factors minus one.
-//! Short tables are lifted with `eq(prefix, 1^k)`, whose Boolean-cube sum is one.
-//!
-//! The family runs inside the zerocheck sumcheck, over the same cube and challenges.
-//! Its terminal expression is checked against the same openings the AIR constraints read.
-//!
-//! Wide affine declarations sharing an activation combine their weighted factors before
-//! projecting into separate factor and activation tables.
-//! Projection is used only when those full-height tables fit within the generic path's first
-//! half-height fold. Other declarations read their committed columns or period vectors in place.
-//!
-//! The first challenge that binds one of its table's row variables folds it in half.
-//! Large committed columns retain that challenge and their borrowed base-field view
-//! for one extra round; the second fold materializes the quarter-height polynomial.
-//! A shorter table stays in place while it is dormant.
-//!
-//! The generic path keeps row selectors in closed form; affine projections absorb them.
-//!
-//! Every value is computed in the zerocheck backend's representation field `R`, which is
-//! isomorphic to the challenge field. Challenges cross into `R` once and round polynomials
-//! cross back once, so the composition is the one computed in the challenge field.
+//! Bus composition in the shared AIR sumcheck, binding product-GKR leaves to traces.
+//! Affine terms sharing an activation are combined before evaluation. Compact groups
+//! use materialized projections; other affine groups read folded source columns.
+//! Nonlinear declarations retain the generic evaluator. All paths compute the same
+//! polynomial over the challenge field's isomorphic representation field.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -29,7 +10,7 @@ use alloc::vec::Vec;
 
 use hashbrown::HashMap;
 use hashbrown::hash_map::Entry;
-use p3_bus::{BusActivation, BusAffineExpression, BusDirection, BusEvaluation, BusReductionOutput};
+use p3_bus::{BusAffineExpression, BusDirection, BusEvaluation, BusReductionOutput};
 use p3_field::{Algebra, ExtensionField, Field};
 use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::point::Point;
@@ -46,59 +27,74 @@ use crate::selectors::BoundaryEvals;
 // The next fold materializes their quarter-height table directly.
 const DEFERRED_FOLD_ROWS: usize = 1 << 16;
 
-/// Prover state for the mixed-height bus composition polynomial.
 pub(crate) struct BusCompositionProver<'a, F: Field, EF: ExtensionField<F>, R> {
-    /// Checked declarations and physical layout used by every evaluation.
     context: &'a BusContext<F, EF>,
-    /// Tuple equality coefficients sampled after commitment.
     fingerprint_weights: Vec<R>,
-    /// Random tuple-fingerprint shift.
     offset: R,
-    /// Product-GKR anchor, shared by the suffix equality polynomials of every AIR.
     equality_point: Vec<R>,
-    /// Source columns and selectors grouped once per AIR.
     airs: Vec<AirState<'a, F, R>>,
-    /// Maximum round degree, derived once from the public plan.
     degree: usize,
-    /// Number of global variables already bound.
     round: usize,
-    /// The challenge field's isomorphism into the representation field.
     to_repr: fn(EF) -> R,
-    /// The representation field's isomorphism back into the challenge field.
     from_repr: fn(R) -> EF,
 }
 
-/// One bus term evaluated from an AIR's shared folded columns.
 struct CompositionTerm<R> {
-    /// Coordinates of the symbolic declaration in the bus context.
     owner: p3_bus::BusBlockOwner,
-    /// Named bus selecting the tuple-domain slots.
     bus: usize,
-    /// Fixed coefficient from direction batching and ProductGKR block selection.
     coefficient: R,
-    /// Cube sum of the unweighted row composition before this AIR activates.
     row_claim: R,
 }
 
-/// Separate multilinears for a weighted affine factor difference and its activation.
 struct ProjectedTerm<R> {
     difference: Poly<R>,
     activation: Option<Poly<R>>,
 }
 
-/// Groups belonging to one AIR, with the fixed term coefficients already absorbed.
 struct ProjectedAir<R> {
     groups: Vec<ProjectedTerm<R>>,
-    /// Equality factors for row variables already bound by the shared sumcheck.
     equality_prefix: R,
-    /// Weighted cube sum used while this AIR is dormant.
     row_claim: R,
 }
 
-/// Sparse weighted sum without repeatedly copying a growing coefficient vector.
+struct AffineGroup<R> {
+    difference: BusAffineExpression<R>,
+    activation: Option<BusAffineExpression<R>>,
+}
+
 struct AffineSum<R> {
     expression: BusAffineExpression<R>,
     columns: [BTreeMap<usize, R>; 3],
+}
+
+enum Source<'a, F: Field, EF> {
+    Committed(ColumnView<'a, F>),
+    Deferred {
+        column: ColumnView<'a, F>,
+        challenge: EF,
+    },
+    Periodic {
+        period: Vec<F>,
+        height: usize,
+    },
+    Folded(Poly<EF>),
+}
+
+struct AirState<'a, F: Field, R> {
+    main: Vec<Source<'a, F, R>>,
+    main_layout: (Vec<usize>, usize),
+    preprocessed: Vec<Source<'a, F, R>>,
+    preprocessed_layout: (Vec<usize>, usize),
+    periodic: Vec<Source<'a, F, R>>,
+    periodic_layout: (Vec<usize>, usize),
+    boundary: BoundaryEvals<R>,
+    equality: FactoredEquality<R>,
+    terms: Vec<CompositionTerm<R>>,
+    projected: Option<ProjectedAir<R>>,
+    affine: Vec<AffineGroup<R>>,
+    unused_prefix: usize,
+    prefix_evaluation: R,
+    public_values: Vec<F>,
 }
 
 impl<R: Field> AffineSum<R> {
@@ -177,73 +173,52 @@ impl<R: Field> ProjectedTerm<R> {
 }
 
 impl<R: Field> ProjectedAir<R> {
-    /// Weighted body coefficients, before applying the current equality factor.
     fn round_coefficients(&self, equality: &FactoredEquality<R>) -> [R; 3] {
-        let half = equality.len() / 2;
-        let quadratic = self.groups.iter().any(|group| group.activation.is_some());
-        let add = |mut sums: [R; 3], row: [R; 3]| {
-            for (sum, value) in sums.iter_mut().zip(row) {
-                *sum += value;
+        quadratic_coefficients(equality, |row, half| {
+            let mut sums = [R::ZERO; 3];
+            for group in &self.groups {
+                let difference = group.difference.as_slice();
+                let (low, high) = (difference[row], difference[row + half]);
+                if let Some(activation) = &group.activation {
+                    let activation = activation.as_slice();
+                    let (a_low, a_high) = (activation[row], activation[row + half]);
+                    sums[0] += low * a_low;
+                    sums[1] += high * a_high;
+                    sums[2] += (high - low) * (a_high - a_low);
+                } else {
+                    sums[0] += low;
+                    sums[1] += high;
+                }
             }
             sums
-        };
-        let sums = (0..half)
-            .into_par_iter()
-            .map(|row| {
-                let mut sums = [R::ZERO; 3];
-                for group in &self.groups {
-                    let difference = group.difference.as_slice();
-                    let (low, high) = (difference[row], difference[row + half]);
-                    if let Some(activation) = &group.activation {
-                        let activation = activation.as_slice();
-                        let (a_low, a_high) = (activation[row], activation[row + half]);
-                        sums[0] += low * a_low;
-                        sums[1] += high * a_high;
-                        sums[2] += (high - low) * (a_high - a_low);
-                    } else {
-                        sums[0] += low;
-                        sums[1] += high;
-                    }
-                }
-                // The leading Boolean equality factor sums to one.
-                let weight = equality.at(row) + equality.at(row + half);
-                sums[0] *= weight;
-                sums[1] *= weight;
-                if quadratic {
-                    sums[2] *= weight;
-                }
-                sums
-            })
-            .par_fold_reduce(|| [R::ZERO; 3], add, add);
-        // The endpoint total at one contains all three monomial coefficients.
-        [sums[0], sums[1] - sums[0] - sums[2], sums[2]]
+        })
     }
 }
 
-/// One source multilinear, read in place until one of its row variables is bound, then folded.
-enum Source<'a, F: Field, EF> {
-    /// A committed column, decoding Boolean words where the table packs them.
-    Committed(ColumnView<'a, F>),
-    /// One challenge bound while retaining the borrowed base-field column.
-    Deferred {
-        column: ColumnView<'a, F>,
-        challenge: EF,
-    },
-    /// A periodic column, which repeats its period vector down the whole table.
-    ///
-    /// The period is a power of two dividing the height, so row `r` reads entry `r mod period`.
-    Periodic {
-        /// Values of one period.
-        period: Vec<F>,
-        /// Rows of the table the column belongs to.
-        height: usize,
-    },
-    /// The column after one or more of its row variables are bound.
-    Folded(Poly<EF>),
+fn quadratic_coefficients<R: Field>(
+    equality: &FactoredEquality<R>,
+    row_sums: impl Fn(usize, usize) -> [R; 3] + Sync,
+) -> [R; 3] {
+    let half = equality.len() / 2;
+    let add = |mut a: [R; 3], b: [R; 3]| {
+        for (a, b) in a.iter_mut().zip(b) {
+            *a += b;
+        }
+        a
+    };
+    let sums = (0..half)
+        .into_par_iter()
+        .map(|row| {
+            // Summing the leading equality factor leaves the weighted suffix.
+            let weight = equality.at(row) + equality.at(row + half);
+            row_sums(row, half).map(|sum| sum * weight)
+        })
+        .par_fold_reduce(|| [R::ZERO; 3], add, add);
+    // The endpoint at one contains all three monomial coefficients.
+    [sums[0], sums[1] - sums[0] - sums[2], sums[2]]
 }
 
 impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
-    /// The value at `row` of the current hypercube.
     #[inline]
     fn at(&self, row: usize) -> EF {
         match self {
@@ -263,7 +238,24 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
         }
     }
 
-    /// The line through rows `row` and `row + half` of the current hypercube, at `node`.
+    fn weighted_at(&self, weight: EF, row: usize) -> EF {
+        if weight == EF::ONE {
+            return self.at(row);
+        }
+        match self {
+            Self::Committed(column @ ColumnView::Boolean { .. }) => {
+                if column.boolean_bit(row).unwrap() {
+                    weight
+                } else {
+                    EF::ZERO
+                }
+            }
+            Self::Committed(column) => weight * column.value(row),
+            Self::Periodic { period, .. } => weight * period[row & (period.len() - 1)],
+            _ => weight * self.at(row),
+        }
+    }
+
     #[inline]
     fn interpolate(&self, row: usize, half: usize, node: EF) -> EF {
         // Every round transmits node zero. Read its endpoint without loading the
@@ -299,7 +291,6 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
         }
     }
 
-    /// Binds the leading row variable, moving a column read in place into `EF`.
     fn fold(&mut self, challenge: EF) {
         if let Self::Committed(column) = self
             && column.len() >= DEFERRED_FOLD_ROWS
@@ -353,7 +344,6 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
     }
 }
 
-/// Binds the leading variable of a base-field column of `2 * half` rows, read cell by cell.
 fn fold_in_half<F, EF>(half: usize, challenge: EF, cell: impl Fn(usize) -> F + Sync) -> Poly<EF>
 where
     F: Field,
@@ -369,44 +359,11 @@ where
     ))
 }
 
-/// Source multilinears shared by every bus term owned by one AIR.
-struct AirState<'a, F: Field, R> {
-    /// Sources of the main columns this AIR's declarations read.
-    main: Vec<Source<'a, F, R>>,
-    /// Column index of each of those, and the declared width they are placed into.
-    main_layout: (Vec<usize>, usize),
-    /// Sources of the preprocessed columns this AIR's declarations read.
-    preprocessed: Vec<Source<'a, F, R>>,
-    /// Column index of each of those, and the declared width they are placed into.
-    preprocessed_layout: (Vec<usize>, usize),
-    /// Sources of the periodic columns this AIR's declarations read.
-    periodic: Vec<Source<'a, F, R>>,
-    /// Column index of each of those, and the declared width they are placed into.
-    periodic_layout: (Vec<usize>, usize),
-    /// Folded boundary-selector values at the bound row variables.
-    boundary: BoundaryEvals<R>,
-    /// Equality polynomial anchored at the ProductGKR row point. Projected AIRs keep
-    /// its unbound factors normalized; generic AIRs include the bound prefix here.
-    equality: FactoredEquality<R>,
-    /// Bus terms emitted by this AIR.
-    terms: Vec<CompositionTerm<R>>,
-    /// Optional compact affine representation, grouped by exact activation expression.
-    projected: Option<ProjectedAir<R>>,
-    /// Number of global prefix variables absent from this AIR table.
-    unused_prefix: usize,
-    /// Evaluation of the fixed all-one-vertex selector on bound prefix coordinates.
-    prefix_evaluation: R,
-    /// Public inputs read by this block's symbolic expressions.
-    public_values: Vec<F>,
-}
-
 impl<F, R> AirState<'_, F, R>
 where
     F: Field,
     R: Field + Algebra<F>,
 {
-    /// Project only when every declaration is affine and the retained tables are no larger
-    /// than the generic path's first fold. Count actual source columns, not declared widths.
     fn initialize_projection<EF: ExtensionField<F>>(
         &mut self,
         context: &BusContext<F, EF>,
@@ -414,22 +371,7 @@ where
         offset: R,
     ) {
         let sources = self.main.len() + self.preprocessed.len() + self.periodic.len();
-        let mut always = false;
-        let mut conditional = false;
-        for term in &self.terms {
-            if matches!(
-                context.interaction(term.owner).activation,
-                BusActivation::Always
-            ) {
-                always = true;
-            } else {
-                conditional = true;
-            }
-        }
-        let minimum_projections = usize::from(always) + 2 * usize::from(conditional);
-        // Compare the full initial projection to the first half-height source fold.
-        // A one-row table never needs a source fold.
-        if self.equality.len() == 1 || minimum_projections > sources / 2 {
+        if self.equality.len() == 1 {
             return;
         }
         let affine = |term: &CompositionTerm<R>| {
@@ -445,60 +387,6 @@ where
                 .affine(&self.public_values)
                 .expect("a planned expression resolves its public inputs")
         };
-        if let [term] = self.terms.as_slice() {
-            let Some(mut factor) = affine(term) else {
-                return;
-            };
-            // With no terms to combine, skip sparse aggregation and weight
-            // whichever is shorter: the affine coefficients or the row table.
-            let expression = &mut factor.factor_minus_one;
-            let scale_rows = self.equality.len()
-                < expression.main.len()
-                    + expression.preprocessed.len()
-                    + expression.periodic.len()
-                    + 4;
-            if !scale_rows && term.coefficient != R::ONE {
-                for coefficient in [
-                    &mut expression.constant,
-                    &mut expression.first_row,
-                    &mut expression.last_row,
-                    &mut expression.transition,
-                ] {
-                    *coefficient *= term.coefficient;
-                }
-                for (_, coefficient) in expression
-                    .main
-                    .iter_mut()
-                    .chain(&mut expression.preprocessed)
-                    .chain(&mut expression.periodic)
-                {
-                    *coefficient *= term.coefficient;
-                }
-            }
-            let mut difference = self.materialize_affine(&factor.factor_minus_one);
-            if scale_rows && term.coefficient != R::ONE {
-                for value in difference.as_mut_slice() {
-                    *value *= term.coefficient;
-                }
-            }
-            self.projected = Some(ProjectedAir {
-                equality_prefix: R::ONE,
-                groups: vec![ProjectedTerm {
-                    difference,
-                    activation: factor
-                        .activation
-                        .as_ref()
-                        .map(|expression| self.materialize_affine(expression)),
-                }],
-                row_claim: R::ZERO,
-            });
-            self.periodic.clear();
-            return;
-        }
-        // All terms share this AIR's row point. For each identical activation S,
-        // sum_i c_i * eq * D_i * S = eq * (sum_i c_i * D_i) * S.
-        // Keep None distinct from Some(1), and retain even zero aggregate groups:
-        // the table count can only increase, so exceeding the bound can abort early.
         let mut groups = HashMap::new();
         let mut projections = 0;
         for term in &self.terms {
@@ -513,9 +401,6 @@ where
                 }
                 Entry::Vacant(entry) => {
                     projections += 1 + usize::from(entry.key().is_some());
-                    if projections > sources / 2 {
-                        return;
-                    }
                     entry.insert((
                         index,
                         AffineSum::new(factor.factor_minus_one, term.coefficient),
@@ -523,19 +408,49 @@ where
                 }
             }
         }
-        // Never let hash iteration order determine evaluation order. No source is
-        // changed until every declaration passes extraction and the storage bound.
+        // Hash iteration order must not affect the polynomial or transcript.
         let mut groups = groups.into_iter().collect::<Vec<_>>();
         groups.sort_unstable_by_key(|(_, (index, _))| *index);
+        let mut groups = groups
+            .into_iter()
+            .map(|(activation, (_, difference))| AffineGroup {
+                difference: difference.finish(),
+                activation,
+            })
+            .collect::<Vec<_>>();
+        // Full-height projections must fit in the generic path's first half-height fold.
+        if projections > sources / 2 {
+            // Store source positions once; the row loop needs no column lookup.
+            for group in &mut groups {
+                for expression in
+                    core::iter::once(&mut group.difference).chain(&mut group.activation)
+                {
+                    for (entries, indices) in [
+                        (&mut expression.main, &self.main_layout.0),
+                        (&mut expression.preprocessed, &self.preprocessed_layout.0),
+                        (&mut expression.periodic, &self.periodic_layout.0),
+                    ] {
+                        for (index, _) in entries {
+                            *index = indices
+                                .binary_search(index)
+                                .expect("a planned affine source");
+                        }
+                    }
+                }
+            }
+            self.affine = groups;
+            return;
+        }
         self.projected = Some(ProjectedAir {
             equality_prefix: R::ONE,
             groups: groups
                 .into_iter()
-                .map(|(activation, (_, difference))| ProjectedTerm {
-                    difference: self.materialize_affine(&difference.finish()),
-                    activation: activation
+                .map(|group| ProjectedTerm {
+                    difference: self.materialize_affine(&group.difference),
+                    activation: group
+                        .activation
                         .as_ref()
-                        .map(|expression| self.materialize_affine(expression)),
+                        .map(|a| self.materialize_affine(a)),
                 })
                 .collect(),
             row_claim: R::ZERO,
@@ -544,7 +459,6 @@ where
         self.periodic.clear();
     }
 
-    /// Evaluate one affine expression on the AIR's own Boolean cube, column by column.
     fn materialize_affine(&self, expression: &BusAffineExpression<R>) -> Poly<R> {
         let height = self.equality.len();
         let mut values = vec![expression.constant + expression.transition; height];
@@ -599,9 +513,51 @@ where
         Poly::new(values)
     }
 
-    /// Compute initial cube sums in one pass over this AIR's active representation.
-    ///
-    /// The result is read only while the global prefix is still ahead of this table.
+    fn affine_value(&self, expression: &BusAffineExpression<R>, row: usize) -> R {
+        let boundary = BoundaryEvals::from_row_with_prefix(row, self.equality.len(), self.boundary);
+        let mut value = expression.constant;
+        for (coefficient, selector) in [
+            (expression.first_row, boundary.first),
+            (expression.last_row, boundary.last),
+            (expression.transition, boundary.transition),
+        ] {
+            if coefficient != R::ZERO {
+                value += coefficient * selector;
+            }
+        }
+        for (entries, sources) in [
+            (&expression.main, &self.main),
+            (&expression.preprocessed, &self.preprocessed),
+            (&expression.periodic, &self.periodic),
+        ] {
+            for &(index, coefficient) in entries {
+                value += sources[index].weighted_at(coefficient, row);
+            }
+        }
+        value
+    }
+
+    fn affine_coefficients(&self) -> [R; 3] {
+        quadratic_coefficients(&self.equality, |row, half| {
+            let mut sums = [R::ZERO; 3];
+            for group in &self.affine {
+                let low = self.affine_value(&group.difference, row);
+                let high = self.affine_value(&group.difference, row + half);
+                if let Some(activation) = &group.activation {
+                    let a_low = self.affine_value(activation, row);
+                    let a_high = self.affine_value(activation, row + half);
+                    sums[0] += low * a_low;
+                    sums[1] += high * a_high;
+                    sums[2] += (high - low) * (a_high - a_low);
+                } else {
+                    sums[0] += low;
+                    sums[1] += high;
+                }
+            }
+            sums
+        })
+    }
+
     fn initialize_claims<EF: ExtensionField<F>>(
         &mut self,
         context: &BusContext<F, EF>,
@@ -714,14 +670,6 @@ where
     EF: ExtensionField<F>,
     R: Field + Algebra<F>,
 {
-    /// Build the formal polynomial whose cube sum must equal the ProductGKR claims.
-    ///
-    /// # Arguments
-    ///
-    /// - `num_variables`: width of the shared cube, at least the tallest bus table.
-    /// - `periodic`: the period vectors [`BusContext::period_vectors`] returns.
-    /// - `to_repr`, `from_repr`: mutually inverse field isomorphisms between the challenge
-    ///   field and the representation field, agreeing on the trace field.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         context: &'a BusContext<F, EF>,
@@ -811,6 +759,7 @@ where
                         ),
                         terms: Vec::new(),
                         projected: None,
+                        affine: Vec::new(),
                         unused_prefix: num_variables - share.row_variables,
                         prefix_evaluation: R::ONE,
                         public_values: public_values[air].to_vec(),
@@ -845,7 +794,11 @@ where
             context,
             fingerprint_weights: weights,
             offset,
-            equality_point: if airs.iter().flatten().any(|air| air.projected.is_some()) {
+            equality_point: if airs
+                .iter()
+                .flatten()
+                .any(|air| air.projected.is_some() || !air.affine.is_empty())
+            {
                 output.product.point.iter().copied().map(to_repr).collect()
             } else {
                 Vec::new()
@@ -985,6 +938,7 @@ where
                     air.projected
                         .as_ref()
                         .map(|projection| projection.round_coefficients(&air.equality))
+                        .or_else(|| (!air.affine.is_empty()).then(|| air.affine_coefficients()))
                 }
             })
             .collect::<Vec<_>>();
@@ -1010,11 +964,11 @@ where
                                 |projected| projected.row_claim,
                             )
                         } else if let Some([constant, linear, quadratic]) = *coefficients {
-                            let projection = air.projected.as_ref().unwrap();
+                            let prefix =
+                                air.projected.as_ref().map_or(R::ONE, |p| p.equality_prefix);
                             let anchor = self.equality_point
                                 [self.equality_point.len() - air.equality.num_variables()];
-                            let equality =
-                                projection.equality_prefix * Point::eval_eq(&[anchor], &[node]);
+                            let equality = prefix * Point::eval_eq(&[anchor], &[node]);
                             equality * (constant + node * (linear + node * quadratic))
                         } else {
                             // Active terms share one interpolation of their AIR columns.
@@ -1108,10 +1062,6 @@ mod tests {
         }
     }
 
-    /// Runs one source through every round beside the dense polynomial it stands for.
-    ///
-    /// Each round checks the line the prover evaluates at a node, then the fold it keeps.
-    /// The closed-form selectors are checked the same way against materialized indicators.
     fn assert_folds_like_dense<F, EF>(
         mut source: Source<'_, F, EF>,
         cells: &[F],
@@ -1184,7 +1134,6 @@ mod tests {
         }
     }
 
-    /// Dense, Boolean-packed and periodic columns of every height up to two packed words.
     fn assert_sources_fold_like_dense<F, EF>(rng: &mut SmallRng)
     where
         F: Field,

@@ -3,7 +3,7 @@ use alloc::vec;
 
 use p3_air::{Air, BaseAir, WindowAccess};
 use p3_baby_bear::BabyBear;
-use p3_binary_field::{BinaryField128, Ghash128};
+use p3_binary_field::{BinaryField128, Ghash128, Poly64, Poly192};
 use p3_bus::{
     BusActivation, BusBoundary, BusChallenges, BusInteractionBuilder, BusName, ProductGkrOutput,
 };
@@ -369,7 +369,19 @@ fn check<F, EF, R>(
                                     / 2
                         );
                     }
+                    assert_eq!(
+                        !actual.affine.is_empty(),
+                        fixtures[index].4.is_none()
+                            && fixtures[index].3 > 0
+                            && !matches!(
+                                fixtures[index].2,
+                                Kind::Nonlinear | Kind::NonlinearActivation
+                            ),
+                        "streamed affine choice for {}",
+                        fixtures[index].1,
+                    );
                     reference.projected = None;
+                    reference.affine.clear();
                     // Projection may release its now-unused owned period vectors.
                     reference.periodic = context
                         .periodic_columns(index)
@@ -447,6 +459,12 @@ fn check<F, EF, R>(
 fn affine_projection_preserves_every_round_and_bounds_its_table_storage() {
     for anchor_kind in 0..4 {
         for fold_kind in 0..3 {
+            check::<Poly64, Poly192, Poly192>(
+                core::convert::identity,
+                core::convert::identity,
+                anchor_kind,
+                fold_kind,
+            );
             check::<BinaryField128, BinaryField128, BinaryField128>(
                 core::convert::identity,
                 core::convert::identity,
