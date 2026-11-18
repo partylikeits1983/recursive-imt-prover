@@ -982,6 +982,56 @@ peaked at 22,100,967,552 bytes, down from 24,105,094,528 in the preceding run.
 These small local samples support the allocation change; they are not a broad
 performance guarantee. [Raw report](../benchmarks/binary/masked-aggregate/flock-compact-fold-d32-n2.json).
 
+## Authenticated verifier-only loading
+
+New `masked-demo` artifacts include `verifier.key`, with a domain-separated
+Keccak-256 digest in trusted verifier data. It records the existing complete
+AIR relation and preprocessing commitment without proving tables, child proofs
+or client witnesses. A fresh verifier checks the trusted digest before decoding,
+checks the configuration/authority binding, reconstructs the fixed Keccak circuit
+and PCS parameters, and rechecks the conditional algebraic budget. It then runs
+the ordinary aggregate verifier. Older artifacts without a snapshot retain the
+reconstruction path.
+
+The expected key digest and authority are trust inputs. The benchmark provisions
+them locally; a deployed verifier must pin them independently of the proof
+producer. Merely receiving a matching key/digest pair from a prover does not
+establish the intended relation. See the [snapshot implementation and checks](../crates/flock-backend/README.md#trusted-verifier-snapshots).
+Aggregate v6/backend v8 and child v5 proof formats are unchanged.
+
+The four-child measurement reuses the preceding checkpoint's exact aggregate
+bytes. One-time snapshot provisioning took 29.95 s; the resulting key is 25,968
+bytes. Five separate verifier processes accepted the old proof using the new
+key, without child proofs or proving tables.
+
+| Measurement | Depth 32, N=2, new end-to-end run | Depth 32, N=4, existing proof |
+|---|---:|---:|
+| Verifier key size | 22,828 bytes | 25,968 bytes |
+| Fresh setup, including key loading | 13.26 ms | 12.66 ms median |
+| Fresh proof decoding and verification | 119.53 ms | 121.80 ms median |
+| Complete fresh process | 137.79 ms | 139.69 ms median |
+| Fresh verifier peak RSS | 34,127,872 bytes | 33,783,808–33,816,576 bytes |
+
+The N=4 table uses the four subsequent launches: total process time ranged
+from 138.37 to 143.53 ms. The first measured launch took 888.19 ms; all five
+launches had a 139.70 ms median. Filesystem caches were not reset, so this is
+not a controlled OS-cold benchmark. The old reconstruction path took 31.03 s
+total and about 5.83 GB RSS. Proof generation and the verifier relation are
+unchanged. [Five fresh-process measurements](../benchmarks/binary/masked-aggregate/flock-cached-verifier-d32-n4.json).
+
+The new two-child run produced actual child and aggregate proofs, exercised
+both verification paths and completed fresh-process verification. Its one cold
+sample took 53.90 s aggregation, with a 1,287,925-byte aggregate and
+22,014,344,832 bytes peak prover physical footprint. Exporting the key took
+0.44 ms after setup. [End-to-end report](../benchmarks/binary/masked-aggregate/flock-cached-d32-n2.json).
+
+Eleven separate fresh-process negative cases rejected altered amounts, roots,
+ordering, removed/inserted children, proof bytes, key bytes, key digest, aggregate
+authority, child authority and batch binding. The unit regression compares the
+entire ordered AIR constraint list, including bus activation checks. The full
+release workspace suite passes 71 tests, with 11 expensive tests opt-in; formatting
+and Clippy also pass. [Negative results](../benchmarks/binary/masked-aggregate/flock-cached-verifier-negative.json).
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

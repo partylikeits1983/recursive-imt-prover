@@ -7,6 +7,9 @@ mod fanout;
 mod gates;
 mod keccak;
 mod mixed;
+mod verifier;
+
+pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
 #[cfg(test)]
 mod tests;
 

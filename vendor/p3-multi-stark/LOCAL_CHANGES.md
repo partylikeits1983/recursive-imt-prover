@@ -59,3 +59,10 @@ while later stages activate. Buffers smaller than 64 KiB remain in place.
 All polynomial values and transcript messages are unchanged. The allocation
 regression compares every fold against the dense polynomial and checks retained
 capacity; the upstream round and bus suites exercise the affected paths.
+
+`src/keys.rs` and `src/rounds.rs`: derive Serde support for the succinct verifying
+key and its existing AIR degree/profile metadata. This serializes the fixed
+preprocessing commitment and verifier metadata only, never proving tables.
+It does not change aggregate proof encoding, transcript messages or equations.
+The application authenticates the complete verifier snapshot before decoding it
+and checks its configuration binding, authority identity and algebraic budget.

@@ -2,7 +2,7 @@
 use std::time::Instant;
 
 use anyhow::{Result, ensure};
-use imt_flock_backend::{Geometry, Metrics, Prepared};
+use imt_flock_backend::{Geometry, Metrics, Prepared, Verifier};
 use p3_circuit::{CircuitBuilder, CircuitConstructionLimits};
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,12 @@ pub struct PreparedMaskedAggregate {
     verifier: PreparedMaskedVerifier,
     outer: Prepared,
     count: usize,
+    binding: Vec<u8>,
+}
+
+pub struct MaskedAggregateVerifier {
+    outer: Verifier,
+    count: usize,
 }
 
 #[derive(Serialize)]
@@ -42,19 +48,8 @@ pub struct AggregationMetrics {
 
 impl PreparedMaskedAggregate {
     pub fn new(settings: &Settings, parameters: Parameters) -> Result<Self> {
-        settings.validate()?;
-        ensure!(
-            settings.pcs_bits == 152
-                && settings.pow_bits == 16
-                && settings.log_inv_rate == 1
-                && settings.fold == 4,
-            "Flock outer parameters are fixed: PCS 152, PoW 16, rate 1/2, fold 4"
-        );
-        ensure!(matches!(settings.depth, 16 | 32), "depth must be 16 or 32");
-        ensure!(
-            parameters.min_algebraic_bits >= 144,
-            "child algebraic budget below 144 bits"
-        );
+        validate_configuration(settings, &parameters)?;
+        let binding = configuration_binding(settings, &parameters)?;
         let verifier = PreparedMaskedVerifier::new(settings.depth, parameters)?;
         let mut b = CircuitBuilder::<F>::with_construction_limits(CircuitConstructionLimits {
             max_expression_nodes: 1 << 27,
@@ -81,7 +76,11 @@ impl PreparedMaskedAggregate {
             verifier,
             outer,
             count: settings.batch_size,
+            binding,
         })
+    }
+    pub fn export_verifier_key(&self) -> Result<Vec<u8>> {
+        self.outer.export_verifier(&self.binding)
     }
     pub fn identity(&self) -> String {
         self.outer.identity()
@@ -128,4 +127,59 @@ impl PreparedMaskedAggregate {
                 .collect::<Vec<_>>(),
         )
     }
+}
+
+impl MaskedAggregateVerifier {
+    pub fn from_bytes(
+        settings: &Settings,
+        parameters: &Parameters,
+        bytes: &[u8],
+        digest: &[u8; 32],
+        identity: &str,
+    ) -> Result<Self> {
+        validate_configuration(settings, parameters)?;
+        Ok(Self {
+            outer: Verifier::from_bytes(
+                bytes,
+                digest,
+                identity,
+                &configuration_binding(settings, parameters)?,
+            )?,
+            count: settings.batch_size,
+        })
+    }
+
+    pub fn verify(&self, proof: &[u8], public: &AggregatePublic) -> Result<()> {
+        ensure!(public.children.len() == self.count, "incorrect child count");
+        self.outer.verify(
+            proof,
+            &public
+                .children
+                .iter()
+                .flat_map(|p| p.fields())
+                .collect::<Vec<_>>(),
+        )
+    }
+}
+
+fn configuration_binding(settings: &Settings, parameters: &Parameters) -> Result<Vec<u8>> {
+    Ok(postcard::to_allocvec(&(PROTOCOL, settings, parameters))?)
+}
+
+fn validate_configuration(settings: &Settings, parameters: &Parameters) -> Result<()> {
+    settings.validate()?;
+    ensure!(
+        settings.pcs_bits == 152
+            && settings.pow_bits == 16
+            && settings.log_inv_rate == 1
+            && settings.fold == 4,
+        "Flock outer parameters are fixed: PCS 152, PoW 16, rate 1/2, fold 4"
+    );
+    ensure!(matches!(settings.depth, 16 | 32), "depth must be 16 or 32");
+    ensure!(
+        parameters.min_algebraic_bits >= 144,
+        "child algebraic budget below 144 bits"
+    );
+    parameters.validate()?;
+    Ok(())
 }

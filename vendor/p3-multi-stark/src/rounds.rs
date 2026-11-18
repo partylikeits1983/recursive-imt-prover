@@ -22,6 +22,7 @@ use p3_multilinear_util::point::Point;
 use p3_multilinear_util::poly::{Poly, PolyView};
 use p3_sumcheck::generic_degree::RoundPolyInterpolator;
 use p3_sumcheck::layout::{ColumnView, Table};
+use serde::{Deserialize, Serialize};
 
 use crate::compact::compact_poly;
 use crate::folder::{FolderEvaluations, InteractionMultilinearFolder, MultilinearFolder};
@@ -58,7 +59,7 @@ fn boolean_fold_values<F: Field, EF: Field>(
 }
 
 /// Native per-variable degrees of one AIR's two zerocheck expression families.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct AirDegrees {
     /// Alpha-batched ordinary constraint degree, or zero when the AIR asserts none.
     pub constraints: usize,
@@ -82,7 +83,7 @@ impl AirDegrees {
 }
 
 /// What one symbolic pass over an AIR fixes: its zerocheck fold, and which lookups it declares.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AirProfile {
     /// Native per-variable degrees of the ordinary constraints and the lookup links.
     pub(crate) degrees: AirDegrees,

@@ -18,6 +18,7 @@ use p3_lookup::InteractionSymbolicBuilder;
 use p3_matrix::Matrix;
 use p3_sumcheck::layout::Table;
 use p3_util::log2_strict_usize;
+use serde::{Deserialize, Serialize};
 
 use crate::ProvingError;
 use crate::config::{Commitment, MultiStarkConfig, PcsProverError, ProverData};
@@ -120,6 +121,11 @@ where
 ///
 /// Verification must use the same AIRs in the same order as setup.
 /// This remains required when no AIR has preprocessed columns.
+#[derive(Serialize, Deserialize)]
+#[serde(bound(
+    serialize = "Commitment<C>: Serialize",
+    deserialize = "Commitment<C>: Deserialize<'de>"
+))]
 pub struct VerifyingKey<C: MultiStarkConfig> {
     /// Batched preprocessed commitment, present only when at least one AIR declares it.
     pub(crate) preprocessed: Option<Commitment<C>>,

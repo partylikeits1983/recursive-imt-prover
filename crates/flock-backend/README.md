@@ -65,9 +65,9 @@ Local adaptations:
   preprocessing, periodic definitions, Flock circuit, protocol and caller domain.
 
 The proof is one Plonky3 multi-STARK containing Flock, product-bus, sumcheck and
-WHIR subarguments. The final verifier requires no child proofs. It reconstructs
-trusted setup from the fixed circuit; serialization of a compact verifier-only
-key is still an optimization to implement.
+WHIR subarguments. The final verifier requires no child proofs. It loads an
+authenticated compact verifier-only key, or reconstructs trusted setup from the
+fixed circuit for older artifacts. See the snapshot trust model below.
 
 The coordinate map is injective on each declared binary linear subspace. Shorter
 widths restrict the witness domain and preserve every original AIR equation;
@@ -101,3 +101,28 @@ Product-bus leaves are regenerated in bounded chunks through the pinned
 [bus](../../vendor/p3-bus/LOCAL_CHANGES.md) and
 [multi-STARK](../../vendor/p3-multi-stark/LOCAL_CHANGES.md) patches. Complete-proof
 and transcript differential tests preserve the original verifier relation.
+
+## Trusted verifier snapshots
+
+`Prepared::export_verifier` exports a compact verifier-only snapshot. It contains
+the complete ordered symbolic constraints, bus declarations, table shapes,
+coordinate encodings, preprocessing commitment and authority transcript seed.
+The fixed Keccak circuit is reconstructed from this pinned implementation.
+Original proving tables, child proofs and witnesses are absent.
+
+`Verifier::from_bytes` checks a domain-separated Keccak-256 digest against an
+independently trusted digest **before** deserialization, then checks the supplied
+configuration binding and authority identity. Loading rechecks the existing
+144-bit conditional algebraic floor. The snapshot has a 4 MiB byte limit.
+The snapshot and its digest must not both be accepted from an untrusted prover.
+The demo provisions `verifier.key` and its digest in `trusted.json` locally;
+independent verification treats that JSON as trusted verifier data.
+
+The symbolic list already includes bus activation Booleanity constraints, in
+their original positions. Bus replay emits the recorded declarations without
+adding those checks a second time. Tests compare the complete ordered expression
+trees (including cached degrees) and bus declarations with the original AIR,
+then verify an actual proof through both implementations. Negative cases cover
+changed public inputs, key bytes, key digest, configuration binding, authority
+identity and proof bytes. This preserves the original relation; it is not a
+new proof system or a substitute for child privacy analysis.

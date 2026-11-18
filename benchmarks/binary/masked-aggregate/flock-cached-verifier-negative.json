@@ -1,0 +1,73 @@
+{
+  "all_rejected": true,
+  "cases": [
+    {
+      "case": "amount",
+      "error": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "root",
+      "error": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "swapped",
+      "error": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "removed",
+      "error": "Error: incorrect public count",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "inserted",
+      "error": "Error: incorrect public count",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "corrupted_proof",
+      "error": "Error: opening: Boolean(Opening(MerkleProofInvalid { position: 0, reason: \"Extension field Merkle multiproof verification failed\" }))",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "key_bytes",
+      "error": "Error: trusted verifier digest mismatch",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "key_digest",
+      "error": "Error: trusted verifier digest mismatch",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "authority",
+      "error": "Error: trusted verifier identity mismatch",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "child_authority",
+      "error": "Error: child verifier identity mismatch",
+      "exit_code": 1,
+      "rejected": true
+    },
+    {
+      "case": "batch_binding",
+      "error": "Error: trusted verifier configuration mismatch",
+      "exit_code": 1,
+      "rejected": true
+    }
+  ],
+  "source_keccak256": "fb329dccaf1c6b9b627e0948b54c178fe9c15fbada33d2bca95fa3adc4bc3e70",
+  "source_proof": "flock-compact-fold-d32-n4.json"
+}

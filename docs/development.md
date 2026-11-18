@@ -63,13 +63,15 @@ These requirements do not change when inspecting other implementations.
    The local prover patches regenerate product-bus leaves, factor equality
    weights, omit fixed-zero preprocessing columns and release unused folded
    capacity. Larger batches still need lower simultaneous sumcheck storage;
-   the current construction/codeword guards remain in place. Reduce AIR opening
-   reductions and trusted-verifier loading time as well. Checkpointed Keccak
+   the current construction/codeword guards remain in place. Authenticated
+   verifier snapshots now avoid rebuilding proving tables: a fresh N=4 verifier
+   takes about 140 ms total and 34 MB RSS. Reduce AIR opening reductions and
+   simultaneous prover allocations next. Checkpointed Keccak
    GKR is a research lead (`binary-veil.md`), retaining the existing fields,
    hash and security target.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
-prover and trusted-verifier loading before adding another recursion layer.
+prover before adding another recursion layer.
 
 The exact obligations and existing measurements live in
 [binary-veil.md](binary-veil.md). Avoid copying status and security explanations

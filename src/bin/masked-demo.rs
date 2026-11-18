@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{Result, ensure};
 use clap::Parser;
+use imt_flock_backend::{MAX_VERIFIER_BYTES, verifier_key_digest};
 use mimalloc::MiMalloc;
 use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,9 @@ use recursive_imt_prover::{
         engine::Settings,
         relation::AggregatePublic,
         veil::{
-            aggregate::{MaskedChildInput, PROTOCOL, PreparedMaskedAggregate},
+            aggregate::{
+                MaskedAggregateVerifier, MaskedChildInput, PROTOCOL, PreparedMaskedAggregate,
+            },
             child::{MaskedMembershipProof, PreparedMembership},
             components::{
                 ComponentMetrics, PROTOCOL as COMPONENT_PROTOCOL, PreparedComponentBatch,
@@ -66,6 +69,8 @@ struct Trusted {
     child_identity: [u8; 32],
     components: bool,
     identities: Vec<String>,
+    #[serde(default)]
+    verifier_digest: Option<[u8; 32]>,
 }
 
 #[derive(Serialize)]
@@ -198,6 +203,17 @@ fn main() -> Result<()> {
     report["setup_ms"] = json!(ms(start));
     report["geometry"] = aggregate.geometry();
     write_json(&args.out.join("report.json"), &report)?;
+    let export_start = Instant::now();
+    let verifier_digest = if let PreparedBatch::Recursive(prepared) = &aggregate {
+        let key = prepared.export_verifier_key()?;
+        let digest = verifier_key_digest(&key);
+        fs::write(args.out.join("verifier.key"), &key)?;
+        report["verifier_key_bytes"] = json!(key.len());
+        Some(digest)
+    } else {
+        None
+    };
+    report["verifier_key_export_ms"] = json!(ms(export_start));
     let trusted = Trusted {
         protocol: protocol.into(),
         settings,
@@ -205,8 +221,21 @@ fn main() -> Result<()> {
         child_identity: child.identity(),
         components: args.components,
         identities: aggregate.identities(),
+        verifier_digest,
     };
     write_json(&args.out.join("trusted.json"), &trusted)?;
+    let cached = if let Some(digest) = trusted.verifier_digest {
+        let key = read_bounded(&args.out.join("verifier.key"), MAX_VERIFIER_BYTES)?;
+        Some(MaskedAggregateVerifier::from_bytes(
+            &trusted.settings,
+            &trusted.child_parameters,
+            &key,
+            &digest,
+            &trusted.identities[0],
+        )?)
+    } else {
+        None
+    };
     let mut samples = Vec::new();
     for sample in 0..args.samples {
         let start = Instant::now();
@@ -218,7 +247,11 @@ fn main() -> Result<()> {
         aggregate.verify(&proof, &public)?;
         let aggregate_decode_verify_ms = ms(check);
         let critical_path_ms = ms(start);
-        negative_checks(&aggregate, &proof, &public)?;
+        negative_checks(|p, x| aggregate.verify(p, x), &proof, &public)?;
+        if let Some(verifier) = &cached {
+            verifier.verify(&proof, &public)?;
+            negative_checks(|p, x| verifier.verify(p, x), &proof, &public)?;
+        }
         eprintln!(
             "Output: total {:.3} ms, final verify {:.3} ms, {} bytes",
             aggregation_wall_ms,
@@ -244,6 +277,7 @@ fn main() -> Result<()> {
         write_json(&args.out.join("report.json"), &report)?;
     }
     // Release setup/trace allocations before the independent verifier starts.
+    drop(cached);
     drop(aggregate);
     drop(child);
     let start = Instant::now();
@@ -323,7 +357,11 @@ fn verify_files(directory: &Path) -> Result<()> {
     );
     let proof = read_bounded(
         &directory.join("aggregate.proof"),
-        (24 << 20) * trusted.settings.batch_size,
+        if trusted.components {
+            (24 << 20) * trusted.settings.batch_size
+        } else {
+            16 << 20
+        },
     )?;
     let start = Instant::now();
     let child = PreparedMembership::new(trusted.settings.depth, trusted.child_parameters.clone())?;
@@ -331,6 +369,28 @@ fn verify_files(directory: &Path) -> Result<()> {
         child.identity() == trusted.child_identity,
         "child verifier identity mismatch"
     );
+    if let Some(digest) = trusted.verifier_digest {
+        ensure!(
+            !trusted.components && trusted.identities.len() == 1,
+            "invalid cached verifier authority"
+        );
+        let key = read_bounded(&directory.join("verifier.key"), MAX_VERIFIER_BYTES)?;
+        let verifier = MaskedAggregateVerifier::from_bytes(
+            &trusted.settings,
+            &trusted.child_parameters,
+            &key,
+            &digest,
+            &trusted.identities[0],
+        )?;
+        let setup_ms = ms(start);
+        let check = Instant::now();
+        verifier.verify(&proof, &public)?;
+        println!(
+            "{}",
+            json!({"verified":true, "cached_verifier":true, "setup_ms":setup_ms, "decode_verify_ms":ms(check), "peak_rss_bytes":peak_rss()})
+        );
+        return Ok(());
+    }
     let aggregate = PreparedBatch::new(
         &trusted.settings,
         trusted.child_parameters,
@@ -351,7 +411,7 @@ fn verify_files(directory: &Path) -> Result<()> {
 }
 
 fn negative_checks(
-    aggregate: &PreparedBatch,
+    verify: impl Fn(&[u8], &AggregatePublic) -> Result<()>,
     proof: &[u8],
     public: &AggregatePublic,
 ) -> Result<()> {
@@ -372,7 +432,7 @@ fn negative_checks(
             }
         }
         ensure!(
-            aggregate.verify(proof, &changed).is_err(),
+            verify(proof, &changed).is_err(),
             "altered aggregate statement accepted: {kind}"
         );
     }
@@ -380,7 +440,7 @@ fn negative_checks(
     let midpoint = changed.len() / 2;
     changed[midpoint] ^= 0x80;
     ensure!(
-        aggregate.verify(&changed, public).is_err(),
+        verify(&changed, public).is_err(),
         "corrupted aggregate accepted"
     );
     Ok(())
