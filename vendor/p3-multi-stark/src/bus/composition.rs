@@ -38,6 +38,7 @@ use p3_sumcheck::layout::{ColumnView, Table};
 
 use crate::bus::BusContext;
 use crate::bus::equality::FactoredEquality;
+use crate::compact::compact_poly;
 use crate::selectors::BoundaryEvals;
 
 /// Prover state for the mixed-height bus composition polynomial.
@@ -162,8 +163,10 @@ impl<R: Field> ProjectedTerm<R> {
 
     fn fold(&mut self, challenge: R) {
         self.difference.fix_prefix_var_mut(challenge);
+        compact_poly(&mut self.difference);
         if let Some(activation) = &mut self.activation {
             activation.fix_prefix_var_mut(challenge);
+            compact_poly(activation);
         }
     }
 }
@@ -299,6 +302,7 @@ impl<F: Field, EF: Field + Algebra<F>> Source<'_, F, EF> {
             }
             Self::Folded(poly) => {
                 poly.fix_prefix_var_mut(challenge);
+                compact_poly(poly);
                 return;
             }
         };
@@ -380,8 +384,8 @@ where
             }
         }
         let minimum_projections = usize::from(always) + 2 * usize::from(conditional);
-        // Poly folding retains its allocation, so compare full projected capacity to
-        // half-height source capacity. A one-row table never needs a source fold.
+        // Compare the full initial projection to the first half-height source fold.
+        // A one-row table never needs a source fold.
         if self.equality.len() == 1 || minimum_projections > sources / 2 {
             return;
         }

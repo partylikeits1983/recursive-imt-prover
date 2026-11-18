@@ -23,6 +23,7 @@ use p3_multilinear_util::poly::{Poly, PolyView};
 use p3_sumcheck::generic_degree::RoundPolyInterpolator;
 use p3_sumcheck::layout::{ColumnView, Table};
 
+use crate::compact::compact_poly;
 use crate::folder::{FolderEvaluations, InteractionMultilinearFolder, MultilinearFolder};
 use crate::lookup::AirLinkInstance;
 use crate::packed_ext::PackedExt;
@@ -366,8 +367,10 @@ impl<F: Field, EF: ExtensionField<F>> ExtColumns<'_, F, EF> {
         match self {
             Self::Packed(mut cols) => {
                 if want_packed {
-                    cols.par_iter_mut()
-                        .for_each(|col| col.fix_prefix_var_mut(r));
+                    cols.par_iter_mut().for_each(|col| {
+                        col.fix_prefix_var_mut(r);
+                        compact_poly(col);
+                    });
                     Self::Packed(cols)
                 } else {
                     // Fold and unpack each column in a single pass.
@@ -383,8 +386,10 @@ impl<F: Field, EF: ExtensionField<F>> ExtColumns<'_, F, EF> {
             }
             Self::Scalar(mut cols) => {
                 assert!(!want_packed, "columns cannot transition scalar -> packed");
-                cols.par_iter_mut()
-                    .for_each(|col| col.fix_prefix_var_mut(r));
+                cols.par_iter_mut().for_each(|col| {
+                    col.fix_prefix_var_mut(r);
+                    compact_poly(col);
+                });
                 Self::Scalar(cols)
             }
             Self::Sliced(_) => unreachable!("a sliced stage binds its challenges on its planes"),

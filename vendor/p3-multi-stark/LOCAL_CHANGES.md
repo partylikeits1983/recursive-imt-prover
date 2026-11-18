@@ -50,3 +50,12 @@ Run all bus tests for this patch:
 ```sh
 cargo test --locked --release --manifest-path vendor/p3-multi-stark/Cargo.toml --target-dir target --features parallel --lib bus::
 ```
+
+`src/compact.rs`, `src/rounds.rs`, `src/rounds/repr.rs` and
+`src/bus/composition.rs`: return unused vector capacity after large polynomial
+folds. The upstream in-place fold truncates its evaluations but retains the old
+allocation; mixed-height stages can otherwise retain many first-fold buffers
+while later stages activate. Buffers smaller than 64 KiB remain in place.
+All polynomial values and transcript messages are unchanged. The allocation
+regression compares every fold against the dense polynomial and checks retained
+capacity; the upstream round and bus suites exercise the affected paths.

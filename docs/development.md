@@ -44,10 +44,9 @@ These requirements do not change when inspecting other implementations.
 4. **One-proof masked-child aggregation — implemented experimentally.**
    `masked-demo` compiles the complete child verifier for the fixed ordered batch.
    `crates/flock-backend` proves its arithmetic on the native product bus and its
-   Keccak calls with the pinned upstream Flock circuit-table prover. The first
-   two-child aggregate has passed independent-process verification and negative
-   public-statement checks. This replaces the abandoned three-part wrapper
-   recursion prototype. The component bundle remains an explicitly non-succinct
+   Keccak calls with the pinned upstream Flock circuit-table prover. Two- and
+   four-child aggregates have passed independent-process verification and negative
+   public-statement checks. The component bundle remains an explicitly non-succinct
    diagnostic. See the measurements and resource limits in `binary-veil.md`.
 5. **Privacy/security review follows integration.** The user accepts a plausible
    statistical-ZK candidate for this milestone. Keep unproved claims labelled:
@@ -59,20 +58,15 @@ These requirements do not change when inspecting other implementations.
    separately reporting circuit construction, proof generation, decoding,
    trusted setup and final verification. Profile before changing the design;
    compare a recursion tree only if the fixed batch hits a measured limit.
-   Partitioning native fanout/arithmetic tables reduces initial codeword storage
-   for depth-32 N=4 from 10 GiB to 6 GiB. This passes the allocation guard but
-   does not bound total prover memory: initial attempts were killed under swap
-   pressure. Deferred opening sweeps and product-bus materialization now have
-   narrow upstream optimizations. A v5 four-child profile still reaches the
-   memory limit while building product-bus GKR layers. Regenerating those leaves
-   gets N=4 through that stage, but its AIR sumcheck still crosses the 40 GiB
-   diagnostic budget. Factored bus equality weights save about 2.3 GB at N=4;
-   redundant zero preprocessing columns are now omitted from arithmetic AIRs.
-   Measure the remaining simultaneous sumcheck storage before increasing batch
-   limits; also reduce the number of AIR opening reductions to recover
-   verification speed. Checkpointed Keccak
-   GKR remains a research lead
-   (`binary-veil.md`), retaining the 128-bit target and existing hash.
+   Depth-32 N=4 now completes end to end, with 6 GiB of initial codewords and
+   about 43.4 GB peak physical footprint including compressed/swapped pages.
+   The local prover patches regenerate product-bus leaves, factor equality
+   weights, omit fixed-zero preprocessing columns and release unused folded
+   capacity. Larger batches still need lower simultaneous sumcheck storage;
+   the current construction/codeword guards remain in place. Reduce AIR opening
+   reductions and trusted-verifier loading time as well. Checkpointed Keccak
+   GKR is a research lead (`binary-veil.md`), retaining the existing fields,
+   hash and security target.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover and trusted-verifier loading before adding another recursion layer.

@@ -29,6 +29,7 @@ use super::{
     add_slice, evaluate_air_families, evaluated_nodes, finish_round, next_row_runs, node_schedule,
     rows_per_task,
 };
+use crate::compact::compact_poly;
 use crate::folder::{InteractionMultilinearFolder, MultilinearFolder};
 use crate::packed_ext::{PackedExt, PackedRepr};
 use crate::selectors::BoundaryEvals;
@@ -656,9 +657,10 @@ where
         let r = R::from(r);
         let packed_r = R::Packing::from(r);
         match &mut self.columns {
-            ExtColumns::Scalar(cols) => cols
-                .par_iter_mut()
-                .for_each(|col| fold_repr_column(col, packed_r)),
+            ExtColumns::Scalar(cols) => cols.par_iter_mut().for_each(|col| {
+                fold_repr_column(col, packed_r);
+                compact_poly(col);
+            }),
             ExtColumns::Packed(_) | ExtColumns::Sliced(_) => {
                 unreachable!("a stage folded into R keeps scalar columns")
             }

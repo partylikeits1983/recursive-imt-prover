@@ -19,6 +19,7 @@ extern crate alloc;
 pub mod backend;
 mod bus;
 mod circuit;
+mod compact;
 pub mod config;
 pub mod contract;
 pub mod folder;

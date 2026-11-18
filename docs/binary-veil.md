@@ -929,6 +929,59 @@ aggregation, 101.38 ms decoding and verification, and 1,235,297 proof bytes.
 Its observed lifetime physical-footprint peak was 23,752,411,776 bytes.
 [Raw report](../benchmarks/binary/masked-aggregate/flock-compact-pp-d16-n2.json).
 
+## Releasing folded polynomial capacity
+
+Large folded AIR and bus polynomials now return unused vector capacity to the
+allocator once their evaluation tables shrink. Upstream folds truncate in place;
+retaining their original buffers across mixed-height stages unnecessarily keeps
+earlier, larger allocations live. The low-level representation fold retains its
+in-place contract; its caller releases unused capacity. Buffers below 64 KiB are
+left alone. Values, proof format, transcripts and security parameters are unchanged.
+
+The polynomial regression checks every evaluation against the dense fold and
+checks the retained allocation. All 479 enabled upstream multi-STARK tests pass,
+including transcript comparisons and packed/representation kernels. The full
+application release suite passes 70 tests (11 expensive tests remain opt-in).
+
+The first complete depth-32 N=4 run now passes both in-process negative checks
+and independent verification in a fresh process. All four actual masked child
+proofs are authenticated by one non-hiding aggregate; the final verifier receives
+no child proofs or original witnesses.
+
+| Measurement | Depth 32, N=4, one cold sample |
+|---|---:|
+| Trusted setup | 31.96 s |
+| Per-child proving | 3.62–3.86 s |
+| Per-child verification including decoding | 319.82–436.39 ms |
+| Aggregate witness generation | 9.44 s |
+| Outer proof generation | 124.92 s |
+| Total aggregation | 135.69 s |
+| Aggregate decoding and verification | 121.07 ms |
+| Aggregate size | 1,332,780 bytes |
+| Child-to-aggregate critical path, excluding setup | 152.12 s |
+| Fresh verifier setup / decoding and verification | 29.74 s / 126.70 ms |
+| Observed lifetime physical-footprint peak | 43,444,315,520 bytes |
+
+The controller checks current physical footprint every two seconds and did not
+interrupt this run. Its lifetime peak still exceeded 40 GiB between samples:
+this is **not** a completed run within a strict 40 GiB peak bound. It used the
+same stop policy as the earlier interrupted diagnostics. The result establishes
+four-child correctness on this machine, not low-memory or low-latency aggregation.
+It is one cold sample, so no warm median is claimed.
+[Raw report](../benchmarks/binary/masked-aggregate/flock-compact-fold-d32-n4.json).
+Larger batches, including 64 children, remain unvalidated and subject to the
+construction/codeword limits.
+
+The updated depth-32 N=2 three-sample run also passed independent verification.
+Cold aggregation took 55.85 s; warm aggregation took 53.00–55.31 s (median
+54.16 s), versus the preceding checkpoint's 58.64 s median. Warm decoding and
+verification took 114.37–115.07 ms (median 114.72 ms). Proof sizes ranged from
+1,286,399 to 1,288,190 bytes. Fresh verifier setup took 12.17 s, followed by
+113.24 ms for decoding and verification. Observed lifetime physical footprint
+peaked at 22,100,967,552 bytes, down from 24,105,094,528 in the preceding run.
+These small local samples support the allocation change; they are not a broad
+performance guarantee. [Raw report](../benchmarks/binary/masked-aggregate/flock-compact-fold-d32-n2.json).
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover
