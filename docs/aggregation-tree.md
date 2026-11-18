@@ -108,24 +108,40 @@ an equivalent-security benchmark for this project's 128-bit target.
 
 ## Implementation order
 
-1. Completed: fixed-size statements, constrained leaf/merge gadgets and first
-   aggregation of two masked children, including independent verification and
-   malformed-count, statement-mutation and proof-corruption checks.
-2. Build a bounded two-aggregate verifier and measure its geometry at the retained
-   security parameters. This first prototype may use different keys per level;
-   label that explicitly. Measure the existing masked-proof path as well as the
-   cost of first aggregation. Keep memory guards enabled; wrapping the current
-   masked verifier directly in the native backend has exceeded its codeword budget.
-3. Establish a circuit-size envelope, authenticate first-aggregation and merge
-   verifier data, then reuse the exact merge key at two levels. Compare against
-   separate keys before adding padding or branching solely for key reuse.
-4. Verify four genuine child proofs through two levels in a fresh process. Test
-   foreign keys, changed statements, invalid children and invalid branch/count
-   combinations. Extend to 8–64 with bounded parallelism.
+1. **Retain the child and first aggregation.** Depth is 32. Both are implemented;
+   first aggregation constrains two complete masked-child verifiers. Checkpoint
+   is the initial tree backend. Its latest warm two-child median is 19.244 s.
+2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
+   native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. Add the
+   missing coordinate-opening adapter and the Keccak GKR/port-link checks. Test
+   each adapter against actual native proofs before composing the whole verifier.
+   A reduction without its authenticated PCS boundaries is not an aggregate.
+3. **Fix the common aggregate layout.** First aggregation and merge must share
+   a bounded proof shape, public layout, hash/PCS parameters and AIR layout.
+   Their preprocessing authorities may differ. Measure the merge graph and pad
+   both circuits to an envelope that also contains the merge's own output.
+4. **Build the reusable merge.** Verify two aggregates and constrain their ordered
+   parent digest and equal counts. Inputs of count two must use the pinned first
+   authority; larger inputs must use the merge authority. Carry and authenticate
+   the merge verifier data through recursion, and check it against trusted data
+   in final verification. Counts strictly decrease toward the base case.
+5. **Complete the three-circuit acceptance run.** Generate eight real children,
+   four first aggregates, two merges and one final merge. Use the exact same
+   merge circuit/key at both higher levels. Serialize the final proof, ordered
+   statement and trusted verifier data; verify in a fresh process without any
+   child or intermediate proofs. Reject altered roots, amounts, ordering, counts,
+   proof data, branch selectors and foreign authorities. Record times and memory.
 
-Compare total work and critical-path latency. Eight leaves require seven merges
-across three dependent levels; a tree is faster only if smaller circuits and
-parallelism outweigh those extra proofs and any wrappers. Record peak memory.
+Completion requires all five steps, not just the first tree level or statement
+hashing. Separate keys per merge level are an intermediate diagnostic only.
+Stop implementation work once this three-circuit acceptance run and its negative
+tests pass. Keep the existing security parameters and resource guards throughout;
+native wrapping has previously exceeded the codeword budget.
+
+Compare total work and critical-path latency. Eight children require four first
+aggregates and three recursive merges across three dependent levels. A tree is
+faster only if smaller circuits and parallelism outweigh those extra proofs and
+any wrappers. Record peak memory.
 Charge soundness error for every child, wrapper and merge, retaining the 128-bit
 classical target and existing caveats. Formal ZK analysis is deferred, not an
 implementation gate.

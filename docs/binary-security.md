@@ -40,6 +40,24 @@ commitment inside the proof. See [tree binding](aggregation-tree.md).
 | Conditional algebraic floor | 144 bits |
 | Proximity analysis | Johnson; VEIL binding also capped at half distance |
 
+All active WHIR constructors explicitly select `SecurityAssumption::JohnsonBound`:
+[native baseline](../src/binary/engine.rs), [masked child](../src/binary/veil/whir.rs)
+and [both aggregate backends](../crates/flock-backend/src/config.rs). At rate
+`rho`, the pinned libraries use agreement `1.05 * sqrt(rho)`, or relative distance
+`1 - 1.05 * sqrt(rho)`, strictly inside the Johnson radius. The separate
+[VEIL binding calculation](../src/binary/veil/parameters.rs) takes the minimum of
+that radius and `(1 - rho) / 2`; it must not be replaced by WHIR query counts.
+
+Literature checked 18 November 2026: the pinned Plonky3 Johnson analysis already
+uses Dao–Kominers–Thaler's improved finite-rate line-MCA bound. Their
+[beyond-Johnson result](https://eprint.iacr.org/2026/2056) requires sufficiently
+large characteristic; its Johnson-regime improvement works in every characteristic.
+Consequently, it supports the current bound but not a beyond-Johnson radius for
+our binary fields. Dao–Kominers–Thaler–Zheng also give
+[counterexamples on binary additive domains](https://eccc.weizmann.ac.il/report/2026/237/).
+Any future parameter relaxation needs a theorem for the actual domain, challenge
+field, combiner and protocol, followed by updated query and composition accounting.
+
 The ledgers include batching, sumchecks, query candidates and relevant PCS/link
 terms under uniform challenges. A requested PCS target is not an end-to-end
 security guarantee. Composition must charge every child, first aggregate and

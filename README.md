@@ -1,6 +1,6 @@
 # recursive-imt-prover
 
-**Recursive IMT membership proofs over binary fields, with experimental statistical ZK.**
+**Binary-field Keccak IMT proofs, with experimental statistical ZK and planned tree aggregation.**
 
 A research proof of concept for aggregating Keccak-256 incremental Merkle tree
 (IMT) membership proofs into one proof authenticating an ordered list of public
@@ -12,9 +12,39 @@ original private witnesses.
 128-bit security have not been established. Not suitable for production or
 real funds. No on-chain verifier.
 
-## How it works
+## Planned design: three circuits
 
-### Child proofs
+| Circuit | Role | Status |
+|---|---|---|
+| IMT child | Prove private membership in a depth-32 Keccak IMT | Implemented with experimental masking |
+| First aggregation | Verify two child proofs and produce a standard aggregate | Working first level via `--tree-pair`; common recursive format pending |
+| Recursive merge | Verify two aggregates and produce another aggregate of the same format | Not implemented |
+
+```text
+8 IMT children → 4 first aggregates → 2 merges → 1 final merge
+                                       same merge circuit/key
+```
+
+The design reuses **one merge circuit and verifier key at every higher level**.
+This requires a common proof shape, stable circuit size and authenticated cyclic
+verifier data. Final native verification needs no fourth circuit.
+
+Every aggregate authenticates a fixed-size Keccak digest and child count. Final
+verification recomputes that digest from the complete ordered `(root, amount)`
+list and checks the proof using independently trusted verifier data. It needs
+neither child proofs nor intermediate aggregates. Roots may differ; repeated
+statements are valid. Spending, nullifiers and accepted-root history are outside
+scope.
+
+The planned tree supports balanced batches of 2, 4, 8, 16, 32 or 64 children.
+Only the first aggregation currently works. Completion requires an eight-child
+run through two merge levels using the exact same merge key, followed by fresh
+process verification and tamper tests. See the [implementation plan](docs/aggregation-tree.md).
+
+Aggregates are intentionally non-ZK. Their inputs are child proofs and public
+statements; they add no privacy guarantee beyond the child construction.
+
+## Child relation
 
 Given a public root and amount, the child relation asserts knowledge of a secret,
 nonce and authentication path satisfying:
@@ -42,72 +72,54 @@ masked proof path supports depth 32 only.
 | | Merkle siblings |
 | | Leaf index / path directions |
 
-Children use **Poly64/Poly192**, Keccak-256, additive WHIR and VEIL-inspired
-masking. The intended privacy property is statistical zero knowledge; its joint
-security argument remains unfinished. Johnson bounds and conservative algebraic
-budgets support a **128-bit classical target**, not an established end-to-end
-security guarantee.
+Children use Poly64/Poly192 binary fields, Keccak-256, additive WHIR and
+VEIL-inspired masking. The first aggregation constrains the complete child
+verifier, including transcripts, PCS openings, sumcheck, AIR and consistency
+checks. A native verifier result is not a substitute for these constraints.
 
-### Recursive aggregation
+Checkpoint is the initial backend for the tree implementation: a native product
+bus linked to a committed Keccak GKR argument. Flock, the current CLI default,
+uses upstream Flock Keccak circuits. Existing flat-batch aggregation remains
+available as a baseline; it is not the planned recursive merge.
 
-```text
-Child proof 1 ──┐
-Child proof 2 ──┤
-Child proof 3 ──┼── Recursive verifier ── Aggregate proof
-       ...     │
-Child proof N ──┘
-```
+## Security parameters
 
-The recursive circuit constrains the complete child verification relation:
-transcripts, polynomial commitments, sumcheck, AIR and consistency checks. The
-aggregate authenticates the exact number and order of `(root, amount)` statements.
-Independent final verification requires no child proofs or original witnesses.
+| Component | Current setting |
+|---|---|
+| Values / challenges | Poly64 / Poly192 |
+| Hashes and transcripts | Keccak-256 |
+| Child query target / code rate | 160 bits / 1/16 |
+| Outer PCS target / initial rate / fold | 152 bits / 1/2 / 4 |
+| WHIR grinding ceiling | 16 bits |
+| Conditional algebraic floor | 144 bits |
+| WHIR proximity analysis | `SecurityAssumption::JohnsonBound` |
 
-There is one final aggregate verifier. The child-verifier circuit is compiled
-once and reused across the batch, sharing its fixed tables. Every child still
-has separate witness values, wiring checks and public inputs. The trusted key
-fixes the tree depth and batch size; one key accepting arbitrary N is not yet
-implemented.
+All active WHIR configurations use Johnson with the pinned library's safety
+margin: at rate `rho`, agreement is `1.05 * sqrt(rho)`, so the decoding radius
+stays below Johnson. VEIL binding additionally uses the stricter cap of half the
+code's minimum distance. These are component budgets toward a **128-bit classical
+target**, not an end-to-end security certification or a 128-bit post-quantum claim.
 
-The [binary aggregation tree](docs/aggregation-tree.md) has a working first
-aggregation via `--tree-pair`, authenticating two children through a fixed-size
-Keccak statement. Aggregate-of-aggregate verification and cyclic recursion
-remain to be implemented.
-
-Two experimental backends implement the outer proof:
-
-- **Flock (default):** Plonky3 native product bus with Flock Keccak circuits.
-- **Checkpoint:** The same arithmetic verifier with a linked Keccak GKR argument
-  and authenticated openings binding it to the arithmetic proof.
-
-The aggregate is intentionally non-ZK. Child proofs can be sent directly to the
-aggregator; publication is not required. The outer proof adds no privacy guarantee
-beyond the child construction.
-
-Children may use different roots. Accepted-root history, spending and nullifiers
-are outside scope; this PoC proves membership relative to the supplied roots.
+The pinned Plonky3 analysis already incorporates Dao–Kominers–Thaler's improved
+Johnson-regime proximity bound. Their beyond-Johnson result requires large
+characteristic and does not justify moving this binary-field implementation
+past Johnson. [Paper](https://eprint.iacr.org/2026/2056).
+See [parameter rationale and limitations](docs/binary-security.md#parameters-and-accounting).
 
 ## Benchmarks
 
 Depth-32 measurements on an Apple M2 Pro with four threads. Aggregation figures
 are warm medians; fresh verification includes authenticated verifier-key loading.
 
-| Backend / children | Aggregation | Proof size | Fresh verification |
+| Backend / children | Aggregation | Aggregate size | Fresh verification |
 |---|---:|---:|---:|
 | Checkpoint tree pair / 2 | 19.2 s | 1.81 MB | 148 ms |
-| Flock / 2 | 27.8 s | 1.42 MB | 133 ms |
-| Checkpoint / 2 | 22.5 s | 1.82 MB | 144 ms |
-| Checkpoint / 8 | 121.3 s | 2.55 MB | 175 ms |
 
-The tree-pair row includes the latest Keccak prover optimization; other rows are
-retained baselines. [Before/after measurements](docs/binary-veil.md#packed-keccak-rounds).
-
-Batches through eight have verified end to end. Scaling to 16–64 children remains
-a research target.
-
-Aggregation remains expensive. Peak physical footprint ranges from about 6.4 GB
-to 16.3 GB, including compressed/swapped memory. Filesystem caches were not reset.
-[Measurements and current optimizations](docs/binary-veil.md#specialized-air-evaluation).
+Children took 3.8–4.3 s each in this run; peak process physical footprint was
+about 6.4 GB. Compilation is excluded; filesystem caches were not reset.
+This measures the first tree level, not recursive merging. Flat batches through
+eight have also verified end to end.
+[Raw measurements and optimization history](docs/binary-veil.md#packed-keccak-rounds).
 
 ## Running locally
 
@@ -116,20 +128,14 @@ Requires Rust 1.98.1. The default is four threads; use fresh output directories.
 ```sh
 cargo test --locked --release --workspace
 
-# Two masked children and one aggregate; verify again in a fresh process.
-cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --out run/masked32
+# First tree level: two masked children -> one aggregate, then fresh verification.
+cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --keccak-backend checkpoint --out run/pair32
 
-# First tree level: two masked children -> one proof with a fixed-size statement.
-cargo run --locked --release --bin masked-demo -- --tree-pair --depth 32 --keccak-backend checkpoint --out run/pair32
-
-# Repeated checkpoint benchmark, separating cold and warm samples.
-cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --samples 3 --keccak-backend checkpoint --out run/bench
-
-# Eight-child checkpoint benchmark; substantial memory required.
-cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 8 --keccak-backend checkpoint --out run/eight
+# Benchmark the same circuit, separating cold and warm samples.
+cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --samples 3 --keccak-backend checkpoint --out run/bench-pair32
 
 # Independent verification of saved artifacts.
-cargo run --locked --release --bin masked-demo -- --verify --out run/masked32
+cargo run --locked --release --bin masked-demo -- --verify --out run/pair32
 ```
 
 The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
@@ -139,6 +145,8 @@ prover do not establish authority.
 
 `demo` and `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` produces a diagnostic proof bundle, not one aggregate.
+Omitting `--tree-pair` selects the existing flat-batch format. There is no
+aggregate-of-aggregate CLI yet.
 
 ## Implementation and dependencies
 
@@ -155,3 +163,21 @@ Pinned revisions:
 
 [Recursion patches](vendor/p3-recursion/LOCAL_CHANGES.md) and the
 [Flock adapter](crates/flock-backend/README.md) document local upstream changes.
+
+## References
+
+These papers inform the design; their guarantees do not automatically transfer
+to this implementation.
+
+- [VEIL: Lightweight Zero-Knowledge for Hash-Based Multilinear Proof Systems](https://eprint.iacr.org/2026/683)
+  — Dalal, Hemo, Rabinovich and Rothblum. Basis for the masking approach.
+- [WHIR: Reed–Solomon Proximity Testing with Super-Fast Verification](https://eprint.iacr.org/2024/1586)
+  — Arnon, Chiesa, Fenzi and Yogev. Proximity testing and polynomial commitments.
+- [Fractal: Post-Quantum and Transparent Recursive Proofs from Holography](https://eprint.iacr.org/2019/1076)
+  — Chiesa, Ojha and Spooner. Transparent recursive proof composition.
+- [DEEP-FRI: Sampling Outside the Box Improves Soundness](https://eprint.iacr.org/2019/336)
+  — Ben-Sasson, Goldberg, Kopparty and Saraf. Reed–Solomon proximity and STARK soundness.
+- [Reed-Solomon Codes Beyond Johnson: Efficient Decoding and Smaller Cryptographic Proofs](https://eprint.iacr.org/2026/2056)
+  — Dao, Kominers and Thaler. Improved bounds and their field-characteristic requirements.
+- [On Reed–Solomon Proximity Gaps Conjectures](https://eprint.iacr.org/2025/2046)
+  — Crites and Stewart. Limits of capacity-based proximity assumptions.
