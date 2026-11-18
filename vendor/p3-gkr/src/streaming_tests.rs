@@ -89,7 +89,7 @@ fn regenerated_binary_leaves_match_dense_proofs_and_transcripts() {
 #[test]
 fn regenerated_shared_products_match_dense_and_reject_tampering() {
     let input = (0..513)
-        .map(|x| Poly192::from_u64(x + 1))
+        .map(|x| Poly192::from(Poly64::from_repr(x + 1)))
         .collect::<Vec<_>>();
     let mut permuted = input.clone();
     permuted.reverse();

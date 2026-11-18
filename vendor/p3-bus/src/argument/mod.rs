@@ -220,7 +220,7 @@ mod tests {
     use core::ops::Range;
 
     use p3_baby_bear::BabyBear;
-    use p3_binary_field::{BinaryChallenger, Poly64, Poly192};
+    use p3_binary_field::{BinaryChallenger, Poly64, Poly192, TowerLevel};
     use p3_challenger::CanSample;
     use p3_field::PrimeCharacteristicRing;
     use p3_gkr::RegeneratedLeaves;
@@ -290,7 +290,7 @@ mod tests {
         .unwrap();
         for case in 0..4 {
             let left = (0..32)
-                .map(|i| Poly192::from_u64(i + 1))
+                .map(|i| Poly192::from(Poly64::from_repr(i + 1)))
                 .collect::<Vec<_>>();
             let mut right = left.clone();
             right.reverse();
@@ -324,6 +324,15 @@ mod tests {
                 },
                 &mut compact_transcript,
             );
+            match case {
+                0 => assert!(dense.is_ok()),
+                1 => assert!(matches!(&dense, Err(BusArgumentError::UnbalancedProducts))),
+                2 | 3 => assert!(matches!(
+                    &dense,
+                    Err(BusArgumentError::LeafCountMismatch { .. })
+                )),
+                _ => unreachable!(),
+            }
             assert_eq!(dense, compact);
             let expected: Poly192 = dense_transcript.sample();
             let actual: Poly192 = compact_transcript.sample();
