@@ -6,7 +6,7 @@ use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 
-use crate::F;
+use crate::{F, recursive_layout::PACKED_ROWS_LOG};
 
 #[cfg(test)]
 mod tests;
@@ -14,8 +14,6 @@ mod tests;
 pub const TERMS: usize = 16;
 pub const WIDTH: usize = TERMS + 2;
 pub const COEFFICIENTS: usize = WIDTH;
-pub const ACTIVE: usize = WIDTH + TERMS;
-pub const PP_WIDTH: usize = ACTIVE + WIDTH;
 
 pub struct Packing {
     pub shard: Option<Arc<PackedShard>>,
@@ -24,6 +22,7 @@ pub struct Packing {
 }
 
 pub struct PackedShard {
+    pub geometric: bool,
     pub rows: Vec<PackedRow>,
     pub log_height: usize,
 }
@@ -41,6 +40,7 @@ impl Packing {
         pp_width: usize,
         main_width: usize,
         fanout: &[OldF],
+        recursive: bool,
     ) -> Result<Self> {
         ensure!(
             pp_width != 0 && gates.len().is_multiple_of(pp_width) && fanout.len().is_multiple_of(3),
@@ -54,6 +54,7 @@ impl Packing {
         // The pinned full native gate schema has five IDs, a constant and eight selectors.
         // Other compact schemas keep their original rows.
         if main_width != 5 || pp_width != 14 {
+            ensure!(!recursive, "unexpected recursive gate schema");
             return Ok(result);
         }
         let mut counts = vec![0u32; widths.len()];
@@ -101,6 +102,7 @@ impl Packing {
                     || next <= current
                     || next >= rows.len()
                     || result.removed_rows[next]
+                    || (recursive && rows[next][5] != rows[current][5] * OldF::from_repr(2))
                 {
                     break;
                 }
@@ -128,50 +130,61 @@ impl Packing {
             }
             packed.push(row);
         }
-        if !packed.is_empty() {
-            let log_height = packed.len().next_power_of_two().trailing_zeros().max(4) as usize;
+        if recursive || !packed.is_empty() {
+            let log_height = if recursive {
+                ensure!(
+                    packed.len() <= 1 << PACKED_ROWS_LOG,
+                    "recursive packing capacity exceeded"
+                );
+                PACKED_ROWS_LOG
+            } else {
+                packed.len().next_power_of_two().trailing_zeros().max(4) as usize
+            };
             result.shard = Some(Arc::new(PackedShard {
                 rows: packed,
                 log_height,
+                geometric: recursive,
             }));
         }
         Ok(result)
     }
 }
 
-impl PackedShard {
-    pub fn geometric_rows(&self) -> usize {
-        self.rows
+impl PackedRow {
+    pub fn is_geometric(&self) -> bool {
+        let mut expected = F::from_repr(self.coefficients[0]);
+        self.coefficients[..self.sources.len()]
             .iter()
-            .filter(|row| {
-                let mut expected = F::from_repr(row.coefficients[0]);
-                row.coefficients[..row.sources.len()]
-                    .iter()
-                    .all(|&coefficient| {
-                        let matches = coefficient == expected.to_repr();
-                        expected *= F::from_repr(2);
-                        matches
-                    })
+            .all(|&coefficient| {
+                let matches = coefficient == expected.to_repr();
+                expected *= F::from_repr(2);
+                matches
             })
-            .count()
+    }
+}
+
+impl PackedShard {
+    pub fn active_offset(&self) -> usize {
+        COEFFICIENTS + if self.geometric { 1 } else { TERMS }
+    }
+
+    pub fn pp_width(&self) -> usize {
+        self.active_offset() + WIDTH
     }
 
     pub fn preprocessing(&self) -> RowMajorMatrix<F> {
-        let mut values = vec![F::ZERO; PP_WIDTH * (1 << self.log_height)];
-        for (output, row) in values
-            .as_chunks_mut::<PP_WIDTH>()
-            .0
-            .iter_mut()
-            .zip(&self.rows)
-        {
+        let active = self.active_offset();
+        let width = self.pp_width();
+        let mut values = vec![F::ZERO; width * (1 << self.log_height)];
+        for (output, row) in values.chunks_exact_mut(width).zip(&self.rows) {
             for (i, &id) in row.ids.iter().enumerate() {
                 output[i] = F::from_repr(u64::from(id));
-                output[ACTIVE + i] = F::from_bool(i < row.sources.len() || i >= TERMS);
+                output[active + i] = F::from_bool(i < row.sources.len() || i >= TERMS);
             }
-            for (i, &coefficient) in row.coefficients.iter().enumerate() {
+            for (i, &coefficient) in row.coefficients[..active - COEFFICIENTS].iter().enumerate() {
                 output[COEFFICIENTS + i] = F::from_repr(coefficient);
             }
         }
-        RowMajorMatrix::new(values, PP_WIDTH)
+        RowMajorMatrix::new(values, width)
     }
 }

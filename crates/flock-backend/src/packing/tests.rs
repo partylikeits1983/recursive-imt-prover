@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::check_all_constraints;
@@ -13,6 +15,19 @@ struct Fixture {
     fanout: Vec<OldF>,
     widths: Vec<u8>,
     values: Vec<F>,
+}
+
+impl Fixture {
+    fn pack(&self, pp_width: usize, main_width: usize, recursive: bool) -> Result<Packing> {
+        Packing::new(
+            &self.widths,
+            &self.gates,
+            pp_width,
+            main_width,
+            &self.fanout,
+            recursive,
+        )
+    }
 }
 
 fn fixture(count: usize) -> Fixture {
@@ -72,7 +87,7 @@ fn trace(shard: &PackedShard, values: &[F]) -> RowMajorMatrix<F> {
 #[test]
 fn packed_chains_preserve_equations_and_every_retained_copy() -> Result<()> {
     let fixture = fixture(37);
-    let packing = Packing::new(&fixture.widths, &fixture.gates, 14, 5, &fixture.fanout)?;
+    let packing = fixture.pack(14, 5, false)?;
     let shard = packing.shard.as_ref().unwrap();
     assert_eq!(
         shard
@@ -132,26 +147,65 @@ fn shared_intermediates_and_other_gate_shapes_are_preserved() -> Result<()> {
     fixture
         .fanout
         .extend([live as u64, 1, 0].map(OldF::from_repr));
-    let packing = Packing::new(&fixture.widths, &fixture.gates, 14, 5, &fixture.fanout)?;
+    let packing = fixture.pack(14, 5, false)?;
     assert!(!packing.removed_ids[live]);
     assert!(
         packing
             .shard
-            .as_ref()
             .unwrap()
             .rows
             .iter()
             .any(|r| r.ids[TERMS + 1] as usize == live)
     );
     fixture.widths[1..=37].fill(64);
-    let packing = Packing::new(&fixture.widths, &fixture.gates, 14, 5, &fixture.fanout)?;
+    let packing = fixture.pack(14, 5, false)?;
     assert!(packing.shard.is_none());
     assert!(!packing.removed_rows.iter().any(|&v| v));
-    assert!(
-        Packing::new(&fixture.widths, &fixture.gates, 14, 3, &fixture.fanout)?
-            .shard
-            .is_none()
+    assert!(fixture.pack(14, 3, false)?.shard.is_none());
+    assert!(fixture.pack(0, 5, false).is_err());
+    Ok(())
+}
+
+#[test]
+fn scaled_bit_words_preserve_partial_rows_and_general_coefficients() -> Result<()> {
+    let mut f = fixture(37);
+    let mut scale = F::from_repr(1 << 60);
+    for (i, row) in f.gates.as_chunks_mut::<14>().0[..37].iter_mut().enumerate() {
+        row[5] = OldF::from_repr(if (16..32).contains(&i) {
+            3
+        } else {
+            scale.to_repr()
+        });
+        let [bit, start, end] = [0, 2, 4].map(|j| row[j].to_repr() as usize);
+        f.values[end] = f.values[start] + f.values[bit] * F::from_repr(row[5].to_repr());
+        scale *= F::from_repr(2);
+    }
+    let mut packing = f.pack(14, 5, true)?;
+    let compact = packing.shard.as_mut().unwrap();
+    assert_eq!(
+        compact
+            .rows
+            .iter()
+            .map(|r| r.sources.len())
+            .collect::<Vec<_>>(),
+        [16, 5]
     );
-    assert!(Packing::new(&fixture.widths, &fixture.gates, 0, 5, &fixture.fanout).is_err());
+    for (i, &removed) in packing.removed_rows[..37].iter().enumerate() {
+        assert_eq!(removed, !(16..32).contains(&i));
+        if !removed {
+            let row = &f.gates.as_chunks::<14>().0[i];
+            for slot in [0, 2, 4] {
+                assert!(!packing.removed_ids[row[slot].to_repr() as usize]);
+            }
+        }
+    }
+    Arc::get_mut(compact).unwrap().log_height = 4;
+    let air = Chip::packed(compact.clone());
+    assert!(check_all_constraints(&air, &trace(compact, &f.values), &[], Some(1)).is_ok());
+    let mut bad = trace(compact, &f.values);
+    bad.values[WIDTH + 5] = F::ONE;
+    bad.values[WIDTH + TERMS + 1] +=
+        F::from_repr(compact.rows[1].coefficients[0]) * F::from_repr(1 << 5);
+    assert!(!check_all_constraints(&air, &bad, &[], Some(1)).is_ok());
     Ok(())
 }

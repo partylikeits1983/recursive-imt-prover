@@ -1,0 +1,366 @@
+{
+  "method": "One eight-child tree per layout, four threads on an Apple M2 Pro. Diagnostic runs overlapped compilation and unit tests. Use proof sizes and layout counts for direct comparison. Wall times include contention. Both runs include one extra first aggregate for the rejection test.",
+  "baseline": "cyclic-eight.json",
+  "runs": [
+    {
+      "batch_size": 8,
+      "depth": 32,
+      "bound": "Johnson",
+      "setup_ms": {
+        "child": 10.746042000000001,
+        "first_aggregation": 9967.887375,
+        "merge": 23479.580583
+      },
+      "children": [
+        {
+          "decode_verify_ms": 472.476834,
+          "proof_bytes": 1127992,
+          "prove_ms": 4665.366792000001,
+          "witness_ms": 2.9065
+        },
+        {
+          "decode_verify_ms": 468.35900000000004,
+          "proof_bytes": 1127726,
+          "prove_ms": 4188.913958,
+          "witness_ms": 1.674042
+        },
+        {
+          "decode_verify_ms": 503.95008399999995,
+          "proof_bytes": 1128619,
+          "prove_ms": 3709.5937910000002,
+          "witness_ms": 2.740209
+        },
+        {
+          "decode_verify_ms": 467.808334,
+          "proof_bytes": 1128408,
+          "prove_ms": 4075.562208,
+          "witness_ms": 2.612583
+        },
+        {
+          "decode_verify_ms": 459.16499999999996,
+          "proof_bytes": 1128813,
+          "prove_ms": 3776.9977080000003,
+          "witness_ms": 2.348083
+        },
+        {
+          "decode_verify_ms": 455.370583,
+          "proof_bytes": 1129050,
+          "prove_ms": 3554.62475,
+          "witness_ms": 3.821667
+        },
+        {
+          "decode_verify_ms": 464.686084,
+          "proof_bytes": 1128405,
+          "prove_ms": 3740.1996249999997,
+          "witness_ms": 2.147167
+        },
+        {
+          "decode_verify_ms": 464.260292,
+          "proof_bytes": 1128002,
+          "prove_ms": 3734.282875,
+          "witness_ms": 1.708292
+        }
+      ],
+      "same_key_recursion": true,
+      "fresh_verifier": {
+        "children": 8,
+        "peak_rss_bytes": 25231360,
+        "setup_ms": 7.494792,
+        "verified": true,
+        "verify_ms": 124.847667
+      },
+      "fresh_verifier_wall_ms": 408.557208,
+      "first_verifier_digest": "69f96e272e76ea5d4027068a8901bc0afd10eca504141d26f8a166cc620d70d6",
+      "merge_verifier_digest": "3d53d99070d5347851ad8ab15d5a2be0a21c7cd043363ffcfd3ed76eb41456bd",
+      "negative_checks": [
+        "root",
+        "nullifier hash",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "foreign_authority_rejected": true,
+      "invalid_child_statement_rejected": true,
+      "invalid_child_proof_rejected": true,
+      "end_to_end_security_bits": null,
+      "full_zk_established": false,
+      "layout": "Separate geometric and general packing tables",
+      "geometry": {
+        "first_aggregation": {
+          "template_witnesses": 7290252,
+          "packed_rows": 73538,
+          "packed_geometric_rows": 61774,
+          "keccak_permutations": 51386,
+          "initial_codeword_cells": 419430400,
+          "preprocessed_codeword_cells": 134217728,
+          "algebraic_bits": 146.19598113664543
+        },
+        "merge": {
+          "template_witnesses": 16028448,
+          "packed_rows": 622364,
+          "packed_geometric_rows": 620680,
+          "keccak_permutations": 51584,
+          "initial_codeword_cells": 419430400,
+          "preprocessed_codeword_cells": 134217728,
+          "algebraic_bits": 146.19598113664543
+        }
+      },
+      "final_proof_bytes": 1514110,
+      "wall_seconds": 419.8084283749922,
+      "peak_physical_footprint_bytes": 21349991040,
+      "source_keccak256": "f56535022536ddcc8770a1e71ba091c6982cd1c5c1717e2d849e8ebf2aac59e4",
+      "aggregates": [
+        {
+          "children": 2,
+          "wall_ms": 38667.964374999996,
+          "proof_bytes": 1515134,
+          "prove_ms": 36964.924584,
+          "verify_ms": 120.504417,
+          "witness_ms": 685.93025
+        },
+        {
+          "children": 2,
+          "wall_ms": 38674.303083,
+          "proof_bytes": 1516542,
+          "prove_ms": 37002.954832999996,
+          "verify_ms": 145.79512499999998,
+          "witness_ms": 618.514666
+        },
+        {
+          "children": 2,
+          "wall_ms": 41578.336333,
+          "proof_bytes": 1515774,
+          "prove_ms": 39940.937666,
+          "verify_ms": 156.662708,
+          "witness_ms": 597.8636670000001
+        },
+        {
+          "children": 2,
+          "wall_ms": 42024.440459,
+          "proof_bytes": 1514206,
+          "prove_ms": 40188.516875,
+          "verify_ms": 143.591667,
+          "witness_ms": 671.021666
+        },
+        {
+          "children": 4,
+          "wall_ms": 46993.191625,
+          "proof_bytes": 1514430,
+          "prove_ms": 41992.667375000005,
+          "verify_ms": 121.322417,
+          "witness_ms": 4592.485625
+        },
+        {
+          "children": 4,
+          "wall_ms": 46654.276042,
+          "proof_bytes": 1515038,
+          "prove_ms": 43738.059375,
+          "verify_ms": 136.917333,
+          "witness_ms": 2478.835167
+        },
+        {
+          "children": 8,
+          "wall_ms": 50305.972334000006,
+          "proof_bytes": 1514110,
+          "prove_ms": 45866.658166999994,
+          "verify_ms": 124.019875,
+          "witness_ms": 3987.227708
+        }
+      ]
+    },
+    {
+      "batch_size": 8,
+      "depth": 32,
+      "bound": "Johnson",
+      "setup_ms": {
+        "child": 11.045416000000001,
+        "first_aggregation": 10511.519958,
+        "merge": 19261.287083
+      },
+      "children": [
+        {
+          "decode_verify_ms": 424.42575,
+          "proof_bytes": 1127478,
+          "prove_ms": 4071.905042,
+          "witness_ms": 2.481208
+        },
+        {
+          "decode_verify_ms": 417.709583,
+          "proof_bytes": 1128655,
+          "prove_ms": 3698.6869580000002,
+          "witness_ms": 1.7580829999999998
+        },
+        {
+          "decode_verify_ms": 402.356084,
+          "proof_bytes": 1128558,
+          "prove_ms": 3570.666708,
+          "witness_ms": 1.4227079999999999
+        },
+        {
+          "decode_verify_ms": 423.152042,
+          "proof_bytes": 1128111,
+          "prove_ms": 3585.908875,
+          "witness_ms": 1.639792
+        },
+        {
+          "decode_verify_ms": 449.78225,
+          "proof_bytes": 1128474,
+          "prove_ms": 3947.27875,
+          "witness_ms": 2.0731669999999998
+        },
+        {
+          "decode_verify_ms": 480.323166,
+          "proof_bytes": 1129547,
+          "prove_ms": 3631.0503750000003,
+          "witness_ms": 1.481209
+        },
+        {
+          "decode_verify_ms": 419.85145800000004,
+          "proof_bytes": 1128587,
+          "prove_ms": 3652.810959,
+          "witness_ms": 1.802542
+        },
+        {
+          "decode_verify_ms": 431.054125,
+          "proof_bytes": 1130229,
+          "prove_ms": 3335.381625,
+          "witness_ms": 1.9705
+        }
+      ],
+      "same_key_recursion": true,
+      "fresh_verifier": {
+        "children": 8,
+        "peak_rss_bytes": 23609344,
+        "setup_ms": 7.269084,
+        "verified": true,
+        "verify_ms": 117.916333
+      },
+      "fresh_verifier_wall_ms": 133.234125,
+      "first_verifier_digest": "ae28aab63caa0921bd52fce43c99208b2e4e449a0ba4e279c8d6793cde198be3",
+      "merge_verifier_digest": "bafc312e73c7aa7c92be4c5ea90967dfd85649a045df797f6538e9d34c1ac944",
+      "negative_checks": [
+        "root",
+        "nullifier hash",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "foreign_authority_rejected": true,
+      "invalid_child_statement_rejected": true,
+      "invalid_child_proof_rejected": true,
+      "end_to_end_security_bits": null,
+      "full_zk_established": false,
+      "layout": "Geometric packing table with general coefficients handled by the native gates",
+      "geometry": {
+        "first_aggregation": {
+          "template_witnesses": 7290252,
+          "packed_rows": 61774,
+          "packed_geometric_rows": 61774,
+          "keccak_permutations": 51386,
+          "initial_codeword_cells": 419430400,
+          "preprocessed_codeword_cells": 134217728,
+          "algebraic_bits": 146.19605871032402
+        },
+        "merge": {
+          "template_witnesses": 15017326,
+          "packed_rows": 571528,
+          "packed_geometric_rows": 571528,
+          "keccak_permutations": 50292,
+          "initial_codeword_cells": 419430400,
+          "preprocessed_codeword_cells": 134217728,
+          "algebraic_bits": 146.19605871032402
+        }
+      },
+      "final_proof_bytes": 1446126,
+      "wall_seconds": 432.7436593750026,
+      "peak_physical_footprint_bytes": 21456405120,
+      "source_keccak256": "fd4de5cd787ef846dade0ce8ae9d8ff1e51cf010e1ed130b5dea0df9c1edd5eb",
+      "aggregates": [
+        {
+          "children": 2,
+          "wall_ms": 43189.453459,
+          "proof_bytes": 1446606,
+          "prove_ms": 41402.178917,
+          "verify_ms": 131.791709,
+          "witness_ms": 701.549041
+        },
+        {
+          "children": 2,
+          "wall_ms": 39696.054959,
+          "proof_bytes": 1445550,
+          "prove_ms": 37820.479958,
+          "verify_ms": 114.206,
+          "witness_ms": 853.774041
+        },
+        {
+          "children": 2,
+          "wall_ms": 46600.657792,
+          "proof_bytes": 1446574,
+          "prove_ms": 44881.917084,
+          "verify_ms": 117.970834,
+          "witness_ms": 638.376375
+        },
+        {
+          "children": 2,
+          "wall_ms": 43848.528207999996,
+          "proof_bytes": 1447022,
+          "prove_ms": 41987.857917,
+          "verify_ms": 127.42362500000002,
+          "witness_ms": 721.002875
+        },
+        {
+          "children": 4,
+          "wall_ms": 46253.469042,
+          "proof_bytes": 1447950,
+          "prove_ms": 41683.635541999996,
+          "verify_ms": 121.520167,
+          "witness_ms": 4155.183042
+        },
+        {
+          "children": 4,
+          "wall_ms": 47663.310792,
+          "proof_bytes": 1446734,
+          "prove_ms": 44560.839332999996,
+          "verify_ms": 118.13579200000001,
+          "witness_ms": 2706.630583
+        },
+        {
+          "children": 8,
+          "wall_ms": 53027.668249999995,
+          "proof_bytes": 1446126,
+          "prove_ms": 48739.341708,
+          "verify_ms": 126.78862499999998,
+          "witness_ms": 3869.948625
+        }
+      ]
+    }
+  ],
+  "environment": {
+    "compile_time_included": false,
+    "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+    "hardware": "Apple M2 Pro",
+    "legacy_prime_enabled": false,
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "profile": "release",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "release_profile": {
+      "codegen_units": 16,
+      "lto": "thin"
+    },
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags_runtime": "",
+    "threads": 4
+  }
+}

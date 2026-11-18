@@ -209,29 +209,23 @@ impl Prepared {
         let widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
         let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
         let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
-        let mut packing = Packing::new(
+        let packing = Packing::new(
             &widths,
             &gates_pp.values,
             gates_pp.width,
             bus.airs()[1].width(),
             &fanout_pp.values,
+            recursive,
         )?;
-        if recursive {
-            let shard = packing.shard.get_or_insert_with(|| {
-                Arc::new(PackedShard {
-                    rows: vec![],
-                    log_height: recursive_layout::PACKED_ROWS_LOG,
-                })
-            });
-            let shard = Arc::get_mut(shard).expect("new packing is uniquely owned");
-            ensure!(
-                shard.rows.len() <= 1 << recursive_layout::PACKED_ROWS_LOG,
-                "fixed packing capacity exceeded"
-            );
-            shard.log_height = recursive_layout::PACKED_ROWS_LOG;
-        }
         let packed_rows = packing.shard.as_ref().map_or(0, |s| s.rows.len());
-        let packed_geometric_rows = packing.shard.as_ref().map_or(0, |s| s.geometric_rows());
+        let packed_geometric_rows = if recursive {
+            packed_rows
+        } else {
+            packing
+                .shard
+                .as_ref()
+                .map_or(0, |s| s.rows.iter().filter(|r| r.is_geometric()).count())
+        };
         let packing_intermediates_removed = packing.removed_ids.iter().filter(|&&v| v).count();
         eprintln!(
             "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"

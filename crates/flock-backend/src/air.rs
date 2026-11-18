@@ -94,9 +94,20 @@ impl Chip {
         };
         let mut equation = main(packing::TERMS + 1) - main(packing::TERMS);
         let mut constraints = Vec::new();
-        for i in 0..packing::TERMS {
-            equation -= main(i) * pp(packing::COEFFICIENTS + i);
-            constraints.push(main(i) * (main(i) - OldF::from_repr(1)));
+        let active = shard.active_offset();
+        if shard.geometric {
+            let mut word = SymbolicExpression::from(OldF::from_repr(0));
+            for i in 0..packing::TERMS {
+                word += main(i) * OldF::from_repr(1 << i);
+                // Inactive trailing bits must be zero even when the scale is nonzero.
+                constraints.push(main(i) * (main(i) - pp(active + i)));
+            }
+            equation -= pp(packing::COEFFICIENTS) * word;
+        } else {
+            for i in 0..packing::TERMS {
+                equation -= main(i) * pp(packing::COEFFICIENTS + i);
+                constraints.push(main(i) * (main(i) - OldF::from_repr(1)));
+            }
         }
         constraints.push(equation);
         Self::Native(Box::new(ImportedAir {
@@ -113,7 +124,7 @@ impl Chip {
             shard: None,
             gates: None,
             successor_bus: String::new(),
-            preprocessed_map: (0..packing::PP_WIDTH).map(Some).collect(),
+            preprocessed_map: (0..shard.pp_width()).map(Some).collect(),
             log_height: shard.log_height,
             constraints,
             interactions: (0..packing::WIDTH)
@@ -121,7 +132,7 @@ impl Chip {
                     bus_name: "imt.witness".to_owned(),
                     direction: OldDirection::Push,
                     fields: vec![pp(i), main(i)],
-                    activation: OldActivation::Boolean(pp(packing::ACTIVE + i)),
+                    activation: OldActivation::Boolean(pp(active + i)),
                 })
                 .collect(),
             source: Source::Packed(shard),
@@ -305,10 +316,10 @@ impl Chip {
                 "recursive public IDs must be committed"
             );
             vec![id; a.source.num_public_values()]
-        } else if matches!(a.source, Source::Packed(_)) {
-            let mut widths = vec![1; packing::PP_WIDTH];
+        } else if let Source::Packed(shard) = &a.source {
+            let mut widths = vec![1; shard.pp_width()];
             widths[..packing::WIDTH].fill(id);
-            widths[packing::COEFFICIENTS..packing::ACTIVE].fill(64);
+            widths[packing::COEFFICIENTS..shard.active_offset()].fill(64);
             widths
         } else {
             ensure!(

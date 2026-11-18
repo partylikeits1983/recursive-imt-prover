@@ -42,7 +42,7 @@ The tree is designed for balanced batches of 2, 4, 8, 16, 32 or 64 children.
 The 64-child integration test passed: 64 children, 32 first aggregates and 31
 merges, with one merge circuit/key across all five higher levels. Independent
 final verification and statement, proof and authority rejection checks passed.
-The key bytes also match the earlier eight-child run.
+The eight- and 64-child baseline runs used the same merge key.
 See the [architecture and acceptance test](docs/aggregation-tree.md).
 
 Aggregates are intentionally non-ZK. Their inputs are child proofs and public
@@ -116,7 +116,7 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-The 64-child correctness run used an Apple M2 Pro with four threads. These are
+The 64-child baseline used an Apple M2 Pro with four threads. These are
 per-proof medians and ranges within one sequential run, excluding compilation:
 
 | Operation | Median | Range |
@@ -136,6 +136,11 @@ The 63 aggregation operations took 48.9 minutes in total. Full sequential elapse
 time was 54.5 minutes excluding negative-test overhead, or 55.4 minutes including
 it. Targets are **at most 10 s per merge and 60 s for 64-to-1 aggregation**, ideally
 30 s. These remain unmet. The proof meets the 1.5 MB target; 1 MB remains a target.
+A newer circuit stores one scale for each run of geometric coefficients. In an
+eight-child run it produced a 1,446,126-byte final proof. Fresh verification
+took 133 ms. The three merges took 46.3–53.0 s while other builds shared the
+machine. [Eight-child measurements](benchmarks/binary/tree-merge/geometric-packing.json).
+
 [Earlier benchmarks and optimization history](docs/binary-veil.md#four-child-tree-merge)
 use different verifier layouts and do not measure the current reusable circuit.
 

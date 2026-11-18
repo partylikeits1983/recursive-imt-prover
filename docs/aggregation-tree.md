@@ -49,11 +49,15 @@ shape. Gate constants, wire IDs and selectors remain committed preprocessing.
 Table capacities are fixed; construction rejects overflow. It also compares the
 complete serialized verifier equations and layout before accepting the merge.
 
-The normalized format uses 553,648,128 initial codeword cells. A real first
-aggregate and four-child merge pass the exact layout comparison and independent
-verification. This establishes layout compatibility, not key reuse or an
-end-to-end security theorem. Normalization increases proving cost relative to the
-earlier fixed-source-key benchmark.
+For a run of up to 16 input bits with coefficients `s, sX, sX², ...`, where
+`X` is the Poly64 polynomial-basis element encoded as `0b10`, the packed
+row stores the first coefficient `s`.
+It constrains the output to equal the incoming accumulator plus `s` times
+the packed word. Active inputs must be bits and unused slots must be zero.
+All other coefficients use native arithmetic gates. This reduced the
+preprocessing codeword from 268,435,456 to 134,217,728 cells and the combined
+initial codewords from 553,648,128 to 419,430,400 cells.
+[Layout comparison](../benchmarks/binary/tree-merge/geometric-packing.json).
 
 ## Authenticated cyclic authority
 
@@ -91,7 +95,7 @@ incompatible layouts. This component test does not replace the full tree run.
 
 ## Validation and acceptance
 
-The 64-child integration test passed: 64 real child proofs, 32 first aggregates
+The 64-child baseline passed with 64 real child proofs, 32 first aggregates
 and 31 merges across five levels. The merge circuit was constructed once and its
 key bytes remained identical at every level. They also match the earlier
 eight-child run. The final 1,484,866-byte proof verified in a fresh process with

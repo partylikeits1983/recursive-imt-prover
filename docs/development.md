@@ -43,10 +43,10 @@ Optimize in this order:
    setup. Measure total work and elapsed time; do not report an ideal parallel
    schedule as a measured result.
 
-The [layout census](../benchmarks/binary/tree-merge/layout-census.json) found
-geometric coefficient sequences in 99.7% of merge packing rows and 84.0% of
-first-aggregation packing rows. Replacing 16 stored coefficients with one scale
-is the next layout experiment; no proving speedup has been measured yet.
+The recursive packing table now stores one scale per geometric coefficient run.
+Native gates handle the remaining coefficients. An extra table for those rows
+increased the final eight-child proof from 1.446 MB to 1.514 MB.
+[Measured layouts](../benchmarks/binary/tree-merge/geometric-packing.json).
 `tree-demo --setup-only --out run/layout` records geometry without generating proofs.
 
 [SP1's packing approach](https://blog.succinct.xyz/sp1-hypercube/),
