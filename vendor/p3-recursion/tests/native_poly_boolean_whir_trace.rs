@@ -703,11 +703,10 @@ fn tampered_proofs_are_refused_at_import() {
     }
 }
 
-/// Generic column routes and batched routes over several tables are refused before any
-/// constraint is added.
+/// Incomplete column batches are refused before any constraint is added.
 #[test]
 fn unsupported_routes_are_refused() {
-    let generic = OpeningProtocol::new(vec![
+    let protocol = OpeningProtocol::new(vec![
         TableSpec::new(
             TableShape::new(7, 2),
             vec![OpeningBatch::new(vec![1, 0], vec![0])],
@@ -717,58 +716,43 @@ fn unsupported_routes_are_refused() {
             vec![OpeningBatch::new(vec![2], vec![1, 2])],
         ),
     ]);
-    // Every batch is complete, so each table is one batched run with its own transcript.
-    let several_tables = OpeningProtocol::new(vec![
-        TableSpec::new(
-            TableShape::new(7, 2),
-            vec![OpeningBatch::new(vec![0, 1], vec![0, 1])],
-        ),
-        TableSpec::new(
-            TableShape::new(6, 3),
-            vec![OpeningBatch::new(vec![0, 1, 2], vec![])],
-        ),
-    ]);
-    for protocol in [generic, several_tables] {
-        let n = plan_stacked_layout(&protocol.table_shapes()).0;
-        let verifier = BinaryPolyBooleanWhirTraceVerifier::new(
-            &packed_config(n - ABSORBED),
-            protocol.clone(),
-            ByteHash::Keccak256,
-            0,
-        )
+    let n = plan_stacked_layout(&protocol.table_shapes()).0;
+    let verifier = BinaryPolyBooleanWhirTraceVerifier::new(
+        &packed_config(n - ABSORBED),
+        protocol.clone(),
+        ByteHash::Keccak256,
+        0,
+    )
+    .unwrap();
+    let mut b = CircuitBuilder::<F>::new();
+    let cap = vec![
+        b.alloc_public_input_array::<16>("packed commitment root")
+            .to_vec(),
+    ];
+    let points: Vec<Vec<_>> = protocol
+        .iter_openings()
+        .map(|(table, _)| {
+            (0..protocol.table_shapes()[table].num_variables())
+                .map(|_| public_value(&mut b))
+                .collect()
+        })
+        .collect();
+    let proof = verifier
+        .input_shape()
+        .allocate_native_targets(&mut b)
         .unwrap();
-        let mut b = CircuitBuilder::<F>::new();
-        let cap = vec![
-            b.alloc_public_input_array::<16>("packed commitment root")
-                .to_vec(),
-        ];
-        let points: Vec<Vec<_>> = protocol
-            .iter_openings()
-            .map(|(table, _)| {
-                (0..protocol.table_shapes()[table].num_variables())
-                    .map(|_| public_value(&mut b))
-                    .collect()
-            })
-            .collect();
-        let proof = verifier
-            .input_shape()
-            .allocate_native_targets(&mut b)
-            .unwrap();
-        let ch = native_challenger(&mut b);
-        let before = b.construction_usage().unwrap();
-        let error = verifier
-            .verify_at_native(&mut b, ch, &cap, &points, &proof)
-            .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("column-batched route of one table"),
-            "{error}"
-        );
-        let after = b.construction_usage().unwrap();
-        assert_eq!(after.expression_nodes, before.expression_nodes);
-        assert_eq!(after.pending_connects, before.pending_connects);
-    }
+    let ch = native_challenger(&mut b);
+    let before = b.construction_usage().unwrap();
+    let error = verifier
+        .verify_at_native(&mut b, ch, &cap, &points, &proof)
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("complete column batches"),
+        "{error}"
+    );
+    let after = b.construction_usage().unwrap();
+    assert_eq!(after.expression_nodes, before.expression_nodes);
+    assert_eq!(after.pending_connects, before.pending_connects);
 }
 
 /// The surviving value of the ring switch is constrained equal to the packed opening's

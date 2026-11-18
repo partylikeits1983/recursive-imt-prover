@@ -607,11 +607,10 @@ fn round_counts_other_than_every_round_are_refused() {
     assert!(imported.private_native_values(&shape).is_err());
 }
 
-/// Generic column routes and batched routes over several tables are refused before any
-/// constraint is added.
+/// Incomplete column batches are refused before any constraint is added.
 #[test]
 fn unsupported_routes_are_refused() {
-    let generic = OpeningProtocol::new(vec![
+    let protocol = OpeningProtocol::new(vec![
         TableSpec::new(
             TableShape::new(7, 2),
             vec![OpeningBatch::new(vec![1, 0], vec![0])],
@@ -622,51 +621,38 @@ fn unsupported_routes_are_refused() {
         ),
         TableSpec::new(TableShape::new(6, 1), vec![]),
     ]);
-    // Every batch is complete, so each table is one batched run with its own transcript.
-    let several_tables = OpeningProtocol::new(vec![
-        TableSpec::new(
-            TableShape::new(7, 2),
-            vec![OpeningBatch::new(vec![0, 1], vec![0, 1])],
-        ),
-        TableSpec::new(
-            TableShape::new(6, 3),
-            vec![OpeningBatch::new(vec![0, 1, 2], vec![])],
-        ),
-    ]);
-    for protocol in [generic, several_tables] {
-        let n = plan_stacked_layout(&protocol.table_shapes()).0;
-        let config = packed_config(n - ABSORBED, 8, 1);
-        let verifier =
-            BinaryBooleanWhirTraceVerifier::new(&config, protocol.clone(), ByteHash::Keccak256, 0)
-                .unwrap();
-        let mut b = CircuitBuilder::<F>::new();
-        let cap = vec![
-            b.alloc_public_input_array::<16>("packed commitment root")
-                .to_vec(),
-        ];
-        let points: Vec<Vec<_>> = protocol
-            .iter_openings()
-            .map(|(table, _)| {
-                (0..protocol.table_shapes()[table].num_variables())
-                    .map(|_| public_scalar(&mut b))
-                    .collect()
-            })
-            .collect();
-        let proof = verifier
-            .input_shape()
-            .allocate_native_targets(&mut b)
+    let n = plan_stacked_layout(&protocol.table_shapes()).0;
+    let config = packed_config(n - ABSORBED, 8, 1);
+    let verifier =
+        BinaryBooleanWhirTraceVerifier::new(&config, protocol.clone(), ByteHash::Keccak256, 0)
             .unwrap();
-        let ch = native_challenger(&mut b);
-        let before = b.construction_usage().unwrap();
-        assert!(
-            verifier
-                .verify_at_native(&mut b, ch, &cap, &points, &proof)
-                .is_err()
-        );
-        let after = b.construction_usage().unwrap();
-        assert_eq!(after.expression_nodes, before.expression_nodes);
-        assert_eq!(after.pending_connects, before.pending_connects);
-    }
+    let mut b = CircuitBuilder::<F>::new();
+    let cap = vec![
+        b.alloc_public_input_array::<16>("packed commitment root")
+            .to_vec(),
+    ];
+    let points: Vec<Vec<_>> = protocol
+        .iter_openings()
+        .map(|(table, _)| {
+            (0..protocol.table_shapes()[table].num_variables())
+                .map(|_| public_scalar(&mut b))
+                .collect()
+        })
+        .collect();
+    let proof = verifier
+        .input_shape()
+        .allocate_native_targets(&mut b)
+        .unwrap();
+    let ch = native_challenger(&mut b);
+    let before = b.construction_usage().unwrap();
+    assert!(
+        verifier
+            .verify_at_native(&mut b, ch, &cap, &points, &proof)
+            .is_err()
+    );
+    let after = b.construction_usage().unwrap();
+    assert_eq!(after.expression_nodes, before.expression_nodes);
+    assert_eq!(after.pending_connects, before.pending_connects);
 }
 
 /// The ring switch alone, with the readings and its surviving point and value as public

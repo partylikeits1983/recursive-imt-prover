@@ -12,6 +12,7 @@ mod committed;
 mod linear;
 pub(crate) mod linked;
 mod ports;
+pub mod recursive;
 mod rounds;
 #[cfg(test)]
 mod tests;
@@ -37,6 +38,13 @@ const POSITIONS: usize = 1 << POSITION_LOG;
 const ROUNDS: usize = 24;
 const MAX_BATCH_LOG: usize = 24;
 const DOMAIN: &str = "imt-experimental-keccak-gkr-v1";
+const RECURSIVE_DOMAIN: &[u8] = b"imt-experimental-keccak-gkr-fixed-v2";
+
+#[derive(Clone, Copy)]
+enum Transcript {
+    PostcardV1,
+    FixedV2,
+}
 
 pub type State = [u64; 25];
 
@@ -73,13 +81,25 @@ pub fn prove<C>(inputs: &[State], output: &Claim, challenger: &mut C) -> Result<
 where
     C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
 {
+    prove_using(inputs, output, challenger, Transcript::PostcardV1)
+}
+
+fn prove_using<C>(
+    inputs: &[State],
+    output: &Claim,
+    challenger: &mut C,
+    transcript: Transcript,
+) -> Result<(Proof, Claim)>
+where
+    C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+{
     ensure!(
         inputs.len().is_power_of_two(),
         "Keccak GKR needs a power-of-two batch"
     );
     let log_batch = inputs.len().trailing_zeros() as usize;
     validate(output, log_batch)?;
-    bind(output, log_batch, challenger)?;
+    bind(output, log_batch, challenger, transcript)?;
     let mut claim = output.clone();
     let mut layers = Vec::with_capacity(ROUNDS);
     for round in (0..ROUNDS).rev() {
@@ -125,12 +145,25 @@ pub fn verify<C>(
 where
     C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
 {
+    verify_using(proof, output, log_batch, challenger, Transcript::PostcardV1)
+}
+
+fn verify_using<C>(
+    proof: &Proof,
+    output: &Claim,
+    log_batch: usize,
+    challenger: &mut C,
+    transcript: Transcript,
+) -> Result<Claim>
+where
+    C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+{
     validate(output, log_batch)?;
     ensure!(
         proof.layers.len() == ROUNDS,
         "incorrect Keccak GKR layer count"
     );
-    bind(output, log_batch, challenger)?;
+    bind(output, log_batch, challenger, transcript)?;
     let mut claim = output.clone();
     for (round, layer) in (0..ROUNDS).rev().zip(&proof.layers) {
         challenger.observe(F::from_repr(round as u64));
@@ -171,10 +204,31 @@ fn validate(claim: &Claim, log_batch: usize) -> Result<()> {
     Ok(())
 }
 
-fn bind<C: FieldChallenger<F>>(claim: &Claim, log_batch: usize, challenger: &mut C) -> Result<()> {
-    let digest = Keccak256::digest(postcard::to_allocvec(&(DOMAIN, log_batch as u64, claim))?);
+fn bind<C: FieldChallenger<F>>(
+    claim: &Claim,
+    log_batch: usize,
+    challenger: &mut C,
+    transcript: Transcript,
+) -> Result<()> {
+    let digest = match transcript {
+        Transcript::PostcardV1 => {
+            Keccak256::digest(postcard::to_allocvec(&(DOMAIN, log_batch as u64, claim))?)
+        }
+        Transcript::FixedV2 => Keccak256::digest(RECURSIVE_DOMAIN),
+    };
     for bytes in digest.as_chunks::<8>().0 {
         challenger.observe(F::from_repr(u64::from_le_bytes(*bytes)));
+    }
+    if matches!(transcript, Transcript::FixedV2) {
+        challenger.observe(F::from_repr(log_batch as u64));
+        for value in claim
+            .instance
+            .iter()
+            .chain(&claim.weights)
+            .chain([&claim.value])
+        {
+            challenger.observe_slice(value.as_basis_coefficients_slice());
+        }
     }
     Ok(())
 }

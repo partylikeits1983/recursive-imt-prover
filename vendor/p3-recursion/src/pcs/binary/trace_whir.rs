@@ -368,10 +368,10 @@ impl BinaryBooleanWhirTraceVerifier {
         Ok((self.routing.evals(&proof.values), ch))
     }
 
-    /// The native carrier verifies the column-batched route of one table only, over a hash
+    /// The native carrier verifies complete column batches over a hash
     /// with a native circuit.
     pub(crate) fn check_native_circuit_support(&self) -> Result<(), VerificationError> {
-        self.routing.native_run()?;
+        self.routing.native_runs()?;
         self.child.check_native_circuit_support()
     }
 

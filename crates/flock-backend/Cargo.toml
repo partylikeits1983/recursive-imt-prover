@@ -34,6 +34,7 @@ old-binary-field = { package = "p3-binary-field", version = "=0.9.0-rc.2" }
 old-bus = { package = "p3-bus", version = "=0.9.0-rc.2" }
 p3-circuit = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-circuit-prover = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
+p3-recursion = { path = "../../vendor/p3-recursion", features = ["parallel"] }
 
 [dev-dependencies]
 serde_json = "1"

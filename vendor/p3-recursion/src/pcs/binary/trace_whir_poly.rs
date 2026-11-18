@@ -33,8 +33,7 @@ const VALUE_LIMBS: usize = 12;
 type PolyBooleanWhirTraceProof<M> =
     BooleanTraceCommitmentProof<Poly192, BooleanWhirProof<Poly64, Poly192, M>>;
 
-/// Native verifier of a packed Boolean trace over Poly64 values: the column batch of one
-/// table, the bit ring switch with every round, and the packed WHIR opening.
+/// Native verifier of complete Boolean table batches, the bit ring switch, and packed WHIR.
 #[derive(Clone, Debug)]
 pub struct BinaryPolyBooleanWhirTraceVerifier {
     routing: TraceRouting<Poly64, Poly192>,
@@ -222,10 +221,10 @@ impl BinaryPolyBooleanWhirTraceVerifier {
         }
     }
 
-    /// The native carrier verifies the column-batched route of one table only, over a hash
+    /// The native carrier verifies complete column batches over a hash
     /// with a native circuit.
     pub(crate) fn check_native_circuit_support(&self) -> Result<(), VerificationError> {
-        self.routing.native_run()?;
+        self.routing.native_runs()?;
         self.child.check_native_circuit_support()
     }
 

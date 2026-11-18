@@ -308,30 +308,17 @@ impl<F, E> TraceRouting<F, E> {
         Ok(())
     }
 
-    /// The run the native carrier replays, with its column-batching seed: the batched route of
-    /// one table alone, whose column slots form one block read at `column point || row point`.
-    pub(super) fn native_run(&self) -> Result<(&TableRun, &[F]), VerificationError> {
-        let unsupported = || {
-            invalid(
-                "native binary trace routing supports only the column-batched route of one table",
-            )
-        };
+    /// Complete table runs and their proof-independent column-batching seeds.
+    pub(super) fn native_runs(&self) -> Result<(&[TableRun], &[Vec<F>]), VerificationError> {
         let Route::Batched(runs) = &self.plan.route else {
-            return Err(unsupported());
+            return Err(invalid(
+                "native binary trace routing requires complete column batches",
+            ));
         };
-        let ([run], [seed]) = (runs.as_slice(), self.column_seeds.as_slice()) else {
-            return Err(unsupported());
-        };
-        match run.blocks.as_slice() {
-            [block]
-                if block.selector.is_empty()
-                    && block.first == 0
-                    && block.variables == run.columns =>
-            {
-                Ok((run, seed))
-            }
-            _ => Err(unsupported()),
+        if runs.len() != self.column_seeds.len() || runs.is_empty() {
+            return Err(invalid("invalid native binary trace run metadata"));
         }
+        Ok((runs, &self.column_seeds))
     }
 
     /// Replays the column batch of the batched route in a native carrier and returns each
@@ -353,33 +340,54 @@ impl<F, E> TraceRouting<F, E> {
     {
         type H = NativeBinaryEncoding;
         self.check_points(points.iter().map(Vec::len), values.len())?;
-        let (run, seed) = self.native_run()?;
-        observe_seed(b, &mut ch, seed)?;
-        let per_batch = run.width * (1 + usize::from(run.next));
-        let mut readings = Vec::with_capacity(points.len());
-        for (point, values) in points.iter().zip(values.chunks_exact(per_batch)) {
-            let (current, successor) = values.split_at(run.width);
-            P::observe::<H>(b, &mut ch, point)?;
-            P::observe::<H>(b, &mut ch, current)?;
-            if run.next {
-                P::observe::<H>(b, &mut ch, successor)?;
+        let (runs, seeds) = self.native_runs()?;
+        let mut points = points.iter();
+        let mut values = values;
+        let mut readings = Vec::with_capacity(self.plan.specs.len());
+        for (run, seed) in runs.iter().zip(seeds) {
+            observe_seed(b, &mut ch, seed)?;
+            let per_batch = run.width * (1 + usize::from(run.next));
+            let (run_values, rest) = values.split_at(per_batch * run.batches);
+            values = rest;
+            for (point, values) in points
+                .by_ref()
+                .take(run.batches)
+                .zip(run_values.chunks_exact(per_batch))
+            {
+                let (current, successor) = values.split_at(run.width);
+                P::observe::<H>(b, &mut ch, point)?;
+                P::observe::<H>(b, &mut ch, current)?;
+                if run.next {
+                    P::observe::<H>(b, &mut ch, successor)?;
+                }
+                let column_point = (0..run.columns)
+                    .map(|_| P::sample::<H>(b, &mut ch))
+                    .collect::<Result<Vec<_>, _>>()?;
+                for block in &run.blocks {
+                    let columns =
+                        block.first..(block.first + (1 << block.variables)).min(run.width);
+                    let block_point = &column_point[..block.variables];
+                    let mut lifted = block
+                        .selector
+                        .iter()
+                        .map(|&bit| P::constant(b, u128::from(bit)))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    lifted.extend_from_slice(block_point);
+                    lifted.extend_from_slice(point);
+                    let current =
+                        combine_native::<P, CF>(b, &current[columns.clone()], block_point)?;
+                    let next = run
+                        .next
+                        .then(|| combine_native::<P, CF>(b, &successor[columns], block_point))
+                        .transpose()?;
+                    readings.push(NativeColumnReading {
+                        point: lifted,
+                        current,
+                        next,
+                    });
+                }
+                b.check_construction_limits()?;
             }
-            let column_point = (0..run.columns)
-                .map(|_| P::sample::<H>(b, &mut ch))
-                .collect::<Result<Vec<_>, _>>()?;
-            let current = combine_native::<P, CF>(b, current, &column_point)?;
-            let successor = run
-                .next
-                .then(|| combine_native::<P, CF>(b, successor, &column_point))
-                .transpose()?;
-            let mut lifted = column_point;
-            lifted.extend_from_slice(point);
-            readings.push(NativeColumnReading {
-                point: lifted,
-                current,
-                next: successor,
-            });
-            b.check_construction_limits()?;
         }
         Ok((readings, ch))
     }

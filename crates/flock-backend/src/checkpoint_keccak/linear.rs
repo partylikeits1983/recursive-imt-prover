@@ -1,6 +1,5 @@
 //! Keccak's linear layer and its transpose on bit weights.
 use p3_binary_field::Poly192;
-use p3_field::PrimeCharacteristicRing;
 
 use super::{BITS, State};
 use crate::keccak::{RC, RHO};
@@ -37,31 +36,35 @@ pub(super) const fn shift(j: usize, offset: usize) -> usize {
 
 /// Exact transpose: <weights, forward(input)> = <transpose(weights), input>.
 pub(super) fn transpose(weights: &[Poly192]) -> Vec<Poly192> {
+    transpose_with(weights, |a, b| *a + *b)
+}
+
+pub(super) fn transpose_with<T: Clone>(weights: &[T], mut add: impl FnMut(&T, &T) -> T) -> Vec<T> {
     assert_eq!(weights.len(), BITS);
-    let mut theta = vec![Poly192::ZERO; BITS];
+    let mut theta = weights.to_vec();
     for x in 0..5 {
         for y in 0..5 {
             let source = x + 5 * y;
             let destination = y + 5 * ((2 * x + 3 * y) % 5);
             for bit in 0..64 {
-                theta[source * 64 + bit] = weights[destination * 64 + (bit + RHO[source]) % 64];
+                theta[source * 64 + bit] =
+                    weights[destination * 64 + (bit + RHO[source]) % 64].clone();
             }
         }
     }
     let columns: Vec<_> = (0..320)
         .map(|index| {
             let (x, bit) = (index / 64, index % 64);
-            (0..5)
-                .map(|y| theta[(x + 5 * y) * 64 + bit])
-                .sum::<Poly192>()
+            (1..5).fold(theta[x * 64 + bit].clone(), |sum, y| {
+                add(&sum, &theta[(x + 5 * y) * 64 + bit])
+            })
         })
         .collect();
     (0..BITS)
         .map(|j| {
             let (x, bit) = ((j / 64) % 5, j % 64);
-            theta[j]
-                + columns[((x + 1) % 5) * 64 + bit]
-                + columns[((x + 4) % 5) * 64 + (bit + 1) % 64]
+            let value = add(&theta[j], &columns[((x + 1) % 5) * 64 + bit]);
+            add(&value, &columns[((x + 4) % 5) * 64 + (bit + 1) % 64])
         })
         .collect()
 }

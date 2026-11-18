@@ -33,6 +33,12 @@ Changes:
   circuit constants, not proof inputs; callers must authenticate the complete
   compiled circuit because the existing input-shape encoding does not include
   these additional domains.
+- `src/pcs/binary/{trace_routing,trace_whir,trace_whir_poly}.rs`: replay complete
+  column batches across multiple tables and aligned blocks in the native
+  carrier. Match the existing native PCS and prime-carrier routing, including
+  table separators, selectors and successor openings. Incomplete batches remain
+  unsupported. `tests/recursive_trace.rs` in the root workspace checks real
+  Poly64/Poly192 proofs, transcript continuation and forged openings.
 
 The repository's `src/binary/veil/whir/recursive/` component tests import actual
 prefixed native proofs, constrain their verification, and reject mutations.
