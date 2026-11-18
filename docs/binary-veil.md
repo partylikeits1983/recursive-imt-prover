@@ -63,8 +63,10 @@ The ordered-vector format supports measured batches through eight children.
 The new `--tree-pair` format verifies two children and authenticates a fixed-size
 Keccak commitment plus count. Both template instances bind the same parent and
 have fixed left/right roles. The full ordered public list remains available.
-Two first aggregates can now merge under a fixed source key. Reusing one merge
-circuit/key at every higher level remains unfinished; see the
+`tree-demo` adds the cyclic format: first aggregation and merge share a fixed
+verifier layout and carry authenticated merge-authority metadata. Eight children
+have passed two merge levels with one circuit/key, including fresh verification.
+The 64-child acceptance test remains pending; see the
 [three-circuit design](aggregation-tree.md).
 
 The backend imports actual symbolic constraints and product-bus declarations.
@@ -95,12 +97,27 @@ See [the backend implementation](../crates/flock-backend/README.md).
 - Encode aggregate field elements at fixed width and use outer rate 1/4 to reduce
   opening traffic. Johnson, the PCS target and the conditional floor are unchanged.
 
+## Cyclic eight-child tree
+
+The correctness run creates eight independent depth-32 child proofs, four first
+aggregates, two four-child merges and one eight-child merge. The merge circuit
+is built once; the same key verifies all three merge proofs. The final proof is
+1,485,890 bytes, with 121 ms native verification and 134 ms fresh-process wall time.
+Statement, proof and foreign-authority rejection checks pass.
+
+The normalized format uses 553,648,128 initial codeword cells. Merge times were
+42.7, 43.1 and 50.4 seconds on four threads. Peak physical footprint was 25.5 GB,
+including compressed/swapped memory. Concurrent compilation overlapped the first
+aggregation phase and was stopped; this is not a controlled timing comparison.
+The common format trades some cost for exact key reuse.
+[Raw run](../benchmarks/binary/tree-merge/cyclic-eight.json).
+
 ## Four-child tree merge
 
-Two actual depth-32 first aggregates now merge into one checkpoint proof for four
-ordered `(root, nullifier_hash)` statements. The merge circuit fixes the source
+This earlier benchmark merges two depth-32 first aggregates into one checkpoint
+proof for four ordered `(root, nullifier_hash)` statements. It fixes the source
 authority and verifies both complete proofs. The output uses a new verifier key;
-reuse of one key at every higher level remains unfinished.
+these measurements precede the common cyclic format.
 
 Apple M2 Pro, Rust 1.98.1, release with thin LTO. Each stage has one
 cold and two warm samples. Aggregation times exclude setup and compilation;

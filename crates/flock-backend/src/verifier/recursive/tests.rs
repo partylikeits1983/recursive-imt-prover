@@ -9,8 +9,8 @@ use p3_recursion::BinaryTower128Challenger;
 use p3_symmetric::Permutation;
 
 use crate::{
-    HashBackend, Prepared, RecursiveAggregate, Verifier, checkpoint::AggregateProof,
-    verifier_key_digest,
+    AUTHORITY_BYTES, HashBackend, Prepared, RecursiveAggregate, Verifier,
+    checkpoint::AggregateProof, verifier_key_digest,
 };
 
 fn accepts(circuit: &Circuit<F>, public: &[F], private: &[F]) -> bool {
@@ -23,6 +23,10 @@ fn accepts(circuit: &Circuit<F>, public: &[F], private: &[F]) -> bool {
 }
 
 fn fixture(seed: u64) -> Result<(Prepared, Vec<F>, Vec<F>)> {
+    fixture_with_constant(seed, 0x1234)
+}
+
+fn fixture_with_constant(seed: u64, scale: u64) -> Result<(Prepared, Vec<F>, Vec<F>)> {
     let mut b = CircuitBuilder::<F>::new();
     b.enable_native_keccak_f1600()?;
     let mut private = Vec::new();
@@ -40,6 +44,11 @@ fn fixture(seed: u64) -> Result<(Prepared, Vec<F>, Vec<F>)> {
         b.connect(value, expected);
         public.push(private[0] * private[i]);
     }
+    let constant = b.define_const(F::new(scale));
+    let scaled = b.mul(input[1], constant);
+    let expected = b.public_input();
+    b.connect(scaled, expected);
+    public.push(private[1] * F::new(scale));
     let expected = b.alloc_public_input("hash output");
     b.connect(hash[0], expected);
     let state = core::array::from_fn::<_, 25, _>(|lane| {
@@ -53,6 +62,83 @@ fn fixture(seed: u64) -> Result<(Prepared, Vec<F>, Vec<F>)> {
         public,
         private,
     ))
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "recursive authority binding; run with --release"
+)]
+fn one_verifier_circuit_accepts_distinct_authenticated_preprocessing_keys() -> Result<()> {
+    let (first, public, witness) = fixture_with_constant(0, 0x1234)?;
+    let (proof, _) = first.prove(&public, &witness)?;
+    let key = first.export_verifier(b"authority-test")?;
+    let authority = Verifier::from_bytes(
+        &key,
+        &verifier_key_digest(&key),
+        &first.identity(),
+        b"authority-test",
+    )?;
+    authority.require_same_layout(&first)?;
+    let key_fields = authority.recursive_authority()?.fields();
+    let recursive = RecursiveAggregate::new(authority)?;
+    let private = recursive.private_inputs(&proof, &public)?;
+    let mut builder = CircuitBuilder::<F>::new();
+    builder.enable_native_keccak_f1600()?;
+    let statement = builder.alloc_public_inputs(public.len(), "statement");
+    let targets = builder.alloc_public_input_array::<AUTHORITY_BYTES>("authenticated authority");
+    recursive.verify_with_authority(&mut builder, &statement, &targets)?;
+    let circuit = builder.build()?;
+    let values = [public.clone(), key_fields.to_vec()].concat();
+    assert!(accepts(&circuit, &values, &private));
+    for index in [
+        0,
+        public.len() - 1,
+        public.len(),
+        public.len() + 31,
+        public.len() + 32,
+        values.len() - 1,
+    ] {
+        let mut changed = values.clone();
+        changed[index] = F::new(changed[index].to_bits() ^ 1);
+        assert!(!accepts(&circuit, &changed, &private), "field {index}");
+    }
+    let mut changed = values.clone();
+    changed[public.len() + 32] = F::new(256);
+    assert!(!accepts(&circuit, &changed, &private));
+
+    let (mut second, public, witness) = fixture_with_constant(7, 0x1235)?;
+    recursive.require_same_layout(&second)?;
+    second.geometry.main_coordinate_widths[0][0] ^= 1;
+    assert!(recursive.require_same_layout(&second).is_err());
+    second.geometry.main_coordinate_widths[0][0] ^= 1;
+    second.log_heights[0] += 1;
+    assert!(recursive.require_same_layout(&second).is_err());
+    second.log_heights[0] -= 1;
+    let (proof, _) = second.prove(&public, &witness)?;
+    let key = second.export_verifier(b"authority-test")?;
+    let authority = Verifier::from_bytes(
+        &key,
+        &verifier_key_digest(&key),
+        &second.identity(),
+        b"authority-test",
+    )?;
+    let second_fields = authority.recursive_authority()?.fields();
+    assert_ne!(&key_fields[..32], &second_fields[..32]);
+    assert_ne!(&key_fields[32..], &second_fields[32..]);
+    let second = RecursiveAggregate::new(authority)?;
+    let private = second.private_inputs(&proof, &public)?;
+    assert!(accepts(
+        &circuit,
+        &[public.clone(), second_fields.to_vec()].concat(),
+        &private
+    ));
+    assert!(!accepts(
+        &circuit,
+        &[public, key_fields.to_vec()].concat(),
+        &private
+    ));
+    Ok(())
 }
 
 #[test]

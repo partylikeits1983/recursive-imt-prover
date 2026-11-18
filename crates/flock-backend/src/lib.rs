@@ -21,12 +21,13 @@ mod known_openings_tests;
 mod mixed;
 mod packing;
 mod proof_codec;
+mod recursive_layout;
 mod verifier;
 mod witness;
 
 pub use config::{WHIR_CAP_HEIGHT, WHIR_FOLD, WHIR_LOG_INV_RATE};
+pub use verifier::{AUTHORITY_BYTES, RecursiveAggregate, RecursiveArithmetic, RecursiveAuthority};
 pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
-pub use verifier::{RecursiveAggregate, RecursiveArithmetic};
 #[cfg(test)]
 mod tests;
 
@@ -146,12 +147,37 @@ impl Prepared {
         domain: &[u8],
         backend: HashBackend,
     ) -> Result<Self> {
+        Self::prepare(circuit, instances, domain, backend, false)
+    }
+
+    pub fn recursive_pair(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
+        Self::prepare(circuit, 2, domain, HashBackend::Checkpoint, true)
+    }
+
+    fn prepare(
+        circuit: Circuit<OldF>,
+        instances: usize,
+        domain: &[u8],
+        backend: HashBackend,
+        recursive: bool,
+    ) -> Result<Self> {
         ensure!((1..=64).contains(&instances), "unsupported instance count");
+        if recursive {
+            ensure!(
+                (circuit.witness_count as usize) < 1 << recursive_layout::WITNESS_ID_BITS,
+                "recursive witness ID capacity exceeded"
+            );
+        }
         let witnesses = circuit
             .witness_count
             .checked_mul(instances as u32)
             .ok_or_else(|| anyhow::anyhow!("witness count overflow"))?;
-        let bus = NativeBusCircuit::with_compact_options(
+        let bus_constructor = if recursive {
+            NativeBusCircuit::with_options
+        } else {
+            NativeBusCircuit::with_compact_options
+        };
+        let bus = bus_constructor(
             &circuit,
             "imt",
             4,
@@ -182,20 +208,34 @@ impl Prepared {
         let widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
         let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
         let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
-        let packing = Packing::new(
+        let mut packing = Packing::new(
             &widths,
             &gates_pp.values,
             gates_pp.width,
             bus.airs()[1].width(),
             &fanout_pp.values,
         )?;
+        if recursive {
+            let shard = packing.shard.get_or_insert_with(|| {
+                Arc::new(PackedShard {
+                    rows: vec![],
+                    log_height: recursive_layout::PACKED_ROWS_LOG,
+                })
+            });
+            let shard = Arc::get_mut(shard).expect("new packing is uniquely owned");
+            ensure!(
+                shard.rows.len() <= 1 << recursive_layout::PACKED_ROWS_LOG,
+                "fixed packing capacity exceeded"
+            );
+            shard.log_height = recursive_layout::PACKED_ROWS_LOG;
+        }
         let packed_rows = packing.shard.as_ref().map_or(0, |s| s.rows.len());
         let packing_intermediates_removed = packing.removed_ids.iter().filter(|&&v| v).count();
         eprintln!(
             "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"
         );
         let (shards, mut copies) =
-            fanout::partition(&widths, &fanout_pp.values, &packing.removed_ids)?;
+            fanout::partition(&widths, &fanout_pp.values, &packing.removed_ids, recursive)?;
         drop(fanout_pp);
         let gates = gates::partition(
             &widths,
@@ -203,6 +243,7 @@ impl Prepared {
             gates_pp.width,
             bus.airs()[1].width(),
             &packing.removed_rows,
+            recursive.then_some(gates::RECURSIVE_LAYOUT.as_slice()),
         )?;
         drop(packing.removed_ids);
         drop(packing.removed_rows);
@@ -236,12 +277,23 @@ impl Prepared {
             calls > 0 && calls * instances <= 1 << 20,
             "unsupported Keccak call count"
         );
-        let hash_stride = (2 * calls + 1).next_power_of_two();
+        let hash_stride = if recursive {
+            ensure!(
+                calls * instances <= 1 << recursive_layout::HASH_ROWS_LOG,
+                "recursive Keccak capacity exceeded"
+            );
+            recursive_layout::HASH_STRIDE
+        } else {
+            (2 * calls + 1).next_power_of_two()
+        };
         let calls_per_instance = calls;
         let calls = calls * instances;
         let hash = keccak::circuit();
-        let log_calls = calls.next_power_of_two().trailing_zeros() as usize;
-        let log_calls = log_calls.max(4);
+        let log_calls = if recursive {
+            recursive_layout::HASH_ROWS_LOG
+        } else {
+            (calls.next_power_of_two().trailing_zeros() as usize).max(4)
+        };
         let mut preprocessing = vec![F::ZERO; 3 * (1 << log_calls)];
         for (i, row) in preprocessing
             .as_chunks_mut::<3>()
@@ -262,11 +314,12 @@ impl Prepared {
         let mut sources = Vec::new();
         let mut log_heights = Vec::new();
         for shard in shards {
-            airs.push(Chip::import_shard(
-                bus.airs()[0].clone(),
-                shard.log_height,
-                Some(shard.clone()),
-            )?);
+            let mut air =
+                Chip::import_shard(bus.airs()[0].clone(), shard.log_height, Some(shard.clone()))?;
+            if recursive {
+                air.fix_fanout_zero()?;
+            }
+            airs.push(air);
             log_heights.push(shard.log_height);
             sources.push(TableSource {
                 index: 0,
@@ -297,18 +350,24 @@ impl Prepared {
         }
         let hash_index = source_hash_index + airs.len() - 2;
         for (i, air) in bus.airs().iter().enumerate().skip(2) {
-            airs.push(if i == source_hash_index {
+            let mut imported = if i == source_hash_index {
                 Chip::Keccak {
                     preprocessing: RowMajorMatrix::new(preprocessing.clone(), 3),
                 }
             } else {
                 Chip::import(air.clone(), bus.log_heights()[i])?
-            });
-            log_heights.push(if i == source_hash_index {
-                log_calls
-            } else {
-                bus.log_heights()[i]
-            });
+            };
+            if recursive && i == source_hash_index + 1 {
+                imported.pad_keccak_bridge(log_calls)?;
+            }
+            airs.push(imported);
+            log_heights.push(
+                if i == source_hash_index || (recursive && i == source_hash_index + 1) {
+                    log_calls
+                } else {
+                    bus.log_heights()[i]
+                },
+            );
             sources.push(TableSource {
                 index: i,
                 shard: None,
@@ -317,6 +376,9 @@ impl Prepared {
             });
         }
         for air in &mut airs {
+            if recursive && air.is_public_table() {
+                air.commit_public_ids()?;
+            }
             air.prune_copies(&mut copies)?;
         }
         let copy_stats = copies.finish()?;
@@ -358,12 +420,17 @@ impl Prepared {
                         coordinates[column] |= raw;
                     }
                 }
-                pp_encoding.push(TableEncoding::new(
+                let widths = if recursive {
+                    let widths = a.recursive_preprocessed_widths()?;
+                    recursive_layout::check_coordinates(&coordinates, &widths)?;
+                    widths
+                } else {
                     coordinates
                         .into_iter()
                         .map(|v| 64 - v.leading_zeros() as usize)
-                        .collect(),
-                )?);
+                        .collect()
+                };
+                pp_encoding.push(TableEncoding::new(widths)?);
             } else {
                 identity.update(0u64.to_le_bytes());
             }

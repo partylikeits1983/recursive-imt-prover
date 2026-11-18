@@ -18,6 +18,7 @@ use p3_sumcheck::{
     OpeningBatch, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec, layout::Table,
 };
 use p3_symmetric::Permutation;
+use std::sync::Arc;
 
 use crate::{
     F,
@@ -235,6 +236,12 @@ fn bounded_coordinates_bind_current_and_successor_openings() {
 
 #[test]
 fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
+    for commit_public_ids in [false, true] {
+        check_split_fanout(commit_public_ids);
+    }
+}
+
+fn check_split_fanout(commit_public_ids: bool) {
     let mut builder = CircuitBuilder::<OldF>::new();
     let bit = builder.alloc_private_input("bit");
     builder.assert_bool(bit);
@@ -275,7 +282,34 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     .unwrap();
     let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
     let widths = fanout::coordinate_widths(&circuit, &[], 119).unwrap();
-    let (shards, mut copies) = fanout::partition(&widths, &fanout_pp.values, &[]).unwrap();
+    let (shards, mut copies) = fanout::partition(&widths, &fanout_pp.values, &[], false).unwrap();
+    let (fixed, _) = fanout::partition(&widths, &fanout_pp.values, &[], true).unwrap();
+    assert_eq!(fixed.len(), fanout::RECURSIVE_LAYOUT.len());
+    for (shard, (width, copies, log, successor)) in fixed.iter().zip(fanout::RECURSIVE_LAYOUT) {
+        assert_eq!(
+            (
+                shard.coordinate_width,
+                shard.copies_per_row(),
+                shard.log_height,
+                shard.needs_successor()
+            ),
+            (width, copies, log, successor)
+        );
+    }
+    let occurrences = |shards: &[Arc<fanout::FanoutShard>]| {
+        let mut rows: Vec<_> = shards
+            .iter()
+            .flat_map(|s| {
+                s.rows.iter().flat_map(move |r| {
+                    (0..u32::from(r.copies))
+                        .map(move |offset| (s.coordinate_width, r.source_row + offset, r.id))
+                })
+            })
+            .collect();
+        rows.sort_unstable();
+        rows
+    };
+    assert_eq!(occurrences(&fixed), occurrences(&shards));
     let mut shard_widths = shards
         .iter()
         .map(|s| s.coordinate_width)
@@ -348,6 +382,9 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
             Chip::import_shard(bus.airs()[0].clone(), shard.log_height, Some(shard.clone()))
                 .unwrap(),
         );
+        if commit_public_ids {
+            airs.last_mut().unwrap().fix_fanout_zero().unwrap();
+        }
         let height = 1 << shard.log_height;
         let width = airs.last().unwrap().width();
         let mut values = vec![F::ZERO; height * width];
@@ -370,6 +407,7 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         gate_pp.width,
         bus.airs()[1].width(),
         &[],
+        None,
     )
     .unwrap();
     let mut gate_rows: Vec<_> = gate_shards
@@ -448,6 +486,9 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         publics.push(original_public[i].iter().copied().map(convert).collect());
     }
     for air in &mut airs {
+        if commit_public_ids && air.is_public_table() {
+            air.commit_public_ids().unwrap();
+        }
         air.prune_copies(&mut copies).unwrap();
     }
     let stats = copies.finish().unwrap();
@@ -520,6 +561,194 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     assert!(!fanout_diagnostics(&airs, &tampered, &publics).1);
 }
 
+#[test]
+fn recursive_fanout_keeps_zero_copies_in_one_fixed_table() {
+    for count in [1usize, 2, 3, 4, 5, 8, 9, 16, 17, 29] {
+        let mut rows = vec![OldF::from_repr(0); 3 * count.next_power_of_two().max(16)];
+        for (index, row) in rows
+            .as_chunks_mut::<3>()
+            .0
+            .iter_mut()
+            .take(count)
+            .enumerate()
+        {
+            row[1] = OldF::from_repr(1);
+            row[2] = OldF::from_repr(u64::from(index + 1 < count));
+        }
+        let (shards, _) = fanout::partition(&[0], &rows, &[], true).unwrap();
+        let zero = &shards[0];
+        assert!(zero.needs_successor());
+        assert_eq!(zero.copies_per_row(), 2);
+        assert_eq!(zero.log_height, 4);
+        assert!(shards[1..].iter().all(|shard| shard.rows.is_empty()));
+        let source: Vec<_> = zero
+            .rows
+            .iter()
+            .flat_map(|row| {
+                assert_eq!(row.id, 0);
+                (0..u32::from(row.copies)).map(|offset| row.source_row + offset)
+            })
+            .collect();
+        assert_eq!(source, (0..count as u32).collect::<Vec<_>>());
+        let pp = zero.preprocessing();
+        assert_eq!(pp.values[2], F::ONE);
+        for (index, row) in zero.rows.iter().enumerate() {
+            assert_eq!(
+                pp.values[(index + 1) * pp.width + 2],
+                F::from_bool(index + 1 < zero.rows.len())
+            );
+            assert_eq!(
+                pp.values[(index + 1) * pp.width + 3],
+                F::from_bool(row.copies == 2)
+            );
+        }
+    }
+}
+
+#[test]
+fn public_wire_ids_do_not_specialize_recursive_equations() {
+    let mut equations = Vec::new();
+    let mut preprocessings = Vec::new();
+    for constant in [0, 5] {
+        let mut builder = CircuitBuilder::<OldF>::new();
+        let value = builder.define_const(OldF::from_repr(constant));
+        let public = builder.alloc_public_input("result");
+        builder.connect(value, public);
+        let circuit = builder.build().unwrap();
+        let bus = NativeBusCircuit::with_compact_options(
+            &circuit,
+            "imt",
+            4,
+            DirectCircuitLimits {
+                max_witnesses: 1024,
+                max_operations: 1024,
+                max_trace_cells: 1 << 20,
+            },
+            KeccakCommitment::Bits,
+        )
+        .unwrap();
+        let index = bus
+            .airs()
+            .iter()
+            .position(|air| air.num_public_values() != 0)
+            .unwrap();
+        let mut air = Chip::import(bus.airs()[index].clone(), bus.log_heights()[index]).unwrap();
+        air.commit_public_ids().unwrap();
+        assert!(air.commit_public_ids().is_err());
+        let pp = air.preprocessed_trace().unwrap();
+        assert_eq!(pp.width, 1);
+        assert!(pp.values[1..].iter().all(|&v| v == F::ZERO));
+        let mut copies = crate::copies::CopyPruner::new(circuit.witness_count as usize + 1, true);
+        air.prune_copies(&mut copies).unwrap();
+        copies.finish().unwrap();
+        air.repeat(2, 0);
+        let symbolic = BusSymbolicBuilder::<F, F>::from_air(&air, AirLayout::from_air(&air));
+        equations.push(format!(
+            "{:?}{:?}",
+            symbolic.base_constraints(),
+            symbolic.interactions()
+        ));
+        let widths = air.recursive_preprocessed_widths().unwrap();
+        assert_eq!(widths, [crate::recursive_layout::WITNESS_ID_BITS, 1, 1]);
+        preprocessings.push(pp.values);
+        assert_eq!(air.num_public_values(), 2);
+        assert_eq!(air.preprocessed_width(), 3);
+    }
+    assert_ne!(preprocessings[0], preprocessings[1]);
+    assert_eq!(equations[0], equations[1]);
+}
+
+#[test]
+fn recursive_keccak_padding_preserves_the_committed_bridge() {
+    let mut builder = CircuitBuilder::<OldF>::new();
+    builder.enable_native_keccak_f1600().unwrap();
+    let inputs = builder.alloc_private_input_array::<100>("input");
+    let (outputs, _) = builder
+        .add_native_keccak_f1600_digest_with_swapped(&inputs)
+        .unwrap();
+    let public = builder.public_input();
+    builder.connect(outputs[0], public);
+    let circuit = builder.build().unwrap();
+    let bus = NativeBusCircuit::with_options(
+        &circuit,
+        "imt",
+        4,
+        DirectCircuitLimits {
+            max_witnesses: 1 << 16,
+            max_operations: 1 << 16,
+            max_trace_cells: 1 << 20,
+        },
+        KeccakCommitment::Bits,
+    )
+    .unwrap();
+    let index = bus.packed_table_index().unwrap() + 1;
+    let log_height = bus.log_heights()[index];
+    let mut air = Chip::import(bus.airs()[index].clone(), log_height).unwrap();
+    let original = air.preprocessed_trace().unwrap();
+    assert_eq!(original.width, 120);
+    assert!(air.pad_keccak_bridge(log_height - 1).is_err());
+    air.pad_keccak_bridge(log_height + 1).unwrap();
+    let padded = air.preprocessed_trace().unwrap();
+    assert_eq!(padded.values.len(), original.values.len() * 2);
+    assert_eq!(&padded.values[..original.values.len()], original.values);
+    assert!(
+        padded.values[original.values.len()..]
+            .iter()
+            .all(|&v| v == F::ZERO)
+    );
+    let widths = air.recursive_preprocessed_widths().unwrap();
+    let mut observed = vec![0u64; padded.width];
+    for row in padded.values.chunks_exact(padded.width) {
+        for (bits, value) in observed.iter_mut().zip(row) {
+            *bits |= value.to_repr();
+        }
+    }
+    crate::recursive_layout::check_coordinates(&observed, &widths).unwrap();
+    let mut copies = crate::copies::CopyPruner::new(circuit.witness_count as usize + 1, true);
+    air.prune_copies(&mut copies).unwrap();
+    copies.finish().unwrap();
+    let pruned = air.preprocessed_trace().unwrap();
+    assert_eq!(pruned.width, 120 + 2 * 116);
+    assert_eq!(
+        air.recursive_preprocessed_widths().unwrap().len(),
+        pruned.width
+    );
+    for (row, expected) in pruned
+        .values
+        .chunks_exact(pruned.width)
+        .zip(padded.values.as_chunks::<120>().0)
+    {
+        assert_eq!(&row[..120], expected);
+        for column in 0..116 {
+            assert_eq!(
+                row[120 + 2 * column],
+                expected[if column < 16 {
+                    117
+                } else if column < 100 {
+                    119
+                } else {
+                    118
+                }]
+            );
+            assert_eq!(row[121 + 2 * column], F::ZERO);
+        }
+    }
+}
+
+#[test]
+fn recursive_coordinate_capacity_rejects_truncation() {
+    let widths = [0, 1, 17, 25, 64];
+    let values = [0, 1, (1 << 17) - 1, (1 << 25) - 1, u64::MAX];
+    crate::recursive_layout::check_coordinates(&values, &widths).unwrap();
+    for (column, &width) in widths[..4].iter().enumerate() {
+        let mut altered = values;
+        altered[column] = 1 << width;
+        assert!(crate::recursive_layout::check_coordinates(&altered, &widths).is_err());
+    }
+    assert!(crate::recursive_layout::check_coordinates(&values[..4], &widths).is_err());
+    assert!(crate::recursive_layout::check_coordinates(&[0], &[65]).is_err());
+}
+
 fn fanout_diagnostics(
     airs: &[Chip],
     rows: &[RowMajorMatrix<F>],
@@ -581,7 +810,7 @@ fn arithmetic_partitions_avoid_padding_cliffs_without_losing_preprocessing() {
                 ]
             })
             .collect();
-        let shards = gates::partition(&[1, 16], &source, 3, 1, &[]).unwrap();
+        let shards = gates::partition(&[1, 16], &source, 3, 1, &[], None).unwrap();
         let indices: Vec<_> = shards
             .iter()
             .flat_map(|s| s.source_rows.iter().copied())

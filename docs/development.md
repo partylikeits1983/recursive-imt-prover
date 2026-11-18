@@ -3,15 +3,15 @@
 The active path is a masked Keccak IMT child over Poly64/Poly192, followed by
 non-ZK aggregation of the ordered child statements. Child IMT depth is fixed at 32.
 The current statement is `(root, nullifier_hash)`; see [protocol](protocol.md).
-Four current children now pass through two first aggregates and one merge.
-Same-key higher-level merging and 16–64-child scaling remain unfinished.
+Eight children pass through four first aggregates and two merge levels using one
+merge circuit/key. The 64-child acceptance test remains pending.
 Statistical child ZK and end-to-end 128-bit classical security remain unproved.
 See [security limits](binary-security.md) and [measurements](binary-veil.md).
 
 | Location | Purpose |
 |---|---|
 | `src/binary/tree.rs`, `relation.rs` | Keccak IMT and membership statement |
-| `src/binary/aggregation_tree.rs`, `aggregation_tree/` | Statement binding, fixed-authority merge and artifact I/O |
+| `src/binary/aggregation_tree.rs`, `aggregation_tree/` | Statement binding, cyclic and fixed-authority merges, artifact I/O |
 | `src/binary/veil/` | Masked child, recursive verifier and aggregation |
 | `crates/flock-backend/` | Native product-bus prover and linked Keccak backends |
 | `src/binary/engine.rs`, `security.rs` | Non-ZK baseline and conditional security budgets |
@@ -22,18 +22,15 @@ See [security limits](binary-security.md) and [measurements](binary-veil.md).
 
 ## Next work
 
-1. Reduce aggregate proving time. Profile arithmetic, bus evaluation, PCS and
-   Keccak separately. Keep parameters fixed and report cold/warm ranges, setup,
-   proof size, memory and independent verification. Current results exceed
-   the latency target.
-2. Build the [binary aggregation tree](aggregation-tree.md), with specialized
-   first aggregation and a reusable 2-to-1 merge. The fixed-authority merge is
-   measured; common geometry and cyclic authority are next. Preserve the ordered
-   public statements through their fixed-size commitment and constrain the trusted
-   verifier identities.
-3. Scale to 16–64 with bounded memory and parallelism. Keep binary fields, Keccak,
-   Johnson bounds and the 128-bit classical target. Formal ZK analysis is deferred;
-   conditional algebraic budgets remain distinct from an end-to-end security claim.
+Run the 64-child integration test: 32 first aggregates, then 16, 8, 4, 2 and 1
+merges. Build the merge circuit once, assert key reuse at every higher level,
+and verify the final proof in a fresh process. Update the README and prepare the
+reviewed changes for publication after this passes. Different merge keys per
+level do not meet the acceptance criterion.
+
+Further performance work follows this test. Keep binary fields, Keccak, Johnson
+bounds and the 128-bit classical target. Formal ZK analysis is deferred; conditional
+algebraic budgets remain distinct from an end-to-end security claim.
 
 Avoid repeating two rejected experiments: indexed Logup* required large
 transmitted pushforwards; a shared AIR expression DAG gave about 2% improvement

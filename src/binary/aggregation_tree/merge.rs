@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::{Result, ensure};
-use imt_flock_backend::{Geometry, HashBackend, Prepared, RecursiveAggregate, Verifier};
+use imt_flock_backend::{Geometry, Prepared, RecursiveAggregate, Verifier};
 use p3_circuit::{Circuit, CircuitBuilder, CircuitConstructionLimits};
 
 use super::{STATEMENT_BYTES, TreeStatement, TreeTarget};
@@ -49,7 +49,8 @@ impl PreparedMerge {
     pub fn new(authority: TreeVerifier) -> Result<Self> {
         let source = RecursiveAggregate::new(authority.outer)?;
         let circuit = merge_circuit(&source)?;
-        let outer = Prepared::repeated(circuit, 2, PROTOCOL.as_bytes(), HashBackend::Checkpoint)?;
+        let outer = Prepared::recursive_pair(circuit, PROTOCOL.as_bytes())?;
+        source.require_same_layout(&outer)?;
         Ok(Self { source, outer })
     }
 

@@ -171,21 +171,10 @@ impl BinaryPolyCoordinateWhirVerifier {
     pub fn verify_native(
         &self,
         b: &mut CircuitBuilder<F>,
-        mut ch: BinaryTower128Challenger,
+        ch: BinaryTower128Challenger,
         public: &[Vec<ExprId>],
         proof: &CoordinateWhirTargets,
     ) -> Result<AuthenticatedCoordinateOpenings, VerificationError> {
-        let common = PolyRelationProof {
-            bus: proof.bus.as_ref(),
-            sumcheck: &proof.sumcheck,
-            indexed: None,
-        };
-        self.relation.check_targets(public, &common)?;
-        if proof.commitment.len() != self.cap_roots
-            || self.preprocessed.is_some() != proof.preprocessed.is_some()
-        {
-            return Err(invalid("coordinate proof shape mismatch"));
-        }
         let pp_cap = self.preprocessed.as_ref().map(|(_, cap)| {
             cap.roots()
                 .iter()
@@ -197,8 +186,41 @@ impl BinaryPolyCoordinateWhirVerifier {
                 })
                 .collect::<Vec<Vec<_>>>()
         });
+        self.verify_native_with_preprocessed(b, ch, public, proof, pp_cap.as_deref())
+    }
+
+    /// The caller must authenticate `pp_cap`; the AIR and PCS layouts remain fixed.
+    pub fn verify_native_with_preprocessed(
+        &self,
+        b: &mut CircuitBuilder<F>,
+        mut ch: BinaryTower128Challenger,
+        public: &[Vec<ExprId>],
+        proof: &CoordinateWhirTargets,
+        pp_cap: Option<&[Vec<ExprId>]>,
+    ) -> Result<AuthenticatedCoordinateOpenings, VerificationError> {
+        let common = PolyRelationProof {
+            bus: proof.bus.as_ref(),
+            sumcheck: &proof.sumcheck,
+            indexed: None,
+        };
+        self.relation.check_targets(public, &common)?;
+        if proof.commitment.len() != self.cap_roots
+            || self.preprocessed.is_some() != proof.preprocessed.is_some()
+            || self.preprocessed.is_some() != pp_cap.is_some()
+            || self
+                .preprocessed
+                .as_ref()
+                .zip(pp_cap)
+                .is_some_and(|((_, expected), cap)| {
+                    cap.len() != expected.roots().len() || cap.iter().any(|root| root.len() != 16)
+                })
+        {
+            return Err(invalid(
+                "coordinate proof or preprocessing cap shape mismatch",
+            ));
+        }
         self.relation
-            .observe_prefix_with_host::<NativeBinaryEncoding, F>(b, &mut ch, pp_cap.as_deref())?;
+            .observe_prefix_with_host::<NativeBinaryEncoding, F>(b, &mut ch, pp_cap)?;
         self.main
             .pcs
             .observe_commitment_native(b, &mut ch, &proof.commitment)?;
@@ -218,7 +240,7 @@ impl BinaryPolyCoordinateWhirVerifier {
         let main = self.main.columns.recombine_native(b, &coordinates)?;
         let pp = if let (Some((verifier, _)), Some(cap), Some(proof), Some(points)) = (
             &self.preprocessed,
-            pp_cap.as_ref(),
+            pp_cap,
             proof.preprocessed.as_ref(),
             reduction.preprocessed_points.as_ref(),
         ) {

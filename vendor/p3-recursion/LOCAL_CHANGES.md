@@ -57,8 +57,13 @@ Changes:
 - `src/verifier/binary_poly_whir_multi_stark/coordinate.rs`: compose the existing
   product-bus and zerocheck verifier with coordinate-aware main and preprocessing
   PCS openings. The terminal AIR and bus equations authenticate the returned
-  readings. Preprocessing commitments come from trusted configuration. Native
-  witness import shares the existing transcript reduction and checks its shape.
+  readings. The default entry point takes preprocessing commitments from trusted
+  configuration. `verify_native_with_preprocessed` also accepts commitment targets
+  authenticated by the enclosing circuit, using them in both the transcript and
+  PCS verification. AIR metadata and proof shape remain fixed. The backend's
+  `one_verifier_circuit_accepts_distinct_authenticated_preprocessing_keys` test
+  verifies real proofs under two keys and rejects changed keys and statements.
+  Native witness import shares the transcript reduction and checks its shape.
   Accept caller-supplied resource limits; the backend allows 320 total rounds
   because product GKR counts rounds across radix-four layers. At the supported
   height limit, GKR plus the other reductions need at most 304. Other limits,

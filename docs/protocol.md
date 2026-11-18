@@ -86,8 +86,10 @@ half-distance cap. See [security accounting](binary-security.md).
    trusted child authority. Consume only proofs and public statements. Produce
    a non-ZK aggregate authenticating their ordered statement commitment.
 3. **Recursive merge:** constrain two aggregate verifiers and combine their
-   statements. A four-child merge works under a fixed source authority. Common
-   geometry and reuse of exactly one merge circuit/key remain planned.
+   statements. First aggregation and merge now share a fixed verifier layout.
+   The cyclic implementation carries authenticated verifier data so one merge
+   circuit can verify its own outputs. An eight-child run has verified two merge
+   levels with the same circuit/key; the 64-child test is still pending.
 
 Statement commitments are:
 
@@ -112,12 +114,18 @@ It consumes two actual aggregate proofs and statements, with no IMT witnesses.
 Two copies of one template each authenticate their source digest and count,
 combine it with a sibling digest, and constrain the same parent. Public roles
 fix left/right order. Inconsistent sibling digests require a Keccak collision.
-The public field layout is `(digest[32], count, role)` twice, with roles 0 and 1.
+The cyclic public layout is `(digest[32], count, role, merge_authority[64])`
+twice, with roles 0 and 1. The authority consists of the transcript identity and
+preprocessing commitment. Inputs with count two use the pinned first-aggregation
+authority; larger inputs use the carried merge authority. Both input proofs must
+carry the same authority as the output. Final verification derives the expected
+authority from its independently trusted key. Counts strictly decrease toward
+the first aggregates and their actual child proofs.
 
-The source authority is embedded in the compiled circuit. The output has its own
-trusted verifier key; it does not yet reproduce its source geometry or key.
-Cyclic merging must authenticate the first-aggregation and merge authorities,
-constrain its branch choice, and decrease counts toward actual child proofs.
+The selected preprocessing commitment is constrained in the transcript and PCS
+openings. The selected identity seeds both arithmetic and Keccak verification.
+First aggregation permits arbitrary carried authority metadata so its key can
+be prepared before the merge key; the final authority check is therefore essential.
 Native verification followed by an unconstrained acceptance bit is insufficient.
 See the [implementation and acceptance plan](aggregation-tree.md).
 
@@ -128,6 +136,9 @@ JSON carries two 32-byte arrays and rejects extra or missing fields. Child v6
 uses the `IMTVCA06` header. Flock tree-pair v2, checkpoint tree-pair v3, flat
 Flock v7 and flat checkpoint v9 bind the relation and trusted configuration.
 Fixed-authority merging uses `experimental-binary-checkpoint-tree-merge-v1`.
+Cyclic first aggregation uses `experimental-binary-masked-checkpoint-cyclic-pair-v1`;
+cyclic merging uses `experimental-binary-checkpoint-cyclic-merge-v1`. These formats
+include the carried merge authority and have identical verifier layouts.
 Old root/amount proofs and keys are incompatible and must be regenerated. Historical measurements retain their
 original protocol identifiers and are not measurements of this relation.
 
@@ -158,6 +169,11 @@ counts, proof encoding and authority are rejected. The real depth-32 source
 proof also passes the verifier circuit directly; changed public data fails.
 See the [merge measurements](binary-veil.md#four-child-tree-merge).
 
+The cyclic eight-child run also passes independent final verification with one
+merge circuit/key reused at both higher levels. It rejects altered statements,
+ordering, counts, proof encodings and a foreign carried authority.
+[Raw cyclic run](../benchmarks/binary/tree-merge/cyclic-eight.json).
+
 ## What might be publishable?
 
 The membership/nullifier relation is established prior art. For example,
@@ -179,4 +195,4 @@ Keccak GKR/port link, and bounded cyclic recursion at these parameters. A paper
 would need a clear distinction from prior work, a completed construction, security
 arguments for any new protocol, and matched-security benchmarks with ablations.
 The current evidence supports implementation results, not a claim of a new ZK
-theorem or a completed reusable recursive aggregation system.
+theorem or completion of the 64-child acceptance test.

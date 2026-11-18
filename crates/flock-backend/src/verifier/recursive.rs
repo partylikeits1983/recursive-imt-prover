@@ -138,6 +138,24 @@ impl RecursiveArithmetic {
         Ok(self.verifier.verify_native(b, ch, &public, proof)?)
     }
 
+    pub fn verify_with_preprocessed(
+        &self,
+        b: &mut CircuitBuilder<F>,
+        ch: BinaryTower128Challenger,
+        public: &[ExprId],
+        proof: &CoordinateWhirTargets,
+        preprocessing: &[Vec<ExprId>],
+    ) -> Result<AuthenticatedCoordinateOpenings> {
+        let public = self.public(public)?;
+        Ok(self.verifier.verify_native_with_preprocessed(
+            b,
+            ch,
+            &public,
+            proof,
+            Some(preprocessing),
+        )?)
+    }
+
     pub fn private_inputs(&self, bytes: &[u8], public: &[F], seed: &[u8]) -> Result<Vec<F>> {
         let proof: AggregateProof = crate::proof_codec::decode(bytes)?;
         let proof = proof.arithmetic;

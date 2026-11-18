@@ -93,9 +93,14 @@ impl Prepared {
                         }
                     }
                 } else {
+                    let source_height = 1 << table.num_variables();
+                    ensure!(
+                        source_height <= height,
+                        "witness table exceeds fixed capacity"
+                    );
                     for c in 0..table.num_polys() {
                         let column = table.column(c);
-                        for r in 0..height {
+                        for r in 0..source_height {
                             output[c * height + r] = convert(column.value(r));
                         }
                     }

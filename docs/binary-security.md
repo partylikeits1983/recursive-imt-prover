@@ -90,9 +90,12 @@ Fiat-Shamir/knowledge composition. A hiding PCS alone is insufficient. The targe
 joint statistical-distance budget across at most 64 children is 2^-128; no such
 bound is currently established. See [privacy target](binary-veil.md#privacy-target).
 
-Reports retain `full_zk_established: false`, `end_to_end_security_bits: null` and
-`acceptance_pass: false`. Correctness and tamper tests do not establish privacy.
-A non-ZK aggregate adds no extra privacy layer to its child transcripts.
+Reports retain `full_zk_established: false` and `end_to_end_security_bits: null`.
+The older privacy benchmarks also retain `acceptance_pass: false`. In `tree-demo`,
+`acceptance_pass` refers only to the 64-child recursion test: one merge key across
+five levels, independent final verification and negative tests. It does not
+certify ZK or end-to-end security. A non-ZK aggregate adds no extra privacy layer
+to its child transcripts.
 
 ## Backend limits
 
@@ -103,11 +106,14 @@ neither supplies a complete adaptive composition theorem.
 [Port-link construction](binary-veil.md#link-to-the-aggregates-native-ports) and
 [backend details](../crates/flock-backend/README.md) describe these assumptions.
 
-The native Plonky3 recursive owner can prepare successive authorities, but does
-not supply an efficient cyclic verifier for our current proof formats. Recursive
-merging must authenticate the allowed first-aggregation and merge keys and bind
-the full ordered statement. Never accept an unconstrained verifier result or
-prover-selected authority.
+The local cyclic adapter fixes the verifier layout and authenticates the selected
+preprocessing commitment and transcript identity. Count-two inputs use a pinned
+first-aggregation authority; larger inputs use the carried merge authority. Counts
+strictly decrease, and every input carries the same merge authority as the output.
+Final verification derives that authority from its independently trusted key.
+This final check is essential: first aggregates deliberately permit arbitrary
+authority metadata to avoid a setup cycle. The eight-child run exercises both
+branches and rejects a foreign carried authority. See [cyclic design](aggregation-tree.md).
 
 Relevant references: [native binary recursion](https://plonky3.github.io/Plonky3-recursion/advanced_topics/binary_fields.html),
 [VEIL](https://blog.succinct.xyz/veil/), and its

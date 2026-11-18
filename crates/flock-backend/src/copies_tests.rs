@@ -23,7 +23,7 @@ fn push() -> SymbolicBusInteraction<OldF> {
 
 #[test]
 fn singleton_pruning_keeps_zero_and_repeated_ids_and_uses_fixed_selectors() {
-    let mut pruner = CopyPruner::new(4);
+    let mut pruner = CopyPruner::new(4, false);
     assert!(!pruner.remove_group(0, 1));
     assert!(pruner.remove_group(1, 1));
     assert!(!pruner.remove_group(2, 4));
@@ -41,11 +41,11 @@ fn singleton_pruning_keeps_zero_and_repeated_ids_and_uses_fixed_selectors() {
 
 #[test]
 fn singleton_pruning_rejects_missing_duplicate_and_witness_dependent_entries() {
-    let mut pruner = CopyPruner::new(2);
+    let mut pruner = CopyPruner::new(2, false);
     pruner.remove_group(1, 1);
     assert!(pruner.finish().is_err());
     let pp = RowMajorMatrix::new([1, 1].map(F::from_repr).to_vec(), 2);
-    let mut pruner = CopyPruner::new(2);
+    let mut pruner = CopyPruner::new(2, false);
     pruner.remove_group(1, 1);
     assert!(
         pruner
@@ -53,7 +53,7 @@ fn singleton_pruning_rejects_missing_duplicate_and_witness_dependent_entries() {
             .is_err()
     );
     for activation in [false, true] {
-        let mut pruner = CopyPruner::new(2);
+        let mut pruner = CopyPruner::new(2, false);
         let mut interaction = push();
         if activation {
             interaction.activation =
@@ -69,7 +69,7 @@ fn singleton_pruning_rejects_missing_duplicate_and_witness_dependent_entries() {
     }
     let pp = RowMajorMatrix::new([1, 2].map(F::from_repr).to_vec(), 2);
     assert!(
-        CopyPruner::new(2)
+        CopyPruner::new(2, false)
             .prune(&mut vec![push()], Some(&pp), &[Some(0), Some(1)], 0)
             .is_err()
     );
@@ -78,7 +78,7 @@ fn singleton_pruning_rejects_missing_duplicate_and_witness_dependent_entries() {
 #[test]
 fn singleton_pruning_handles_boundaries_without_touching_other_buses() {
     for boundary in [BusBoundary::First, BusBoundary::Last] {
-        let mut pruner = CopyPruner::new(2);
+        let mut pruner = CopyPruner::new(2, false);
         pruner.remove_group(1, 1);
         let mut interaction = push();
         interaction.fields[0] = SymbolicExpression::from(OldF::from_repr(1));
@@ -96,7 +96,7 @@ fn singleton_pruning_handles_boundaries_without_touching_other_buses() {
 
 #[test]
 fn paired_copies_match_two_actual_values_and_reject_incomplete_counts() {
-    let mut pruner = CopyPruner::new(3);
+    let mut pruner = CopyPruner::new(3, false);
     assert!(pruner.remove_group(1, 2));
     assert!(pruner.remove_group(2, 2));
     let pp = RowMajorMatrix::new([1, 1, 2, 1, 2, 1, 1, 1].map(F::from_repr).to_vec(), 2);
@@ -140,7 +140,7 @@ fn paired_copies_match_two_actual_values_and_reject_incomplete_counts() {
         );
     }
     for uses in [1, 3] {
-        let mut pruner = CopyPruner::new(2);
+        let mut pruner = CopyPruner::new(2, false);
         pruner.remove_group(1, 2);
         let pp = RowMajorMatrix::new([1, 1].map(F::from_repr).to_vec(), 2);
         let mut interactions = vec![push(); uses];
@@ -151,5 +151,54 @@ fn paired_copies_match_two_actual_values_and_reject_incomplete_counts() {
         } else {
             assert!(result.is_err());
         }
+    }
+}
+
+#[test]
+fn fixed_copy_layout_keeps_both_directions_and_inactive_slots() {
+    for count in [0, 1, 2, 3] {
+        let mut pruner = CopyPruner::new(2, true);
+        if count != 0 {
+            pruner.remove_group(1, count);
+        }
+        let mut values = vec![F::from_repr(0); 8];
+        for row in values.as_chunks_mut::<2>().0.iter_mut().take(count) {
+            *row = [F::from_repr(1), F::from_repr(1)];
+        }
+        let pp = RowMajorMatrix::new(values, 2);
+        let mut interactions = vec![push()];
+        let selectors = pruner
+            .prune(&mut interactions, Some(&pp), &[Some(0), Some(1)], 2)
+            .unwrap();
+        assert_eq!(interactions.len(), 2);
+        assert_eq!(interactions[0].direction, BusDirection::Push);
+        assert_eq!(interactions[1].direction, BusDirection::Pull);
+        assert_eq!(selectors.replacements, [Some(0), Some(1)]);
+        assert_eq!(selectors.columns.len(), 2);
+        let pushes: Vec<_> = selectors.columns[0]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| v.then_some(i))
+            .collect();
+        let pulls: Vec<_> = selectors.columns[1]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| v.then_some(i))
+            .collect();
+        match count {
+            0 | 1 => {
+                assert!(pushes.is_empty());
+                assert!(pulls.is_empty());
+            }
+            2 => {
+                assert_eq!(pushes, [1]);
+                assert_eq!(pulls, [0]);
+            }
+            _ => {
+                assert_eq!(pushes, [0, 1, 2]);
+                assert!(pulls.is_empty());
+            }
+        }
+        pruner.finish().unwrap();
     }
 }

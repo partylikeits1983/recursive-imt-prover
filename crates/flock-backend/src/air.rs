@@ -5,6 +5,7 @@ use crate::{
     fanout::FanoutShard,
     gates::GateShard,
     packing::{self, PackedShard},
+    recursive_layout,
 };
 use anyhow::{Result, ensure};
 use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression, SymbolicVariable};
@@ -36,6 +37,7 @@ pub struct ImportedAir {
     source: Source,
     successor: bool,
     public_table: bool,
+    public_ids: Option<Vec<F>>,
     shard: Option<Arc<FanoutShard>>,
     gates: Option<Arc<GateShard>>,
     successor_bus: String,
@@ -107,6 +109,7 @@ impl Chip {
             bindings: vec![],
             successor: false,
             public_table: false,
+            public_ids: None,
             shard: None,
             gates: None,
             successor_bus: String::new(),
@@ -183,6 +186,146 @@ impl Chip {
     }
     pub fn is_public_table(&self) -> bool {
         matches!(self, Self::Native(a) if a.public_table)
+    }
+
+    pub fn fix_fanout_zero(&mut self) -> Result<()> {
+        let Self::Native(a) = self else {
+            anyhow::bail!("expected a fanout table");
+        };
+        ensure!(a.shard.is_some(), "expected partitioned fanout");
+        a.constraints.retain(|c| !is_first_zero(c));
+        let first = SymbolicExpression::Leaf(BaseLeaf::IsFirstRow);
+        let main =
+            SymbolicExpression::from(SymbolicVariable::new(BaseEntry::Main { offset: 0 }, 0));
+        a.constraints.push(first * main);
+        Ok(())
+    }
+
+    pub fn commit_public_ids(&mut self) -> Result<()> {
+        let Self::Native(a) = self else {
+            anyhow::bail!("expected a public table");
+        };
+        ensure!(
+            a.public_table
+                && a.public_ids.is_none()
+                && a.copies.columns.is_empty()
+                && a.bindings.is_empty()
+                && a.preprocessed_map.is_empty()
+                && a.interactions.len() == a.source.num_public_values(),
+            "unexpected public table layout"
+        );
+        let ids = a
+            .interactions
+            .iter()
+            .enumerate()
+            .map(|(column, interaction)| {
+                ensure!(
+                    interaction.bus_name == "imt.witness"
+                        && interaction.direction == OldDirection::Push
+                        && interaction.fields.len() == 2
+                        && is_column(
+                            &interaction.fields[1],
+                            BaseEntry::Main { offset: 0 },
+                            column
+                        )
+                        && matches!(
+                            interaction.activation,
+                            OldActivation::Boundary(OldBoundary::First)
+                        ),
+                    "unexpected public wire binding"
+                );
+                let SymbolicExpr::Leaf(BaseLeaf::Constant(id)) = &interaction.fields[0] else {
+                    anyhow::bail!("public wire ID is not constant");
+                };
+                Ok(convert(*id))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (column, interaction) in a.interactions.iter_mut().enumerate() {
+            interaction.fields[0] =
+                SymbolicVariable::new(BaseEntry::Preprocessed { offset: 0 }, column).into();
+        }
+        a.preprocessed_map = (0..ids.len()).map(Some).collect();
+        a.public_ids = Some(ids);
+        Ok(())
+    }
+
+    pub fn pad_keccak_bridge(&mut self, log_height: usize) -> Result<()> {
+        let Self::Native(a) = self else {
+            anyhow::bail!("expected a native Keccak bridge");
+        };
+        ensure!(
+            a.source.width() == 116
+                && a.preprocessed_map.len() == 120
+                && a.constraints.iter().all(|c| is_fixed_zero(c, &[true; 120]))
+                && !a.successor
+                && a.copies.columns.is_empty()
+                && a.bindings.is_empty()
+                && (a.log_height..=26).contains(&log_height),
+            "unexpected Keccak bridge layout or capacity: main {}, preprocessing {}, log height {} -> {log_height}",
+            a.source.width(),
+            a.preprocessed_map.len(),
+            a.log_height
+        );
+        a.log_height = log_height;
+        Ok(())
+    }
+
+    pub fn recursive_preprocessed_widths(&self) -> Result<Vec<usize>> {
+        let Self::Native(a) = self else {
+            return Ok(vec![
+                recursive_layout::HASH_ROLE_BITS,
+                recursive_layout::HASH_ROLE_BITS,
+                1,
+            ]);
+        };
+        ensure!(
+            a.preprocessed_map
+                .iter()
+                .enumerate()
+                .all(|(i, &column)| column == Some(i)),
+            "recursive preprocessing must retain every column"
+        );
+        let id = recursive_layout::WITNESS_ID_BITS;
+        let mut widths = if let Some(shard) = &a.shard {
+            let mut widths = vec![1; shard.preprocessed_width()];
+            widths[0] = id;
+            widths
+        } else if a.gates.is_some() {
+            ensure!(
+                a.preprocessed_map.len() == 14,
+                "unexpected recursive gate schema"
+            );
+            let mut widths = vec![1; 14];
+            widths[..5].fill(id);
+            widths[5] = 64;
+            widths
+        } else if a.public_table {
+            ensure!(
+                a.public_ids.is_some(),
+                "recursive public IDs must be committed"
+            );
+            vec![id; a.source.num_public_values()]
+        } else if matches!(a.source, Source::Packed(_)) {
+            let mut widths = vec![1; packing::PP_WIDTH];
+            widths[..packing::WIDTH].fill(id);
+            widths[packing::COEFFICIENTS..packing::ACTIVE].fill(64);
+            widths
+        } else {
+            ensure!(
+                a.source.width() == 116 && a.preprocessed_map.len() == 120,
+                "unsupported recursive table"
+            );
+            let mut widths = vec![1; 120];
+            widths[..116].fill(id);
+            widths[116] = recursive_layout::HASH_ROWS_LOG + 1;
+            widths
+        };
+        widths.extend(vec![1; a.copies.columns.len()]);
+        ensure!(
+            widths.len() == self.preprocessed_width(),
+            "recursive preprocessing width mismatch"
+        );
+        Ok(widths)
     }
     pub fn import(source: NativeBusCircuitAir<OldF>, log_height: usize) -> Result<Self> {
         Self::import_shard(source, log_height, None)
@@ -307,6 +450,7 @@ impl Chip {
             },
             successor,
             public_table,
+            public_ids: None,
             successor_bus: shard.as_ref().map_or_else(
                 || "imt.successor".to_owned(),
                 |s| {
@@ -346,7 +490,13 @@ impl BaseAir<F> for Chip {
         }
     }
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
-        let original = match self {
+        let mut original = match self {
+            Self::Native(a) if a.public_ids.is_some() => {
+                let ids = a.public_ids.as_ref().unwrap();
+                let mut values = vec![F::ZERO; ids.len() * (1 << a.log_height)];
+                values[..ids.len()].copy_from_slice(ids);
+                Some(RowMajorMatrix::new(values, ids.len()))
+            }
             Self::Native(a) if a.gates.is_some() => {
                 Some(a.gates.as_ref().unwrap().compact_preprocessing())
             }
@@ -357,6 +507,14 @@ impl BaseAir<F> for Chip {
         let Self::Native(a) = self else {
             return original;
         };
+        if let Some(pp) = &mut original {
+            let cells = pp.width * (1 << a.log_height);
+            assert!(
+                pp.values.len() <= cells,
+                "preprocessing exceeds table capacity"
+            );
+            pp.values.resize(cells, F::ZERO);
+        }
         if a.copies.columns.is_empty() {
             return original;
         }
@@ -571,6 +729,16 @@ pub fn convert(v: OldF) -> F {
 
 fn is_column(e: &SymbolicExpression<OldF>, entry: BaseEntry, index: usize) -> bool {
     matches!(e, SymbolicExpr::Leaf(BaseLeaf::Variable(v)) if v.entry == entry && v.index == index)
+}
+
+fn is_first_zero(e: &SymbolicExpression<OldF>) -> bool {
+    let SymbolicExpr::Mul { x, y, .. } = e else {
+        return false;
+    };
+    (matches!(x.as_ref(), SymbolicExpr::Leaf(BaseLeaf::IsFirstRow))
+        && is_column(y, BaseEntry::Main { offset: 0 }, 0))
+        || (matches!(y.as_ref(), SymbolicExpr::Leaf(BaseLeaf::IsFirstRow))
+            && is_column(x, BaseEntry::Main { offset: 0 }, 0))
 }
 
 fn uses_next_main(e: &SymbolicExpression<OldF>) -> bool {

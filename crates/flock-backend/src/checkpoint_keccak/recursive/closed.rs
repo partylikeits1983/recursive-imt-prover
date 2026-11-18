@@ -171,10 +171,20 @@ impl BoundaryPcs {
             .iter()
             .map(|&v| b.define_const(F::new(u64::from(v))))
             .collect();
+        self.challenger_with_seed(b, &initial, cap)
+    }
+
+    pub(crate) fn challenger_with_seed(
+        &self,
+        b: &mut CircuitBuilder<F>,
+        seed: &[ExprId],
+        cap: &[Vec<ExprId>],
+    ) -> Result<BinaryTower128Challenger> {
+        ensure!(seed.len() == 32, "incorrect boundary seed length");
         let mut ch = BinaryTower128Challenger::with_initial_bytes_with_host::<
             NativeBinaryEncoding,
             F,
-        >(b, ByteHash::Keccak256, &initial)?;
+        >(b, ByteHash::Keccak256, seed)?;
         self.verifier.observe_commitment_native(b, &mut ch, cap)?;
         Ok(ch)
     }

@@ -12,22 +12,24 @@ original private witnesses.
 128-bit security have not been established. Not suitable for production or
 real funds. No on-chain verifier.
 
-## Planned design: three circuits
+## Three-circuit design
 
 | Circuit | Role | Status |
 |---|---|---|
 | IMT child | Prove private membership in a depth-32 Keccak IMT | Implemented with experimental masking |
-| First aggregation | Verify two child proofs and produce a standard aggregate | Working first level via `--tree-pair`; common recursive format pending |
-| Recursive merge | Verify two aggregates and produce another aggregate | Four-child run works with a fixed source key; same-key reuse pending |
+| First aggregation | Verify two child proofs and produce a standard aggregate | Implemented in the common recursive format |
+| Recursive merge | Verify two aggregates and produce another aggregate | Same circuit/key verified at two levels with eight children; 64-child test pending |
 
 ```text
 64 IMT children → 32 first aggregates → 16 → 8 → 4 → 2 → 1
                                        same merge circuit/key
 ```
 
-The design reuses **one merge circuit and verifier key at every higher level**.
-This requires a common proof shape, stable circuit size and authenticated cyclic
-verifier data. Final native verification needs no fourth circuit.
+The design requires **one merge circuit and verifier key at every higher level**.
+First aggregation and merge now share a fixed proof shape and verifier layout.
+The cyclic circuit carries the merge authority, selects the pinned first authority
+at the base level, and authenticates its own authority during final verification.
+Final native verification needs no fourth circuit.
 
 Every aggregate authenticates a fixed-size Keccak digest and child count. Final
 verification recomputes that digest from the complete ordered `(root, nullifier_hash)`
@@ -36,10 +38,11 @@ neither child proofs nor intermediate aggregates. Roots may differ; repeated
 statements are valid. Spending, spent-nullifier tracking and accepted-root history are outside
 scope.
 
-The planned tree supports balanced batches of 2, 4, 8, 16, 32 or 64 children.
-A four-child run now produces and independently verifies a real merge proof.
-Its source verifier key is fixed in the circuit; a further level would require a
-new key. Completion requires a 64-child integration test using the exact same
+The tree is designed for balanced batches of 2, 4, 8, 16, 32 or 64 children.
+`tree-demo` has verified eight children end to end: four first aggregates, two
+four-child merges and one eight-child merge, using one merge circuit/key.
+Fresh-process verification and statement, proof and authority rejection checks
+passed. Completion requires the 64-child integration test using the exact same
 merge circuit/key at all five higher levels, followed by fresh-process verification
 and tamper tests. A tree with different merge keys per level does not meet this test.
 See the [implementation plan](docs/aggregation-tree.md).
@@ -85,10 +88,9 @@ checks. A native verifier result is not a substitute for these constraints.
 The [protocol architecture](docs/protocol.md) describes the relation, masking,
 aggregation, serialization and research contributions.
 
-Checkpoint is the initial backend for the tree implementation: a native product
-bus linked to a committed Keccak GKR argument. Flock, the current CLI default,
-uses upstream Flock Keccak circuits. Existing flat-batch aggregation remains
-available as a baseline; it is not the planned recursive merge.
+Checkpoint is the backend for `tree-demo`: a native product bus linked to a
+committed Keccak GKR argument. The older `masked-demo` also supports Flock and
+flat batches as diagnostic baselines.
 
 ## Security parameters
 
@@ -116,7 +118,15 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Depth-32 root/nullifier-hash measurements on an Apple M2 Pro.
+The eight-child cyclic correctness run produced a **1,485,890-byte** final proof.
+Native verification took 121 ms; fresh-process verification took 134 ms including
+startup and trusted-key loading. Its three merges took 42.7–50.4 s each. Peak
+physical footprint was 25.5 GB, including compressed/swapped memory. Concurrent
+compilation affected the first-aggregation phase, so this is not a controlled
+performance comparison. [Raw run](benchmarks/binary/tree-merge/cyclic-eight.json).
+
+Earlier fixed-source-key depth-32 measurements on an Apple M2 Pro.
+These precede the normalized cyclic format and do not measure same-key recursion.
 Each row uses one cold and two warm samples; aggregation is the warm median.
 Fresh verification includes process startup and authenticated verifier-key loading.
 
@@ -144,27 +154,20 @@ excluded; filesystem caches were not reset.
 
 ## Running locally
 
-Requires Rust 1.98.1. The default is four threads; use `--threads 8` for the merge
-measurement above. Use fresh output directories.
+Requires Rust 1.98.1. The default is four threads. Use fresh output directories.
+The full tree test is expensive and is excluded from routine CI.
 
 ```sh
 cargo test --locked --release --workspace
 
-# First tree level: two masked children -> one aggregate, then fresh verification.
-cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --keccak-backend checkpoint --out run/pair32
+# Eight children, four first aggregates, then two levels of the same merge.
+cargo run --locked --release --bin tree-demo -- --batch-size 8 --out run/tree8
 
-# Benchmark the same circuit, separating cold and warm samples.
-cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --samples 3 --keccak-backend checkpoint --out run/bench-pair32
-
-# Independent verification of saved artifacts.
-cargo run --locked --release --bin masked-demo -- --verify --out run/pair32
-
-# Create a second pair with the same authority, then merge both aggregates.
-cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --keccak-backend checkpoint --out run/pair32-b
-cargo run --locked --release --bin merge-demo -- --left run/pair32 --right run/pair32-b --samples 3 --threads 8 --out run/merge4
+# Full acceptance test: 64 children, five merge levels and isolated verification.
+cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 
 # Requires only the final proof, ordered statements and trusted final key files.
-cargo run --locked --release --bin merge-demo -- --verify --out run/merge4
+cargo run --locked --release --bin tree-demo -- --verify --out run/tree8
 ```
 
 The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
@@ -176,8 +179,8 @@ Aggregate encoding and verifier snapshots have changed; regenerate older artifac
 
 `demo` and `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` produces a diagnostic proof bundle, not one aggregate.
-Omitting `--tree-pair` selects the existing flat-batch format. `merge-demo`
-requires checkpoint tree inputs with the same trusted source authority.
+`masked-demo --tree-pair` and `merge-demo` retain the earlier fixed-source-key
+diagnostic path. Omitting `--tree-pair` selects flat-batch aggregation.
 
 ## Implementation and dependencies
 

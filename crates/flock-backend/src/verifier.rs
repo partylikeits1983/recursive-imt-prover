@@ -1,7 +1,7 @@
 //! Authenticated verifier-only snapshots. No proving tables or child proofs are stored.
 mod aggregate;
 mod air;
-pub use aggregate::RecursiveAggregate;
+pub use aggregate::{AUTHORITY_BYTES, RecursiveAggregate, RecursiveAuthority};
 mod recursive;
 mod recursive_air;
 mod replay;
@@ -94,6 +94,32 @@ impl Prepared {
 }
 
 impl Verifier {
+    pub fn require_same_layout(&self, output: &Prepared) -> Result<()> {
+        ensure!(
+            self.data.backend == output.backend
+                && self.data.hash_index == output.hash_index
+                && self.data.main_coordinates == output.geometry.main_coordinate_widths
+                && self.data.preprocessed_coordinates
+                    == output.geometry.preprocessed_coordinate_widths
+                && self.data.airs.len() == output.airs.len(),
+            "recursive proof layouts differ"
+        );
+        for (index, ((air, &height), expected)) in output
+            .airs
+            .iter()
+            .zip(&output.log_heights)
+            .zip(&self.data.airs)
+            .enumerate()
+        {
+            let actual = VerifierAir::capture(air, height)?;
+            ensure!(
+                postcard::to_allocvec(&actual)? == postcard::to_allocvec(expected)?,
+                "recursive verifier equations or shape differ at table {index}"
+            );
+        }
+        Ok(())
+    }
+
     /// Load only after checking an independently trusted digest and authority identity.
     /// A matching digest authenticates the AIR, preprocessing commitment, layout and binding.
     pub fn from_bytes(

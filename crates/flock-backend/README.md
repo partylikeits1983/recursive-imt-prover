@@ -222,8 +222,19 @@ need not hide those messages.
 builds a standalone verifier circuit. The four-child `merge-demo` uses two
 instances and constrains their ordered parent digest and count.
 
+`verify_with_authority` accepts an identity and preprocessing commitment that
+the enclosing circuit must authenticate. Both enter the transcript; the supplied
+commitment is also used in preprocessing PCS verification. Other verifier
+equations and proof geometry remain fixed. `Prepared::recursive_pair` provides
+the common layout, and `require_same_layout` compares the complete equations and
+encodings rather than dimensions alone. Capacity overflow is rejected.
+
+The cyclic tree pins the first-aggregation authority for count-two inputs and
+uses its carried merge authority for larger inputs. Final verification derives
+the expected authority from an independently trusted key. Eight children have
+passed two merge levels with one circuit/key; the 64-child acceptance run is pending.
+
 The shared boundary PCS wrappers live beside the backend's Keccak verifier;
 `src/binary/checkpoint.rs` re-exports the component interfaces. Checkpoint v6 uses
 the fixed-width recursive transcript, so earlier checkpoint artifacts cannot be
-reused. Source keys remain circuit constants: this is not yet the cyclic,
-same-key merge design. See the [remaining work](../../docs/aggregation-tree.md).
+reused. See the [cyclic construction and acceptance test](../../docs/aggregation-tree.md).

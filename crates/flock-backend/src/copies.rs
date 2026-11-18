@@ -11,6 +11,7 @@ use p3_matrix::dense::RowMajorMatrix;
 pub struct CopyPruner {
     states: Vec<CopyState>,
     stats: CopyStats,
+    fixed_layout: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -35,13 +36,14 @@ pub struct CopySelectors {
 }
 
 impl CopyPruner {
-    pub fn new(witness_ids: usize) -> Self {
+    pub fn new(witness_ids: usize, fixed_layout: bool) -> Self {
         Self {
             states: vec![CopyState::Retain; witness_ids],
             stats: CopyStats {
                 single_use: 0,
                 pairs: 0,
             },
+            fixed_layout,
         }
     }
 
@@ -150,6 +152,16 @@ impl CopyPruner {
                 changed |= remove || reverse;
                 selectors.push(active && !remove && !reverse);
                 pulls.push(reverse);
+            }
+            if self.fixed_layout {
+                let column = result.columns.len();
+                result.columns.extend([selectors, pulls]);
+                result.replacements.extend([Some(column), Some(column + 1)]);
+                retained.push(interaction.clone());
+                let mut pull = interaction;
+                pull.direction = BusDirection::Pull;
+                retained.push(pull);
+                continue;
             }
             if !changed {
                 result.replacements.push(None);

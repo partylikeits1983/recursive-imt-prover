@@ -12,6 +12,19 @@ use std::sync::Arc;
 /// would lose even counts in characteristic two).
 pub const MAX_COPIES_PER_ROW: u8 = 16;
 
+pub const RECURSIVE_LAYOUT: [(usize, usize, usize, bool); 10] = [
+    (1, 2, 4, true),
+    (1, 4, 14, false),
+    (1, 8, 10, false),
+    (1, 16, 18, true),
+    (16, 4, 19, false),
+    (16, 8, 11, false),
+    (16, 16, 15, true),
+    (64, 4, 21, false),
+    (64, 8, 19, false),
+    (64, 16, 19, true),
+];
+
 pub struct FanoutShard {
     pub coordinate_width: usize,
     pub rows: Vec<FanoutRow>,
@@ -136,9 +149,10 @@ pub fn partition(
     widths: &[u8],
     fanout: &[OldF],
     removed_ids: &[bool],
+    recursive: bool,
 ) -> Result<(Vec<Arc<FanoutShard>>, CopyPruner)> {
     ensure!(fanout.len().is_multiple_of(3), "incomplete fanout row");
-    let mut copies = CopyPruner::new(widths.len());
+    let mut copies = CopyPruner::new(widths.len(), recursive);
     let mut shards: Vec<_> = [1, 16, 64]
         .into_iter()
         .flat_map(|coordinate_width| {
@@ -195,6 +209,9 @@ pub fn partition(
             (previous, start, count),
         )?;
     }
+    if recursive {
+        return Ok((fixed(shards)?, copies));
+    }
     Ok((
         shards
             .into_iter()
@@ -212,6 +229,54 @@ pub fn partition(
             .collect(),
         copies,
     ))
+}
+
+fn fixed(mut shards: Vec<FanoutShard>) -> Result<Vec<Arc<FanoutShard>>> {
+    let mut zero = Vec::new();
+    for shard in shards.iter_mut().take(5) {
+        let count = shard.rows.partition_point(|row| row.id == 0);
+        for row in shard.rows.drain(..count) {
+            for offset in (0..row.copies).step_by(2) {
+                zero.push(FanoutRow {
+                    source_row: row.source_row + u32::from(offset),
+                    id: 0,
+                    copies: (row.copies - offset).min(2),
+                });
+            }
+        }
+    }
+    ensure!(
+        shards[0].rows.is_empty() && shards[1].rows.is_empty(),
+        "unexpected singleton or paired fanout"
+    );
+    shards[1].rows.append(&mut zero);
+    let mut result = Vec::new();
+    for (width, copies, log, successor) in RECURSIVE_LAYOUT {
+        let index = shards
+            .iter()
+            .position(|s| s.coordinate_width == width && s.copies_per_row == copies)
+            .ok_or_else(|| anyhow::anyhow!("missing fixed fanout shard"))?;
+        let mut shard = shards.remove(index);
+        ensure!(
+            shard.rows.len() < 1 << log,
+            "fixed fanout capacity exceeded: width {width}, copies {copies}, rows {}, log height {log}",
+            shard.rows.len()
+        );
+        let needs_next = shard.rows.first().is_some_and(|r| r.id == 0)
+            || shard.rows.windows(2).any(|r| r[0].id == r[1].id);
+        ensure!(
+            successor || !needs_next,
+            "fixed fanout omitted a successor: width {width}, copies {copies}"
+        );
+        shard.log_height = log;
+        shard.successor = successor;
+        result.push(Arc::new(shard));
+    }
+    ensure!(
+        shards.iter().all(|s| s.rows.is_empty()),
+        "unassigned fixed fanout"
+    );
+    Ok(result)
 }
 
 fn record_group(

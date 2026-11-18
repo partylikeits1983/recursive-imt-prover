@@ -2,13 +2,14 @@ use anyhow::{Result, ensure};
 use old_binary_field::Poly64 as F;
 use p3_circuit::{
     Circuit, CircuitBuilder, ExprId,
-    ops::{ByteHash, binary_encoding::NativeBinaryEncoding},
+    ops::{ByteHash, binary_encoding::NativeBinaryEncoding, binary_host::BinaryCircuitHost},
 };
 use p3_recursion::BinaryTower128Challenger;
+use serde::{Deserialize, Serialize};
 
 use super::{RecursiveArithmetic, Verifier};
 use crate::{
-    HashBackend,
+    HashBackend, Prepared,
     air::convert,
     checkpoint::{self, AggregateProof},
     checkpoint_keccak::recursive::{
@@ -24,7 +25,54 @@ pub struct RecursiveAggregate {
     linked: PreparedLinkedVerifier,
 }
 
+pub const AUTHORITY_BYTES: usize = 64;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecursiveAuthority {
+    pub identity: [u8; 32],
+    pub preprocessing: [u8; 32],
+}
+
+impl RecursiveAuthority {
+    pub fn bytes(&self) -> [u8; AUTHORITY_BYTES] {
+        std::array::from_fn(|i| {
+            if i < 32 {
+                self.identity[i]
+            } else {
+                self.preprocessing[i - 32]
+            }
+        })
+    }
+
+    pub fn fields(&self) -> [F; AUTHORITY_BYTES] {
+        self.bytes().map(|v| F::new(u64::from(v)))
+    }
+}
+
+impl Verifier {
+    pub fn recursive_authority(&self) -> Result<RecursiveAuthority> {
+        let cap = self
+            .data
+            .key
+            .preprocessed_commitment()
+            .ok_or_else(|| anyhow::anyhow!("missing recursive preprocessing commitment"))?;
+        ensure!(
+            cap.roots().len() == 1,
+            "recursive authority requires a singleton cap"
+        );
+        Ok(RecursiveAuthority {
+            identity: self.data.seed,
+            preprocessing: cap.roots()[0],
+        })
+    }
+}
+
 impl RecursiveAggregate {
+    pub fn require_same_layout(&self, output: &Prepared) -> Result<()> {
+        self.authority.require_same_layout(output)
+    }
+
     /// The authority must already have been checked against independently trusted verifier data.
     pub fn new(authority: Verifier) -> Result<Self> {
         ensure!(
@@ -53,6 +101,21 @@ impl RecursiveAggregate {
     }
 
     pub fn verify_in(&self, b: &mut CircuitBuilder<F>, public: &[ExprId]) -> Result<()> {
+        let authority = self
+            .authority
+            .recursive_authority()?
+            .fields()
+            .map(|v| b.define_const(v));
+        self.verify_with_authority(b, public, &authority)
+    }
+
+    /// The enclosing circuit must authenticate the selected authority.
+    pub fn verify_with_authority(
+        &self,
+        b: &mut CircuitBuilder<F>,
+        public: &[ExprId],
+        authority: &[ExprId; AUTHORITY_BYTES],
+    ) -> Result<()> {
         ensure!(
             public.len() == self.authority.public_count,
             "incorrect recursive public count"
@@ -62,20 +125,21 @@ impl RecursiveAggregate {
         let arithmetic_proof = self.arithmetic.allocate(b)?;
         let keccak_proof = self.linked.allocate(b)?;
         let opening = self.boundary.verifier.allocate_native_targets(b)?;
-        let identity: Vec<_> = self
-            .authority
-            .data
-            .seed
-            .iter()
-            .map(|&v| b.define_const(F::new(u64::from(v))))
-            .collect();
-        let seed = self.linked.arithmetic_seed(b, &identity, &cap)?;
+        let identity = &authority[..32];
+        let preprocessing = vec![NativeBinaryEncoding::words_from_bytes(b, &authority[32..])?];
+        let seed = self.linked.arithmetic_seed(b, identity, &cap)?;
         let ch = BinaryTower128Challenger::with_initial_bytes_with_host::<NativeBinaryEncoding, F>(
             b,
             ByteHash::Keccak256,
             &seed,
         )?;
-        let authenticated = self.arithmetic.verify(b, ch, public, &arithmetic_proof)?;
+        let authenticated = self.arithmetic.verify_with_preprocessed(
+            b,
+            ch,
+            public,
+            &arithmetic_proof,
+            &preprocessing,
+        )?;
         ensure!(
             authenticated.point.len() >= scheme.log_batch,
             "incorrect recursive port point"
@@ -86,8 +150,8 @@ impl RecursiveAggregate {
                 .current()
                 .to_vec(),
         };
-        let seed = scheme.transcript_seed(&self.authority.data.seed);
-        let ch = self.boundary.challenger(b, &seed, &cap)?;
+        let seed = self.linked.transcript_seed(b, identity)?;
+        let ch = self.boundary.challenger_with_seed(b, &seed, &cap)?;
         let reduced = self.linked.verify_reduction(b, ch, &ports, &keccak_proof)?;
         let (values, _) = self.boundary.verifier.verify_at_native(
             b,

@@ -10,6 +10,7 @@ use super::{
     tree::{Hash, keccak},
 };
 
+pub mod cyclic;
 pub mod files;
 pub mod merge;
 

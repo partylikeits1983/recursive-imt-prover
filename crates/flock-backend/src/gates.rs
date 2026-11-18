@@ -7,6 +7,20 @@ use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
+pub type GateLayout = ([usize; 5], usize);
+
+pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
+    ([16, 64, 64, 0, 16], 20),
+    ([64, 64, 64, 0, 64], 21),
+    ([64, 64, 64, 0, 64], 20),
+    ([64, 0, 64, 0, 64], 20),
+    ([64, 0, 64, 0, 64], 19),
+    ([64, 64, 64, 64, 64], 18),
+];
+
 pub struct GateShard {
     pub coordinate_widths: Vec<usize>,
     pub source_rows: Vec<u32>,
@@ -67,6 +81,7 @@ pub fn partition(
     pp_width: usize,
     main_width: usize,
     removed_rows: &[bool],
+    fixed: Option<&[GateLayout]>,
 ) -> Result<Vec<Arc<GateShard>>> {
     ensure!(
         (1..=5).contains(&main_width) && pp_width > main_width,
@@ -86,6 +101,13 @@ pub fn partition(
         .iter()
         .map(|v| (64 - v.leading_zeros() as usize).div_ceil(8).max(1))
         .collect();
+    if let Some(layout) = fixed {
+        ensure!(
+            main_width == 5 && pp_width == 14,
+            "unsupported fixed gate schema"
+        );
+        return partition_fixed(widths, preprocessing, removed_rows, column_bytes, layout);
+    }
     // Two bits per main column select 0, 1, 16 or 64 coordinates. Stable key order
     // fixes the AIR order, independently of the prover's values.
     let mut groups: Vec<Option<GateShard>> = (0..1 << (2 * main_width)).map(|_| None).collect();
@@ -157,6 +179,69 @@ pub fn partition(
         }
     }
     Ok(shards)
+}
+
+fn partition_fixed(
+    widths: &[u8],
+    preprocessing: &[OldF],
+    removed_rows: &[bool],
+    column_bytes: Arc<[usize]>,
+    layout: &[GateLayout],
+) -> Result<Vec<Arc<GateShard>>> {
+    ensure!(
+        !layout.is_empty()
+            && layout
+                .iter()
+                .all(|(widths, log)| (4..=26).contains(log) && widths.iter().all(|&w| w <= 64)),
+        "invalid fixed gate layout"
+    );
+    let mut shards: Vec<_> = layout
+        .iter()
+        .map(|(widths, log)| GateShard {
+            coordinate_widths: widths.to_vec(),
+            source_rows: vec![],
+            log_height: *log,
+            zero_columns: vec![false; 14],
+            column_bytes: column_bytes.clone(),
+            preprocessing_bytes: vec![],
+        })
+        .collect();
+    let mut padding = false;
+    for (index, row) in preprocessing.as_chunks::<14>().0.iter().enumerate() {
+        if row.iter().all(|v| v.to_repr() == 0) {
+            padding = true;
+            continue;
+        }
+        ensure!(!padding, "noncontiguous native gate rows");
+        if removed_rows.get(index) == Some(&true) {
+            continue;
+        }
+        let mut required = [0; 5];
+        for (width, id) in required.iter_mut().zip(&row[..5]) {
+            *width = usize::from(
+                *widths
+                    .get(usize::try_from(id.to_repr())?)
+                    .ok_or_else(|| anyhow::anyhow!("gate witness ID out of range"))?,
+            );
+        }
+        let class = layout
+            .iter()
+            .map(|(w, _)| w)
+            .filter(|w| w.iter().zip(required).all(|(&bound, width)| bound >= width))
+            .min_by_key(|w| w.iter().sum::<usize>())
+            .ok_or_else(|| anyhow::anyhow!("gate does not fit fixed coordinate widths"))?;
+        let shard = shards
+            .iter_mut()
+            .find(|s| s.coordinate_widths == *class && s.source_rows.len() < 1 << s.log_height)
+            .ok_or_else(|| anyhow::anyhow!("fixed gate capacity exceeded for {class:?}"))?;
+        shard.source_rows.push(u32::try_from(index)?);
+        for (value, &bytes) in row.iter().zip(column_bytes.iter()) {
+            shard
+                .preprocessing_bytes
+                .extend_from_slice(&value.to_repr().to_le_bytes()[..bytes]);
+        }
+    }
+    Ok(shards.into_iter().map(Arc::new).collect())
 }
 
 fn finish(mut shard: GateShard) -> Arc<GateShard> {

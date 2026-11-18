@@ -87,6 +87,24 @@ impl PreparedLinkedVerifier {
         Ok(b.native_keccak256_bytes(&bytes)?)
     }
 
+    pub fn transcript_seed(
+        &self,
+        b: &mut CircuitBuilder<CF>,
+        authority: &[ExprId],
+    ) -> Result<[ExprId; 32]> {
+        ensure!(
+            authority.len() == 32,
+            "incorrect recursive authority length"
+        );
+        let prefix = [FIXED_DOMAIN, &(self.log_batch as u64).to_le_bytes()].concat();
+        let mut bytes: Vec<_> = prefix
+            .iter()
+            .map(|&byte| b.define_const(CF::new(u64::from(byte))))
+            .collect();
+        bytes.extend_from_slice(authority);
+        Ok(b.native_keccak256_bytes(&bytes)?)
+    }
+
     pub fn allocate(&self, b: &mut CircuitBuilder<CF>) -> Result<LinkedTargets> {
         Ok(LinkedTargets {
             boundary: self.boundary.allocate(b)?,
