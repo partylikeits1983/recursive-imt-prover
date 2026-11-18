@@ -7,8 +7,6 @@ use p3_field::PrimeCharacteristicRing;
 use super::{MaskedMembershipProof, PendingChild, PreparedMembership};
 use crate::binary::{
     cli::fixtures,
-    relation::{ClientPublic, ClientWitness},
-    tree::commitment,
     veil::{
         F,
         membership_air::{DIRECTION, MembershipAir, STATE_START, WIDTH},
@@ -16,75 +14,47 @@ use crate::binary::{
     },
 };
 
-fn note() -> (ClientPublic, ClientWitness) {
-    let witness = ClientWitness {
-        secret: [19; 32],
-        nonce: [27; 32],
-        leaf_index: 0,
-        merkle_path: vec![],
-    };
-    let amount = 0x0102030405060708;
-    (
-        ClientPublic {
-            root: commitment(&witness.secret, amount, &witness.nonce),
-            amount,
-        },
-        witness,
-    )
-}
-
 #[test]
 fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
-    for depth in [0, 1, 16, 32] {
-        let (public, witness) = if depth == 0 {
-            note()
-        } else {
-            fixtures(depth, 1)?.remove(0)
+    let depth = 32;
+    let (public, witness) = fixtures(depth, 1)?.remove(0);
+    let air = MembershipAir::new(depth)?;
+    let trace = air.trace(&public, &witness)?;
+    let inputs = MembershipAir::public_values(&public);
+    check_constraints(&air, &trace, &inputs);
+    for kind in 0..8 {
+        let mut bad = trace.clone();
+        let cell = match kind {
+            0 => STATE_START + 16 * 8,     // secret
+            1 => STATE_START + 56 * 8,     // nonce
+            2 => STATE_START + 48 * 8,     // amount
+            3 => STATE_START,              // leaf domain
+            4 => STATE_START + 88 * 8,     // Keccak suffix
+            5 => 24 * WIDTH + STATE_START, // leaf output / link
+            6 => 24 * WIDTH + DIRECTION,
+            _ => 25 * WIDTH + 24, // schedule: first node or padding flag
         };
-        let air = MembershipAir::new(depth)?;
-        let trace = air.trace(&public, &witness)?;
-        let inputs = MembershipAir::public_values(&public);
-        check_constraints(&air, &trace, &inputs);
-        for kind in 0..8 {
-            let mut bad = trace.clone();
-            let cell = match kind {
-                0 => STATE_START + 16 * 8,     // secret
-                1 => STATE_START + 56 * 8,     // nonce
-                2 => STATE_START + 48 * 8,     // amount
-                3 => STATE_START,              // leaf domain
-                4 => STATE_START + 88 * 8,     // Keccak suffix
-                5 => 24 * WIDTH + STATE_START, // leaf output / link
-                6 => {
-                    if depth > 0 {
-                        24 * WIDTH + DIRECTION
-                    } else {
-                        DIRECTION
-                    }
-                }
-                _ => 25 * WIDTH + 24, // schedule: first node or padding flag
-            };
-            bad.values[cell] += F::ONE;
-            assert!(
-                catch_unwind(AssertUnwindSafe(|| check_constraints(&air, &bad, &inputs))).is_err(),
-                "depth={depth}, mutation={kind}"
-            );
+        bad.values[cell] += F::ONE;
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| check_constraints(&air, &bad, &inputs))).is_err(),
+            "depth={depth}, mutation={kind}"
+        );
+    }
+    for kind in 0..2 {
+        let mut altered = public.clone();
+        if kind == 0 {
+            altered.root[0] ^= 1;
+        } else {
+            altered.amount ^= 1;
         }
-        for kind in 0..2 {
-            let mut altered = public.clone();
-            if kind == 0 {
-                altered.root[0] ^= 1;
-            } else {
-                altered.amount ^= 1;
-            }
-            assert!(
-                catch_unwind(AssertUnwindSafe(|| check_constraints(
-                    &air,
-                    &trace,
-                    &MembershipAir::public_values(&altered)
-                )))
-                .is_err()
-            );
-        }
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| check_constraints(
+                &air,
+                &trace,
+                &MembershipAir::public_values(&altered)
+            )))
+            .is_err()
+        );
     }
     Ok(())
 }
@@ -92,8 +62,8 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
 #[test]
 fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
     let parameters = Parameters::default();
-    let prepared = PreparedMembership::new(0, parameters.clone())?;
-    let (public, witness) = note();
+    let prepared = PreparedMembership::new(32, parameters.clone())?;
+    let (public, witness) = fixtures(32, 1)?.remove(0);
     let proof = prepared.prove(&public, &witness)?;
     let bytes = proof.to_bytes()?;
     let decoded = MaskedMembershipProof::from_bytes(&bytes)?;
@@ -113,10 +83,19 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
         assert!(prepared.verify(&altered, &decoded).is_err());
     }
     assert!(
-        PreparedMembership::new(1, parameters)?
-            .verify(&public, &decoded)
-            .is_err()
+        PreparedMembership::new(
+            32,
+            Parameters {
+                query_bits: 161,
+                ..parameters.clone()
+            }
+        )?
+        .verify(&public, &decoded)
+        .is_err()
     );
+    for unsupported in [0, 1, 8, 16, 31, 33] {
+        assert!(PreparedMembership::new(unsupported, parameters.clone()).is_err());
+    }
     let mut appended = bytes.clone();
     appended.push(0);
     assert!(MaskedMembershipProof::from_bytes(&appended).is_err());

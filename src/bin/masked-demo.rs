@@ -17,13 +17,13 @@ use serde_json::{Value, json};
 use recursive_imt_prover::{
     benchmark::{environment, ms, peak_rss, statistics},
     binary::{
-        MAX_CHILDREN,
+        IMT_DEPTH, MAX_CHILDREN,
         cli::fixtures,
         engine::Settings,
         relation::AggregatePublic,
         veil::{
             aggregate::{
-                MaskedAggregateVerifier, MaskedChildInput, PreparedMaskedAggregate, protocol,
+                MaskedAggregateVerifier, MaskedChildInput, PreparedMaskedAggregate, StatementFormat,
             },
             child::{MaskedMembershipProof, PreparedMembership},
             components::{
@@ -51,7 +51,7 @@ enum KeccakBackend {
     about = "Experimental statistically masked binary Keccak children and non-ZK aggregation; privacy/security review outstanding"
 )]
 struct Args {
-    #[arg(long, default_value_t = 16)]
+    #[arg(long, default_value_t = IMT_DEPTH)]
     depth: usize,
     #[arg(long, default_value_t = 2)]
     batch_size: usize,
@@ -66,6 +66,9 @@ struct Args {
     /// Run the three-proof correctness baseline; this is not a compressed aggregate.
     #[arg(long)]
     components: bool,
+    /// Produce the first tree aggregate with a fixed-size statement; exactly two children.
+    #[arg(long, conflicts_with = "components")]
+    tree_pair: bool,
     /// Aggregate Keccak prover; checkpoint is an experimental memory/time comparison.
     #[arg(long, value_enum, default_value_t = KeccakBackend::Flock)]
     keccak_backend: KeccakBackend,
@@ -84,6 +87,8 @@ struct Trusted {
     verifier_digest: Option<[u8; 32]>,
     #[serde(default)]
     keccak_backend: KeccakBackend,
+    #[serde(default)]
+    statement_format: StatementFormat,
 }
 
 #[derive(Serialize)]
@@ -125,8 +130,13 @@ impl PreparedBatch {
         parameters: Parameters,
         components: bool,
         backend: KeccakBackend,
+        format: StatementFormat,
     ) -> Result<Self> {
         if components {
+            ensure!(
+                format == StatementFormat::Ordered,
+                "components do not produce tree pairs"
+            );
             ensure!(
                 matches!(backend, KeccakBackend::Flock),
                 "components use the Flock backend"
@@ -136,7 +146,7 @@ impl PreparedBatch {
             )?)))
         } else {
             Ok(Self::Recursive(Box::new(
-                PreparedMaskedAggregate::with_backend(settings, parameters, backend.into())?,
+                PreparedMaskedAggregate::with_format(settings, parameters, backend.into(), format)?,
             )))
         }
     }
@@ -191,7 +201,7 @@ fn main() -> Result<()> {
     if args.verify {
         return verify_files(&args.out);
     }
-    ensure!(matches!(args.depth, 16 | 32), "depth must be 16 or 32");
+    ensure!(args.depth == IMT_DEPTH, "child IMT depth must be 32");
     ensure!(
         args.batch_size.is_power_of_two() && args.batch_size <= MAX_CHILDREN,
         "batch size must be a power of two through 64"
@@ -207,15 +217,24 @@ fn main() -> Result<()> {
         max_codeword_cells: 1 << 29,
         ..Settings::default()
     };
+    let statement_format = if args.tree_pair {
+        ensure!(
+            args.batch_size == 2,
+            "first aggregation requires two children"
+        );
+        StatementFormat::TreePair
+    } else {
+        StatementFormat::Ordered
+    };
     let protocol = if args.components {
         COMPONENT_PROTOCOL
     } else {
-        protocol(args.keccak_backend.into())
+        statement_format.protocol(args.keccak_backend.into())
     };
     let parameters = Parameters::default();
     let child = PreparedMembership::new(args.depth, parameters.clone())?;
     fs::create_dir_all(&args.out)?;
-    let mut report = json!({"protocol":protocol, "depth":args.depth, "batch_size":args.batch_size,
+    let mut report = json!({"protocol":protocol, "statement_format":statement_format, "depth":args.depth, "batch_size":args.batch_size,
         "field":"Poly64/Poly192", "hash":"Keccak-256", "bound":"Johnson", "child_parameters":parameters,
         "settings":settings, "outer_parameters":if args.components {json!(null)} else {json!({"pcs_bits":152,"pow_bits":16,"log_inv_rate":1,"fold":4,"max_initial_codeword_cells":1usize<<30})},  "environment":environment(),
         "acceptance_pass":false, "experimental_statistical_zk_candidate":true, "full_zk_established":false, "end_to_end_security_bits":null, "aggregate":!args.components, "succinct":!args.components, "complete":false, "component_proof_count":if args.components {3*args.batch_size} else {1}, "samples":[]});
@@ -240,6 +259,7 @@ fn main() -> Result<()> {
         parameters.clone(),
         args.components,
         args.keccak_backend,
+        statement_format,
     )?;
     report["setup_ms"] = json!(ms(start));
     report["geometry"] = aggregate.geometry();
@@ -264,17 +284,19 @@ fn main() -> Result<()> {
         identities: aggregate.identities(),
         verifier_digest,
         keccak_backend: args.keccak_backend,
+        statement_format,
     };
     write_json(&args.out.join("trusted.json"), &trusted)?;
     let cached = if let Some(digest) = trusted.verifier_digest {
         let key = read_bounded(&args.out.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-        Some(MaskedAggregateVerifier::with_backend(
+        Some(MaskedAggregateVerifier::with_format(
             &trusted.settings,
             &trusted.child_parameters,
             &key,
             &digest,
             &trusted.identities[0],
             trusted.keccak_backend.into(),
+            trusted.statement_format,
         )?)
     } else {
         None
@@ -387,7 +409,9 @@ fn verify_files(directory: &Path) -> Result<()> {
     let expected_protocol = if trusted.components {
         COMPONENT_PROTOCOL
     } else {
-        protocol(trusted.keccak_backend.into())
+        trusted
+            .statement_format
+            .protocol(trusted.keccak_backend.into())
     };
     ensure!(
         trusted.protocol == expected_protocol,
@@ -418,13 +442,14 @@ fn verify_files(directory: &Path) -> Result<()> {
             "invalid cached verifier authority"
         );
         let key = read_bounded(&directory.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-        let verifier = MaskedAggregateVerifier::with_backend(
+        let verifier = MaskedAggregateVerifier::with_format(
             &trusted.settings,
             &trusted.child_parameters,
             &key,
             &digest,
             &trusted.identities[0],
             trusted.keccak_backend.into(),
+            trusted.statement_format,
         )?;
         let setup_ms = ms(start);
         let check = Instant::now();
@@ -440,6 +465,7 @@ fn verify_files(directory: &Path) -> Result<()> {
         trusted.child_parameters,
         trusted.components,
         trusted.keccak_backend,
+        trusted.statement_format,
     )?;
     ensure!(
         aggregate.identities() == trusted.identities,

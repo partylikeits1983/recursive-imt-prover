@@ -40,10 +40,10 @@ fn every_bridge_between_verifier_parts_is_constrained() -> Result<()> {
 }
 
 #[test]
-#[ignore = "complete linked child verifier at depth 16"]
+#[ignore = "complete linked child verifier at depth 32"]
 fn linked_parts_execute_actual_masked_child_and_reject_mutations() -> Result<()> {
-    let prepared = PreparedMaskedVerifier::new(16, Parameters::default())?;
-    let (public, witness) = fixtures(16, 1)?.remove(0);
+    let prepared = PreparedMaskedVerifier::new(32, Parameters::default())?;
+    let (public, witness) = fixtures(32, 1)?.remove(0);
     let proof = prepared.child.prove(&public, &witness)?;
     let inputs = prepared.import_parts(&public, &proof)?;
     for (part, input) in inputs.iter().enumerate() {
@@ -82,8 +82,8 @@ fn linked_parts_execute_actual_masked_child_and_reject_mutations() -> Result<()>
 }
 
 fn actual_outer(part: usize) -> Result<()> {
-    let prepared = PreparedMaskedVerifier::new(16, Parameters::default())?;
-    let (public, witness) = fixtures(16, 1)?.remove(0);
+    let prepared = PreparedMaskedVerifier::new(32, Parameters::default())?;
+    let (public, witness) = fixtures(32, 1)?.remove(0);
     let proof = prepared.child.prove(&public, &witness)?;
     let inputs = prepared.import_parts(&public, &proof)?;
     let circuit = prepared.part_circuit(part)?;

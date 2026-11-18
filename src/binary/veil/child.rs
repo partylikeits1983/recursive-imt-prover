@@ -28,7 +28,10 @@ use super::{
     stacked_oracle::{StackedOpening, StackedOracle, StackedSpec},
     vector::dot,
 };
-use crate::binary::relation::{ClientPublic, ClientWitness};
+use crate::binary::{
+    IMT_DEPTH,
+    relation::{ClientPublic, ClientWitness},
+};
 
 pub const PROTOCOL: &str = "experimental-binary-masked-imt-v5";
 const PROOF_MAGIC: &[u8; 8] = b"IMTVCA05";
@@ -129,7 +132,7 @@ impl PreparedMembership {
         self.identity
     }
     pub fn depth(&self) -> usize {
-        self.air.depth
+        IMT_DEPTH
     }
     pub fn trace_height(&self) -> usize {
         self.air.height()

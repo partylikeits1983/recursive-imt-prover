@@ -10,6 +10,7 @@ use p3_matrix::dense::RowMajorMatrix;
 
 use super::F;
 use crate::binary::{
+    IMT_DEPTH,
     relation::{ClientPublic, ClientWitness},
     tree::{LEAF_DOMAIN, NODE_DOMAIN, commitment, parent},
 };
@@ -24,9 +25,7 @@ const ROOT: usize = 27;
 const NEXT_FLAGS: usize = 28;
 pub(super) const PREPROCESSED_WIDTH: usize = NEXT_FLAGS + ROWS_PER_HASH;
 
-pub(super) struct MembershipAir {
-    pub depth: usize,
-}
+pub(super) struct MembershipAir;
 
 struct KeccakBuilder<'a, AB: AirBuilder> {
     inner: &'a mut AB,
@@ -40,12 +39,12 @@ struct KeccakWindow<T> {
 
 impl MembershipAir {
     pub fn new(depth: usize) -> Result<Self> {
-        ensure!(depth <= 32, "membership depth exceeds 32");
-        Ok(Self { depth })
+        ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
+        Ok(Self)
     }
 
     pub fn height(&self) -> usize {
-        ((self.depth + 1) * ROWS_PER_HASH).next_power_of_two()
+        ((IMT_DEPTH + 1) * ROWS_PER_HASH).next_power_of_two()
     }
 
     pub fn public_values(public: &ClientPublic) -> Vec<F> {
@@ -63,12 +62,8 @@ impl MembershipAir {
         witness: &ClientWitness,
     ) -> Result<RowMajorMatrix<F>> {
         ensure!(
-            witness.merkle_path.len() == self.depth,
+            witness.merkle_path.len() == IMT_DEPTH,
             "incorrect Merkle path length"
-        );
-        ensure!(
-            u64::from(witness.leaf_index) < 1u64 << self.depth,
-            "leaf index outside tree"
         );
         let mut message = Vec::from(LEAF_DOMAIN.as_slice());
         message.extend(witness.secret);
@@ -102,7 +97,7 @@ impl MembershipAir {
             values.extend_from_slice(state);
             let hash = row / ROWS_PER_HASH;
             let direction = row % ROWS_PER_HASH == 24
-                && hash < self.depth
+                && hash < IMT_DEPTH
                 && (witness.leaf_index >> hash) & 1 == 1;
             values.push(F::from_bool(direction));
         }
@@ -121,7 +116,7 @@ impl BaseAir<F> for MembershipAir {
         PREPROCESSED_WIDTH
     }
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
-        let used = (self.depth + 1) * ROWS_PER_HASH;
+        let used = (IMT_DEPTH + 1) * ROWS_PER_HASH;
         let mut values = vec![F::ZERO; self.height() * PREPROCESSED_WIDTH];
         for (row, prep) in values
             .as_chunks_mut::<PREPROCESSED_WIDTH>()
@@ -132,7 +127,7 @@ impl BaseAir<F> for MembershipAir {
             let round = if row < used { row % ROWS_PER_HASH } else { 24 };
             prep[round] = F::ONE;
             prep[NODE_START] = F::from_bool(row > 0 && row < used && round == 0);
-            prep[LINK] = F::from_bool(row < self.depth * ROWS_PER_HASH && round == 24);
+            prep[LINK] = F::from_bool(row < IMT_DEPTH * ROWS_PER_HASH && round == 24);
             prep[ROOT] = F::from_bool(row == used - 1);
             let next = (row + 1).min(self.height() - 1);
             let next_round = if next < used {

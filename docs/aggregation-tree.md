@@ -1,7 +1,7 @@
 # Reusable binary aggregation circuit
 
-Priority: fast recursion with bounded memory. Children retain experimental
-statistical masking; aggregates need not be ZK. Keep Poly64/Poly192, Keccak,
+Priority: fast recursion with bounded memory and depth-32 IMT children. Children
+retain experimental statistical masking; aggregates need not be ZK. Keep Poly64/Poly192, Keccak,
 Johnson bounds and the 128-bit classical target.
 
 Prefer three circuit types for the current proof formats:
@@ -27,7 +27,8 @@ is an option if benchmarks justify the larger circuit or normalization cost.
 ## Fixed-size statement
 
 `src/binary/aggregation_tree.rs` implements the statement binding and its native
-binary-field circuit gadgets. It does not yet aggregate or verify child proofs.
+binary-field circuit gadgets. `StatementFormat::TreePair` in
+`src/binary/veil/aggregate.rs` connects these to the complete masked-child verifier.
 
 Every node carries a 32-byte digest and a one-byte count. Cyclic verifier data
 will be additional fixed-size public metadata, authenticated separately:
@@ -54,9 +55,16 @@ Roots can differ and repeated statements are permitted. Changing order, count,
 root or amount changes the expected statement. The public list remains available;
 only the statement consumed inside recursion has fixed length.
 
-The tests check the Keccak/count constraints and generate real proofs of this
-hash relation at multiple levels using one key. Those are **statement-hash
-proofs**, not proofs of child verification.
+The gadget tests generate proofs of the hash relation at multiple levels using
+one key. The `masked-demo --tree-pair` command separately generates two real
+masked child proofs, aggregates them and verifies again in a fresh process.
+
+First aggregation reuses two instances of one child-verifier template. Each
+instance authenticates its own statement leaf and computes the parent with a
+sibling digest. Both bind the same parent; the verifier supplies their distinct
+left/right roles. Inconsistent siblings require a Keccak collision. The full
+public vector is retained in `statement.json` and hashed during verification.
+The trusted format and protocol prevent substitution with an ordered-vector key.
 
 ## Making the whole verifier reusable
 
@@ -74,8 +82,9 @@ Three requirements remain:
    the same merge verifier identity, checked against independently trusted data
    by final verification. Only the pinned first-aggregation authority is allowed
    at the bottom of the recursive tree. Never accept an arbitrary verifier key
-   from a proof. Constrain the branch selector and counts so each recursive input represents strictly
-   fewer leaves; first aggregates must authenticate actual child proofs.
+   from a proof. Constrain the branch selector and counts so each recursive input
+   represents strictly fewer leaves; first aggregates must authenticate actual
+   child proofs.
 
 The statement digest does not replace verifier-key authentication. Nor does a
 native verifier result establish the recursive relation.
@@ -99,14 +108,14 @@ an equivalent-security benchmark for this project's 128-bit target.
 
 ## Implementation order
 
-1. Completed: fixed-size statement, canonical encodings and constrained Keccak
-   leaf/merge gadgets, including malformed-count and statement-mutation tests.
+1. Completed: fixed-size statements, constrained leaf/merge gadgets and first
+   aggregation of two masked children, including independent verification and
+   malformed-count, statement-mutation and proof-corruption checks.
 2. Build a bounded two-aggregate verifier and measure its geometry at the retained
    security parameters. This first prototype may use different keys per level;
    label that explicitly. Measure the existing masked-proof path as well as the
-   cost of first aggregation. A local native-wrapper probe at depth 16 required
-   671,088,640 initial codeword cells, exceeding the existing 536,870,912-cell
-   guard before proving. A direct switch to that backend is not yet practical.
+   cost of first aggregation. Keep memory guards enabled; wrapping the current
+   masked verifier directly in the native backend has exceeded its codeword budget.
 3. Establish a circuit-size envelope, authenticate first-aggregation and merge
    verifier data, then reuse the exact merge key at two levels. Compare against
    separate keys before adding padding or branching solely for key reuse.

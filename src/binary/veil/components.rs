@@ -53,7 +53,6 @@ pub struct ComponentMetrics {
 impl PreparedComponentBatch {
     pub fn new(settings: &Settings, parameters: Parameters) -> Result<Self> {
         settings.validate()?;
-        ensure!(matches!(settings.depth, 16 | 32), "depth must be 16 or 32");
         ensure!(
             parameters.min_algebraic_bits >= 144 && settings.min_algebraic_bits >= 144,
             "component baseline requires the conservative 144-bit algebraic floor"

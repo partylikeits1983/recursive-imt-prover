@@ -4,14 +4,14 @@ use recursive_imt_prover::binary::{cli::fixtures, relation::membership_circuit, 
 
 #[test]
 fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
-    let children = fixtures(16, 2).unwrap();
+    let children = fixtures(32, 2).unwrap();
     let public: Vec<_> = children.iter().flat_map(|(p, _)| p.fields()).collect();
     let private: Vec<_> = children
         .iter()
-        .flat_map(|(_, w)| w.fields(16).unwrap())
+        .flat_map(|(_, w)| w.fields(32).unwrap())
         .collect();
     let prepared = Prepared::repeated(
-        membership_circuit(16).unwrap(),
+        membership_circuit(32).unwrap(),
         2,
         b"flock-membership-adapter-test",
         HashBackend::Flock,
@@ -47,7 +47,7 @@ fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
     assert!(cached.verify(&proof, &swapped).is_err());
     assert!(cached.verify(&proof, &[]).is_err());
     let other = Prepared::repeated(
-        membership_circuit(16).unwrap(),
+        membership_circuit(32).unwrap(),
         2,
         b"other-verifying-authority",
         HashBackend::Flock,

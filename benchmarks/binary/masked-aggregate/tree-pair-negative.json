@@ -1,0 +1,212 @@
+{
+  "checkpoint": {
+    "source": "run/tree-pair-checkpoint-d32",
+    "source_keccak256": "fae3a9d0e331d2838bcf71bbcbfb791310dc5b6e68ebba8d10566a0b5e7cf493",
+    "checks": [
+      {
+        "case": "valid",
+        "exit_code": 0,
+        "passed": true,
+        "stderr": ""
+      },
+      {
+        "case": "amount",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+      },
+      {
+        "case": "root",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+      },
+      {
+        "case": "swap",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+      },
+      {
+        "case": "remove",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: incorrect public count"
+      },
+      {
+        "case": "insert",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: incorrect public count"
+      },
+      {
+        "case": "corrupt",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: Found a varint that didn't terminate. Is the usize too big for this platform?"
+      },
+      {
+        "case": "truncate",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: Hit the end of buffer, expected more data"
+      },
+      {
+        "case": "trailing",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trailing aggregate proof data"
+      },
+      {
+        "case": "authority",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trusted verifier identity mismatch"
+      },
+      {
+        "case": "key-digest",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trusted verifier digest mismatch"
+      },
+      {
+        "case": "key-bytes",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trusted verifier digest mismatch"
+      },
+      {
+        "case": "backend",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      },
+      {
+        "case": "backend-and-protocol",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      },
+      {
+        "case": "format-only",
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      },
+      {
+        "case": "format-and-protocol",
+        "passed": true,
+        "stderr": "Error: trusted verifier configuration mismatch"
+      },
+      {
+        "case": "format-omitted",
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      }
+    ]
+  },
+  "flock": {
+    "source": "run/tree-pair-flock-d32",
+    "source_keccak256": "2cadc307ba98fc4c1d1ddd1e6a0e4d5ae1515940d03dcb4aec0679f85ada0410",
+    "checks": [
+      {
+        "case": "valid",
+        "exit_code": 0,
+        "passed": true,
+        "stderr": ""
+      },
+      {
+        "case": "amount",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+      },
+      {
+        "case": "root",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+      },
+      {
+        "case": "swap",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+      },
+      {
+        "case": "remove",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: incorrect public count"
+      },
+      {
+        "case": "insert",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: incorrect public count"
+      },
+      {
+        "case": "corrupt",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: Found a varint that didn't terminate. Is the usize too big for this platform?"
+      },
+      {
+        "case": "truncate",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: Hit the end of buffer, expected more data"
+      },
+      {
+        "case": "trailing",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trailing aggregate proof data"
+      },
+      {
+        "case": "authority",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trusted verifier identity mismatch"
+      },
+      {
+        "case": "key-digest",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trusted verifier digest mismatch"
+      },
+      {
+        "case": "key-bytes",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: trusted verifier digest mismatch"
+      },
+      {
+        "case": "backend",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      },
+      {
+        "case": "backend-and-protocol",
+        "exit_code": 1,
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      },
+      {
+        "case": "format-only",
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      },
+      {
+        "case": "format-and-protocol",
+        "passed": true,
+        "stderr": "Error: trusted verifier configuration mismatch"
+      },
+      {
+        "case": "format-omitted",
+        "passed": true,
+        "stderr": "Error: unsupported aggregate protocol"
+      }
+    ]
+  }
+}

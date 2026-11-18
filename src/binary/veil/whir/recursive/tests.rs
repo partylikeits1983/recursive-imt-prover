@@ -194,26 +194,25 @@ fn prefixed_whir_has_an_actual_outer_proof() -> Result<()> {
 }
 
 #[test]
-#[ignore = "resource-intensive recursive proofs at both child geometries"]
-fn prefixed_whir_outer_proofs_at_depth16_and_depth32_geometry() -> Result<()> {
+#[ignore = "resource-intensive recursive proofs at depth-32 child geometry"]
+fn prefixed_whir_outer_proof_at_depth32_geometry() -> Result<()> {
     // A stacked child oracle uses 128 columns per stack and a coefficient
     // domain twice its message length. These are PCS components, not IMT proofs.
-    for (depth, length) in [(16, 1 << 17), (32, 1 << 18)] {
-        let fixture = fixture(length)?;
-        let prepared = PreparedCircuit::new(
-            fixture.circuit,
-            &Settings::default(),
-            b"imt-prefixed-whir-recursion-geometry-v1",
-        )?;
-        let (proof, metrics) = prepared.prove(&fixture.public, &fixture.private)?;
-        prepared.verify(&proof, &fixture.public)?;
-        eprintln!(
-            "depth {depth} PCS component: prove {:.3} ms, verify {:.3} ms, {} bytes, {} witnesses",
-            metrics.prove_ms,
-            metrics.verify_ms,
-            proof.len(),
-            prepared.geometry.witnesses,
-        );
-    }
+    let (depth, length) = (32, 1 << 18);
+    let fixture = fixture(length)?;
+    let prepared = PreparedCircuit::new(
+        fixture.circuit,
+        &Settings::default(),
+        b"imt-prefixed-whir-recursion-geometry-v1",
+    )?;
+    let (proof, metrics) = prepared.prove(&fixture.public, &fixture.private)?;
+    prepared.verify(&proof, &fixture.public)?;
+    eprintln!(
+        "depth {depth} PCS component: prove {:.3} ms, verify {:.3} ms, {} bytes, {} witnesses",
+        metrics.prove_ms,
+        metrics.verify_ms,
+        proof.len(),
+        prepared.geometry.witnesses,
+    );
     Ok(())
 }

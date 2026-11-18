@@ -18,12 +18,12 @@ def main():
     environment = dict(os.environ, RAYON_NUM_THREADS=str(args.threads))
     subprocess.run(["cargo", "build", "--locked", "--release", "--bin", "bench"], check=True)
     cases = []
-    for depth in [16, 32]:
-        for count in [1, 2, 4, 8, 16, 32, 64]:
-            base = ["--depth", str(depth), "--batch-size", str(count)]
-            cases.append((f"d{depth}-n{count}-children", base + ["--children-only"]))
-            cases.append((f"d{depth}-n{count}-aggregate", base +
-                          ["--max-codeword-cells", str(1 << 29)]))
+    depth = 32
+    for count in [1, 2, 4, 8, 16, 32, 64]:
+        base = ["--depth", str(depth), "--batch-size", str(count)]
+        cases.append((f"d{depth}-n{count}-children", base + ["--children-only"]))
+        cases.append((f"d{depth}-n{count}-aggregate", base +
+                      ["--max-codeword-cells", str(1 << 29)]))
     results = []
     for name, parameters in cases:
         command = ["target/release/bench", "--out", str(args.out / name),

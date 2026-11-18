@@ -14,7 +14,7 @@ use recursive_imt_prover::binary::relation::{
 };
 use recursive_imt_prover::binary::tree::{Imt, commitment, keccak, parent};
 
-const TEST_DEPTH: usize = 16;
+const TEST_DEPTH: usize = 32;
 
 fn settings() -> Settings {
     Settings {
@@ -107,8 +107,8 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     nonboolean[64] = F::from_repr(2);
     assert!(!accepts(&circuit, &fields, &nonboolean));
     let mut outside = witness.clone();
-    outside.leaf_index = 1 << TEST_DEPTH;
-    assert!(outside.fields(TEST_DEPTH).is_err());
+    outside.leaf_index = u32::MAX;
+    assert!(!accepts(&circuit, &fields, &witness_fields(&outside)));
     outside = witness.clone();
     outside.merkle_path.pop();
     assert!(outside.fields(TEST_DEPTH).is_err());
@@ -214,7 +214,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     bad[0].public.amount ^= 1;
     assert!(aggregate.prove(&bad).is_err());
     let foreign = PreparedChild::new(&Settings {
-        depth: 32,
+        log_inv_rate: 2,
         ..settings.clone()
     })
     .unwrap();
@@ -308,8 +308,8 @@ fn independent_process_needs_only_aggregate_statement_and_trust() {
             "--samples",
             "1",
             "--max-codeword-cells",
-            // Permit the depth-16 child (2,752,512 cells), but reject its outer.
-            "4194304",
+            // Permit the depth-32 child, but reject its larger outer circuit.
+            "8388608",
             "--out",
         ])
         .arg(&limited)

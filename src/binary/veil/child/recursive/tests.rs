@@ -14,10 +14,10 @@ use crate::binary::{
 static ALLOCATOR: MiMalloc = MiMalloc;
 
 #[test]
-#[ignore = "complete masked child verifier at depth 16"]
+#[ignore = "complete masked child verifier at depth 32"]
 fn complete_masked_child_verifier_checks_real_proof_data() -> Result<()> {
-    let prepared = PreparedMaskedVerifier::new(16, Parameters::default())?;
-    let (public, witness) = fixtures(16, 1)?.remove(0);
+    let prepared = PreparedMaskedVerifier::new(32, Parameters::default())?;
+    let (public, witness) = fixtures(32, 1)?.remove(0);
     let proof = prepared.child.prove(&public, &witness)?;
     // The circuit witness importer has no access to `witness`.
     let private = prepared.import(&public, &proof)?;

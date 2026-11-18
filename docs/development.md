@@ -1,7 +1,7 @@
 # Development map
 
 The active path is a masked Keccak IMT child over Poly64/Poly192, followed by
-one non-ZK aggregate of the ordered child statements. Depths are 16 and 32.
+one non-ZK aggregate of the ordered child statements. Child IMT depth is fixed at 32.
 Batches through eight have verified independently; 16–64 remain a scaling target.
 Statistical child ZK and end-to-end 128-bit classical security remain unproved.
 See [security limits](binary-security.md) and [measurements](binary-veil.md).

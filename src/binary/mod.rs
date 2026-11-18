@@ -7,6 +7,8 @@ pub mod security;
 pub mod tree;
 pub mod veil;
 
+pub const IMT_DEPTH: usize = 32;
+
 /// Fixed-batch research target. Recursive aggregation of aggregates is separate.
 pub const MAX_CHILDREN: usize = 64;
 

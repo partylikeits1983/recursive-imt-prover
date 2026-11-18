@@ -33,7 +33,7 @@ MerkleRoot(leaf, path, leaf_index) == root
 
 Domain tags are fixed ASCII bytes, without a terminator. The amount is exactly
 eight bytes in little-endian order. The tree is binary and append-only; the
-masked proof path supports depths 16 and 32.
+masked proof path supports depth 32 only.
 
 | Public inputs | Private witness |
 |---|---|
@@ -69,9 +69,10 @@ has separate witness values, wiring checks and public inputs. The trusted key
 fixes the tree depth and batch size; one key accepting arbitrary N is not yet
 implemented.
 
-Next is a [binary aggregation tree](docs/aggregation-tree.md) with specialized
-first aggregation and a reusable 2-to-1 merge. Fixed-size Keccak statement binding
-is implemented; aggregate-of-aggregate verification and cyclic recursion are not.
+The [binary aggregation tree](docs/aggregation-tree.md) has a working first
+aggregation via `--tree-pair`, authenticating two children through a fixed-size
+Keccak statement. Aggregate-of-aggregate verification and cyclic recursion
+remain to be implemented.
 
 Two experimental backends implement the outer proof:
 
@@ -102,7 +103,7 @@ a research target.
 
 Aggregation remains expensive. Peak physical footprint ranges from about 6.4 GB
 to 16.3 GB, including compressed/swapped memory. Filesystem caches were not reset.
-[Raw measurements, ranges and optimization history](docs/binary-veil.md#specialized-air-evaluation).
+[Measurements and current optimizations](docs/binary-veil.md#specialized-air-evaluation).
 
 ## Running locally
 
@@ -112,8 +113,10 @@ Requires Rust 1.98.1. The default is four threads; use fresh output directories.
 cargo test --locked --release --workspace
 
 # Two masked children and one aggregate; verify again in a fresh process.
-cargo run --locked --release --bin masked-demo -- --depth 16 --batch-size 2 --out run/masked16
 cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --out run/masked32
+
+# First tree level: two masked children -> one proof with a fixed-size statement.
+cargo run --locked --release --bin masked-demo -- --tree-pair --depth 32 --keccak-backend checkpoint --out run/pair32
 
 # Repeated checkpoint benchmark, separating cold and warm samples.
 cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --samples 3 --keccak-backend checkpoint --out run/bench
@@ -122,7 +125,7 @@ cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --sa
 cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 8 --keccak-backend checkpoint --out run/eight
 
 # Independent verification of saved artifacts.
-cargo run --locked --release --bin masked-demo -- --verify --out run/masked16
+cargo run --locked --release --bin masked-demo -- --verify --out run/masked32
 ```
 
 The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`

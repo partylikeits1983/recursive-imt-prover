@@ -2,7 +2,7 @@ use recursive_imt_prover::binary::{
     MAX_CHILDREN,
     engine::Settings,
     security::{AlgebraicAssessment, BatchAssessment, union_bits},
-    veil::{constraints::Relation, keccak::KeccakMembership, parameters::Parameters},
+    veil::{constraints::Relation, parameters::Parameters},
 };
 
 #[test]
@@ -37,7 +37,15 @@ fn union_accounting_includes_every_child_and_never_certifies_missing_privacy() {
             .meets_algebraic_128_budget
     );
     let settings = Settings::default();
-    assert_eq!(settings.depth, 16);
+    assert_eq!(settings.depth, 32);
+    assert!(
+        Settings {
+            depth: 16,
+            ..settings.clone()
+        }
+        .validate()
+        .is_err()
+    );
     assert!(
         Settings {
             batch_size: MAX_CHILDREN,
@@ -90,10 +98,6 @@ fn veil_queries_respect_binding_radius_and_conditional_composition() {
     // The old direct-WHIR counts do not support a 160-bit VEIL binding claim.
     assert!(-83.0 * (17.0f64 / 32.0).log2() < 128.0);
     assert!(-112.0 * (9.0f64 / 16.0).log2() < 128.0);
-    let relation = KeccakMembership::new(0).unwrap().relation;
-    let report = relation.security_diagnostic(&parameters).unwrap();
-    assert!(report.conditional_interactive_bits >= 144.0);
-    assert!(!report.end_to_end_128_established);
     let weak = Parameters {
         query_bits: 128,
         ..parameters

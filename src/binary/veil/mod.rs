@@ -9,7 +9,6 @@ mod compiler;
 pub mod components;
 pub mod constraints;
 mod hash;
-pub mod keccak;
 mod membership_air;
 pub mod native;
 mod oracle;

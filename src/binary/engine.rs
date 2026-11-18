@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use super::MAX_CHILDREN;
+use super::{IMT_DEPTH, MAX_CHILDREN};
 use crate::benchmark::ms;
 
 use anyhow::{Result, ensure};
@@ -103,7 +103,7 @@ pub struct PreparedAggregate {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            depth: 16,
+            depth: IMT_DEPTH,
             batch_size: 2,
             pcs_bits: 152,
             pow_bits: 16,
@@ -123,7 +123,7 @@ impl Settings {
             self.pow_bits <= 16,
             "grinding ceiling must be at most 16 bits"
         );
-        ensure!((1..=32).contains(&self.depth), "depth must be in 1..=32");
+        ensure!(self.depth == IMT_DEPTH, "child IMT depth must be 32");
         ensure!(
             self.batch_size.is_power_of_two() && self.batch_size <= MAX_CHILDREN,
             "unsupported fixed batch size"

@@ -5,14 +5,8 @@ use recursive_imt_prover::binary::veil::{
     E, F,
     code::BinaryCode,
     constraints::{ExperimentalProof, Linear, Relation},
-    keccak::KeccakMembership,
     parameters::Parameters,
 };
-use recursive_imt_prover::binary::{
-    relation::{ClientPublic, ClientWitness},
-    tree::{Imt, commitment},
-};
-
 #[test]
 fn additive_code_matches_interpolation_and_product() -> Result<()> {
     let mut rng = StdRng::seed_from_u64(123);
@@ -177,79 +171,5 @@ fn affine_constants_cannot_be_replaced_by_zero_witness() -> Result<()> {
     let proof = relation.prove(&parameters, &[], &[E::ONE])?;
     relation.verify(&parameters, &[], &proof)?;
     assert!(relation.check(&parameters, &[], &[E::ZERO]).is_err());
-    Ok(())
-}
-
-#[test]
-fn upstream_keccak_air_binds_private_membership() -> Result<()> {
-    let parameters = Parameters::default();
-    for depth in [0, 1, 8] {
-        let circuit = KeccakMembership::new(depth)?;
-        let secret = [0x37; 32];
-        let nonce = [0x93; 32];
-        let amount = u64::MAX;
-        let leaf = commitment(&secret, amount, &nonce);
-        let mut witness = ClientWitness {
-            secret,
-            nonce,
-            leaf_index: 0,
-            merkle_path: vec![],
-        };
-        let root = if depth == 0 {
-            leaf
-        } else {
-            let mut tree = Imt::new(depth)?;
-            tree.append([0x11; 32])?;
-            witness.leaf_index = tree.append(leaf)?;
-            if depth > 1 {
-                tree.append([0x22; 32])?;
-            }
-            witness.merkle_path = tree.path(witness.leaf_index)?;
-            tree.root()
-        };
-        let public = ClientPublic { root, amount };
-        let public_fields = KeccakMembership::public_values(&public);
-        let values = circuit.witness(&public, &witness)?;
-        circuit
-            .relation
-            .check(&parameters, &public_fields, &values)?;
-        for kind in 0..6 {
-            if depth == 0 && kind >= 4 {
-                continue;
-            }
-            let mut altered = witness.clone();
-            let mut altered_public = public.clone();
-            match kind {
-                0 => altered.secret[0] ^= 1,
-                1 => altered.nonce[0] ^= 1,
-                2 => altered_public.amount ^= 1,
-                3 => altered_public.root[0] ^= 1,
-                4 => altered.merkle_path[0][0] ^= 1,
-                5 => altered.leaf_index ^= 1,
-                _ => unreachable!(),
-            }
-            let values = circuit.witness(&altered_public, &altered)?;
-            assert!(
-                circuit
-                    .relation
-                    .check(
-                        &parameters,
-                        &KeccakMembership::public_values(&altered_public),
-                        &values
-                    )
-                    .is_err(),
-                "depth {depth}, kind {kind}"
-            );
-        }
-        let mut tampered = values;
-        // A bit in an intermediate round, beyond the input and output bindings.
-        tampered[1600 + 17] += E::ONE;
-        assert!(
-            circuit
-                .relation
-                .check(&parameters, &public_fields, &tampered)
-                .is_err()
-        );
-    }
     Ok(())
 }

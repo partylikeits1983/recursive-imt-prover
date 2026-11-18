@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use super::MAX_CHILDREN;
+use super::{IMT_DEPTH, MAX_CHILDREN};
 
 use anyhow::{Result, ensure};
 use clap::Parser;
@@ -22,7 +22,7 @@ use crate::files::{read_bounded, read_json, write_json};
 pub struct Args {
     #[arg(long, default_value_t = 2)]
     pub batch_size: usize,
-    #[arg(long, default_value_t = 16)]
+    #[arg(long, default_value_t = IMT_DEPTH)]
     pub depth: usize,
     #[arg(long, default_value_t = 3)]
     pub samples: usize,

@@ -1,2 +1,0 @@
-NON-ZK correctness baseline; Johnson PCS target 160 bits (not composed security).
-Error: Invalid proof shape: binary native polynomial WHIR configuration rejected; variables=18, packed=false, upstream=Some(PowBitsExceedBudget { required: 6, budget: 0 })

@@ -4,7 +4,10 @@ use p3_circuit::ops::binary_native::BinaryCoordinateField;
 use p3_circuit::{Circuit, CircuitBuilder};
 use serde::{Deserialize, Serialize};
 
-use super::tree::{Hash, LEAF_DOMAIN, NODE_DOMAIN};
+use super::{
+    IMT_DEPTH,
+    tree::{Hash, LEAF_DOMAIN, NODE_DOMAIN},
+};
 
 pub type F = Poly64;
 pub const PUBLIC_BYTES: usize = 40;
@@ -43,12 +46,8 @@ impl ClientPublic {
 
 impl ClientWitness {
     pub fn fields(&self, depth: usize) -> Result<Vec<F>> {
-        ensure!((1..=32).contains(&depth), "depth must be in 1..=32");
+        ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
         ensure!(self.merkle_path.len() == depth, "incorrect path length");
-        ensure!(
-            u64::from(self.leaf_index) < 1u64 << depth,
-            "index outside tree"
-        );
         let mut fields: Vec<_> = self
             .secret
             .iter()
@@ -69,7 +68,7 @@ pub fn membership_circuit(depth: usize) -> Result<Circuit<F>> {
 
 /// The same byte/bit relation over a supported native binary carrier.
 pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result<Circuit<F>> {
-    ensure!((1..=32).contains(&depth), "depth must be in 1..=32");
+    ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
     ensure!(F::COORDINATE_BITS >= 8, "carrier must represent full bytes");
     let mut builder = CircuitBuilder::<F>::new();
     builder.enable_native_keccak_f1600()?;
