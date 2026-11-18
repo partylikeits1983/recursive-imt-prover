@@ -1,8 +1,9 @@
 //! Keccak subargument linked to authenticated native port-table openings.
 //! The enclosing protocol must bind `statement` before its AIR challenges.
 use anyhow::{Result, ensure};
+use old_binary_field::{Poly64 as CF, Poly192 as CE};
 use p3_binary_field::TowerLevel;
-use p3_challenger::{CanObserve, FieldChallenger};
+use p3_challenger::FieldChallenger;
 use p3_commit::MultilinearPcs;
 use p3_field::PrimeCharacteristicRing;
 use p3_keccak::KeccakF;
@@ -16,32 +17,36 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 use super::{
-    BITS, Claim, E, F, POSITION_LOG, POSITIONS, Proof, State, Statement, algebraic_error_degree,
-    closing,
-    committed::{Opening, table},
+    BITS, Claim, E, F, POSITION_LOG, POSITIONS, Proof, State, Statement, Transcript,
+    algebraic_error_degree, closing,
+    committed::{Opening, recursive_opening, recursive_values, table},
     ports,
+    recursive::{Bridge, LinkedInput, deferred_seed, sumcheck_values},
 };
 use crate::{
-    config::{Challenger, Data, Pcs, challenger, pcs},
+    config::{Challenger, Data, Pcs, WHIR_LOG_INV_RATE, challenger, pcs},
     encoding::TableEncoding,
 };
 
 const DOMAIN: &[u8] = b"imt-checkpoint-keccak-native-ports-v1";
+pub(super) const FIXED_DOMAIN: &[u8] = b"imt-checkpoint-keccak-native-ports-fixed-v2";
+pub const PORTS: usize = ports::PORTS;
 
-pub(crate) struct LinkedBatch {
-    pub log_batch: usize,
+pub struct LinkedBatch {
+    pub(crate) log_batch: usize,
+    transcript: Transcript,
     pcs: Pcs,
     protocol: OpeningProtocol,
     pub conditional_algebraic_bits: f64,
     pub initial_codeword_cells: usize,
 }
 
-pub(crate) struct BoundaryWitness {
+pub struct BoundaryWitness {
     inputs: Vec<State>,
     outputs: Vec<State>,
 }
 
-pub(crate) struct Pending {
+pub struct Pending {
     pub statement: Statement,
     data: Data,
     witness: BoundaryWitness,
@@ -49,7 +54,7 @@ pub(crate) struct Pending {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct LinkedProof {
+pub struct LinkedProof {
     output: E,
     reduction: Proof,
     input_closing: closing::Proof,
@@ -58,8 +63,8 @@ pub(crate) struct LinkedProof {
 }
 
 /// Created by the enclosing verifier from a fully authenticated AIR opening.
-#[derive(Clone, Serialize)]
-pub(crate) struct PortOpening {
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PortOpening {
     pub instance: Vec<E>,
     pub values: Vec<E>,
 }
@@ -73,10 +78,47 @@ impl BoundaryWitness {
     pub fn ports(&self) -> Table<F> {
         ports::table(&self.inputs, &self.outputs)
     }
+
+    pub fn opening(&self, point: &[CE]) -> Result<PortOpening> {
+        ensure!(
+            point.len() <= super::MAX_BATCH_LOG && 1usize << point.len() == self.inputs.len(),
+            "incorrect port opening arity"
+        );
+        let instance: Vec<_> = point
+            .iter()
+            .map(|v| E::new(v.coefficients().map(|c| F::new(c.to_bits()))))
+            .collect();
+        let weights = Point::new(instance.as_slice()).equality_weights_msb();
+        let table = self.ports();
+        let values = (0..PORTS)
+            .map(|column| {
+                table
+                    .poly(column)
+                    .as_slice()
+                    .iter()
+                    .zip(&weights)
+                    .map(|(&v, &w)| w * v)
+                    .sum()
+            })
+            .collect();
+        Ok(PortOpening { instance, values })
+    }
 }
 
 impl LinkedBatch {
     pub fn new(log_batch: usize, main_candidate_log2: f64) -> Result<Self> {
+        Self::with_transcript(log_batch, main_candidate_log2, Transcript::PostcardV1)
+    }
+
+    pub fn for_recursion(log_batch: usize, main_candidate_log2: f64) -> Result<Self> {
+        Self::with_transcript(log_batch, main_candidate_log2, Transcript::FixedV2)
+    }
+
+    fn with_transcript(
+        log_batch: usize,
+        main_candidate_log2: f64,
+        transcript: Transcript,
+    ) -> Result<Self> {
         let degree = algebraic_error_degree(log_batch)?;
         ensure!(
             main_candidate_log2.is_finite() && main_candidate_log2 >= 0.0,
@@ -121,10 +163,11 @@ impl LinkedBatch {
         );
         Ok(Self {
             log_batch,
+            transcript,
             pcs,
             protocol,
             conditional_algebraic_bits,
-            initial_codeword_cells: 1 << (log_batch + POSITION_LOG + 1 - 6 + 1),
+            initial_codeword_cells: 1 << (log_batch + POSITION_LOG + 1 - 6 + WHIR_LOG_INV_RATE),
         })
     }
 
@@ -171,7 +214,8 @@ impl LinkedBatch {
             .zip(&output.weights)
             .map(|(&a, &b)| a * b)
             .sum();
-        let (reduction, input) = super::prove(&witness.inputs, &output, &mut challenger)?;
+        let (reduction, input) =
+            super::prove_using(&witness.inputs, &output, &mut challenger, self.transcript)?;
         let (input_closing, input_point, input_value) =
             closing::prove(&witness.inputs, &input, &mut challenger);
         let (weights, value) = ports::claim(ports, &mut challenger);
@@ -219,7 +263,13 @@ impl LinkedBatch {
         self.bind_ports(ports, &mut ch)?;
         let (mut output, output_point) = self.output_claim(&mut ch);
         output.value = proof.output;
-        let input = super::verify(&proof.reduction, &output, self.log_batch, &mut ch)?;
+        let input = super::verify_using(
+            &proof.reduction,
+            &output,
+            self.log_batch,
+            &mut ch,
+            self.transcript,
+        )?;
         let input = closing::verify(&proof.input_closing, &input, &mut ch)?;
         let (weights, value) = ports::claim(ports, &mut ch);
         let link = closing::verify_functional(&proof.port_closing, &weights, value, &mut ch)?;
@@ -253,19 +303,104 @@ impl LinkedBatch {
         Ok(())
     }
 
-    fn challenger(&self, authority: &[u8]) -> Challenger {
-        let mut hash = Keccak256::new();
-        hash.update(DOMAIN);
-        hash.update((self.log_batch as u64).to_le_bytes());
-        hash.update(authority);
-        challenger(&hash.finalize())
+    /// The commitment has already entered `ch`; acceptance remains a circuit constraint.
+    pub fn recursive_input<C>(
+        &self,
+        proof: &LinkedProof,
+        ports: &PortOpening,
+        ch: &mut C,
+    ) -> Result<LinkedInput>
+    where
+        C: old_challenger::FieldChallenger<CF> + old_challenger::GrindingChallenger<Witness = CF>,
+    {
+        ensure!(
+            matches!(self.transcript, Transcript::FixedV2),
+            "recursive input requires the fixed transcript"
+        );
+        let mut ch = Bridge(ch);
+        self.bind_ports(ports, &mut ch)?;
+        let (mut output, output_point) = self.output_claim(&mut ch);
+        output.value = proof.output;
+        let input = super::verify_using(
+            &proof.reduction,
+            &output,
+            self.log_batch,
+            &mut ch,
+            self.transcript,
+        )?;
+        let input = closing::verify(&proof.input_closing, &input, &mut ch)?;
+        let (weights, value) = ports::claim(ports, &mut ch);
+        let link = closing::verify_functional(&proof.port_closing, &weights, value, &mut ch)?;
+        let link_point = link_point(ports, &link.point);
+        let mut private_values = recursive_values(
+            self.log_batch,
+            proof.output,
+            &proof.reduction,
+            &proof.input_closing,
+        )?;
+        private_values.extend(sumcheck_values(&proof.port_closing, POSITION_LOG + 1, 2)?);
+        let points = [input.point, link_point.clone(), output_point, link_point].map(|point| {
+            point
+                .iter()
+                .map(|v| CE::new(v.coefficients().map(|c| CF::new(c.to_bits()))))
+                .collect()
+        });
+        Ok(LinkedInput {
+            private_values,
+            points,
+            opening: recursive_opening(&proof.opening)?,
+        })
     }
 
-    fn bind_ports(&self, ports: &PortOpening, ch: &mut Challenger) -> Result<()> {
+    pub fn recursive_pcs_seed(&self) -> Vec<CF> {
+        deferred_seed(self.log_batch + POSITION_LOG + 1, 4)
+    }
+
+    pub fn arithmetic_seed(&self, authority: &[u8], statement: &Statement) -> Result<Vec<u8>> {
+        ensure!(
+            statement.log_batch as usize == self.log_batch,
+            "incorrect boundary batch size"
+        );
+        if matches!(self.transcript, Transcript::PostcardV1) {
+            return arithmetic_seed(authority, statement);
+        }
+        let mut hash = Keccak256::new();
+        hash.update(FIXED_DOMAIN);
+        hash.update((authority.len() as u64).to_le_bytes());
+        hash.update(authority);
+        hash.update((self.log_batch as u64).to_le_bytes());
+        hash.update((statement.commitment.roots().len() as u64).to_le_bytes());
+        for root in statement.commitment.roots() {
+            hash.update(root);
+        }
+        Ok(hash.finalize().to_vec())
+    }
+
+    fn challenger(&self, authority: &[u8]) -> Challenger {
+        challenger(&self.transcript_seed(authority))
+    }
+
+    pub fn transcript_seed(&self, authority: &[u8]) -> [u8; 32] {
+        let mut hash = Keccak256::new();
+        hash.update(match self.transcript {
+            Transcript::PostcardV1 => DOMAIN,
+            Transcript::FixedV2 => FIXED_DOMAIN,
+        });
+        hash.update((self.log_batch as u64).to_le_bytes());
+        hash.update(authority);
+        hash.finalize().into()
+    }
+
+    fn bind_ports<C: FieldChallenger<F>>(&self, ports: &PortOpening, ch: &mut C) -> Result<()> {
         ensure!(
             ports.instance.len() == self.log_batch && ports.values.len() == ports::PORTS,
             "incorrect native Keccak port opening shape"
         );
+        if matches!(self.transcript, Transcript::FixedV2) {
+            ch.observe_algebra_slice(&ports.instance);
+            ch.observe_algebra_slice(&ports.values);
+            return Ok(());
+        }
         let digest = Keccak256::digest(postcard::to_allocvec(&(
             DOMAIN,
             self.log_batch as u64,
@@ -277,7 +412,7 @@ impl LinkedBatch {
         Ok(())
     }
 
-    fn output_claim(&self, ch: &mut Challenger) -> (Claim, Point<E>) {
+    fn output_claim<C: FieldChallenger<F>>(&self, ch: &mut C) -> (Claim, Point<E>) {
         let instance = (0..self.log_batch)
             .map(|_| ch.sample_algebra_element())
             .collect::<Vec<_>>();

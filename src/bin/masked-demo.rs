@@ -214,6 +214,8 @@ fn main() -> Result<()> {
     let settings = Settings {
         depth: args.depth,
         batch_size: args.batch_size,
+        log_inv_rate: imt_flock_backend::WHIR_LOG_INV_RATE,
+        fold: imt_flock_backend::WHIR_FOLD,
         max_codeword_cells: 1 << 29,
         ..Settings::default()
     };
@@ -236,7 +238,7 @@ fn main() -> Result<()> {
     fs::create_dir_all(&args.out)?;
     let mut report = json!({"protocol":protocol, "statement_format":statement_format, "depth":args.depth, "batch_size":args.batch_size,
         "field":"Poly64/Poly192", "hash":"Keccak-256", "bound":"Johnson", "child_parameters":parameters,
-        "settings":settings, "outer_parameters":if args.components {json!(null)} else {json!({"pcs_bits":152,"pow_bits":16,"log_inv_rate":1,"fold":4,"max_initial_codeword_cells":1usize<<30})},  "environment":environment(),
+        "settings":settings, "outer_parameters":if args.components {json!(null)} else {json!({"pcs_bits":152,"pow_bits":16,"log_inv_rate":imt_flock_backend::WHIR_LOG_INV_RATE,"fold":imt_flock_backend::WHIR_FOLD,"max_initial_codeword_cells":1usize<<30})},  "environment":environment(),
         "acceptance_pass":false, "experimental_statistical_zk_candidate":true, "full_zk_established":false, "end_to_end_security_bits":null, "aggregate":!args.components, "succinct":!args.components, "complete":false, "component_proof_count":if args.components {3*args.batch_size} else {1}, "samples":[]});
     write_json(&args.out.join("report.json"), &report)?;
     eprintln!(

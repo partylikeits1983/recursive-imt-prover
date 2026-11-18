@@ -1,13 +1,13 @@
-//! Authenticated recursive Keccak batch verifier. Arithmetic port linkage is separate.
+//! Recursive Keccak verification with committed boundaries and arithmetic port linkage.
 use anyhow::{Result, ensure};
 use imt_flock_backend::checkpoint_keccak::{
     CommittedBatch, CommittedProof, Statement, recursive::PreparedCommittedVerifier,
 };
 use p3_binary_field::{BinaryChallenger, Poly64 as F, Poly192 as E};
-use p3_binary_pcs::whir::{BinaryWhirDomain, recommended_cap_height};
+use p3_binary_pcs::whir::BinaryWhirDomain;
 use p3_challenger::HashChallenger;
 use p3_circuit::{
-    Circuit, CircuitBuilder, CircuitConstructionLimits,
+    Circuit, CircuitBuilder, CircuitConstructionLimits, ExprId,
     ops::{ByteHash, binary_encoding::NativeBinaryEncoding, bytes_to_limbs},
 };
 use p3_keccak::Keccak256Hash;
@@ -23,6 +23,9 @@ use p3_whir::{
     pcs::proof::{PcsProof, WhirProof},
 };
 
+mod linked;
+pub use linked::PreparedLinkedCheckpoint;
+
 type Ch = BinaryChallenger<F, HashChallenger<u8, Keccak256Hash, 32>>;
 type Mmcs = MerkleTreeMmcs<
     F,
@@ -35,78 +38,33 @@ type Mmcs = MerkleTreeMmcs<
 type Opening = (Vec<E>, Vec<BitTensor<E, F>>, WhirProof<F, E, Mmcs>);
 
 pub struct PreparedCheckpoint {
-    log_batch: usize,
-    cap_height: usize,
     seed: [u8; 32],
     native: CommittedBatch,
+    pcs: BoundaryPcs,
+    pub circuit: Circuit<F>,
+}
+
+struct BoundaryPcs {
+    log_batch: usize,
+    cap_height: usize,
     config: WhirConfig<E, F, Ch>,
     mmcs: Mmcs,
-    pcs: BinaryPolyDeferredWhirTraceVerifier,
-    pub circuit: Circuit<F>,
+    verifier: BinaryPolyDeferredWhirTraceVerifier,
 }
 
 impl PreparedCheckpoint {
     pub fn new(log_batch: usize, context: &[u8]) -> Result<Self> {
         let native = CommittedBatch::for_recursion(log_batch)?;
         let seed = native.transcript_seed(context);
-        let config = WhirConfig::new_with_domain(
-            log_batch + 6,
-            ProtocolParameters {
-                security_level: 152,
-                pow_bits: 16,
-                round_log_inv_rates: vec![],
-                folding_factor: FoldingFactor::Constant(4),
-                soundness_type: SecurityAssumption::JohnsonBound,
-                starting_log_inv_rate: 1,
-            },
-            &BinaryWhirDomain::<F>::default(),
-        )?;
-        let cap_height = recommended_cap_height(&config);
-        let mmcs = Mmcs::new(
-            SerializingHasher::new(Keccak256Hash),
-            CompressionFunctionFromHasher::new(Keccak256Hash),
-            cap_height,
-        );
-        let shape = TableShape::new(log_batch + 11, 1);
-        let protocol = OpeningProtocol::new(
-            (0..2)
-                .map(|_| TableSpec::new(shape, vec![OpeningBatch::new(vec![0], vec![])]))
-                .collect(),
-        );
-        let pcs = BinaryPolyDeferredWhirTraceVerifier::new(
-            &config,
-            protocol,
-            ByteHash::Keccak256,
-            cap_height,
-            native.recursive_pcs_seed(),
-        )?;
+        let pcs = BoundaryPcs::new(log_batch, 1, native.recursive_pcs_seed())?;
         let reduction = PreparedCommittedVerifier::new(log_batch)?;
-        let mut b = CircuitBuilder::<F>::with_construction_limits(CircuitConstructionLimits {
-            max_expression_nodes: 1 << 27,
-            max_pending_connects: 1 << 26,
-            max_non_primitive_calls: 1 << 21,
-            max_non_primitive_slots: 1 << 29,
-        })?;
-        b.enable_native_keccak_f1600()?;
-        let cap: Vec<_> = (0..1 << cap_height)
-            .map(|_| {
-                b.alloc_public_input_array::<16>("Keccak boundary commitment")
-                    .to_vec()
-            })
-            .collect();
+        let mut b = builder()?;
+        let cap = pcs.allocate_cap(&mut b);
         let proof = reduction.allocate(&mut b)?;
-        let opening = pcs.allocate_native_targets(&mut b)?;
-        let initial: Vec<_> = seed
-            .iter()
-            .map(|&v| b.define_const(F::new(u64::from(v))))
-            .collect();
-        let mut ch = BinaryTower128Challenger::with_initial_bytes_with_host::<
-            NativeBinaryEncoding,
-            F,
-        >(&mut b, ByteHash::Keccak256, &initial)?;
-        pcs.observe_commitment_native(&mut b, &mut ch, &cap)?;
+        let opening = pcs.verifier.allocate_native_targets(&mut b)?;
+        let ch = pcs.challenger(&mut b, &seed, &cap)?;
         let claims = reduction.verify_reduction(&mut b, ch, &proof)?;
-        let (values, _) = pcs.verify_at_native(
+        let (values, _) = pcs.verifier.verify_at_native(
             &mut b,
             claims.challenger.clone(),
             &cap,
@@ -122,18 +80,102 @@ impl PreparedCheckpoint {
         );
         claims.authenticate(&mut b, &values[0].current()[0], &values[1].current()[0]);
         Ok(Self {
-            log_batch,
-            cap_height,
             seed,
             native,
-            config,
-            mmcs,
             pcs,
             circuit: b.build()?,
         })
     }
 
     pub fn public_inputs(&self, statement: &Statement) -> Result<Vec<F>> {
+        self.pcs.public_inputs(statement)
+    }
+
+    /// Imports proof messages and PCS paths; acceptance is enforced by the circuit.
+    pub fn private_inputs(&self, statement: &Statement, proof: &CommittedProof) -> Result<Vec<F>> {
+        let mut ch = self.pcs.native_challenger(statement, &self.seed)?;
+        let input = self.native.recursive_input(proof, &mut ch)?;
+        let mut private = input.private_values;
+        private.extend(self.pcs.private_inputs(
+            statement,
+            &input.points,
+            &input.opening,
+            &mut ch,
+        )?);
+        Ok(private)
+    }
+}
+
+impl BoundaryPcs {
+    fn new(log_batch: usize, openings: usize, ring_seed: Vec<F>) -> Result<Self> {
+        let config = WhirConfig::new_with_domain(
+            log_batch + 6,
+            ProtocolParameters {
+                security_level: 152,
+                pow_bits: 16,
+                round_log_inv_rates: vec![],
+                folding_factor: FoldingFactor::Constant(imt_flock_backend::WHIR_FOLD),
+                soundness_type: SecurityAssumption::JohnsonBound,
+                starting_log_inv_rate: imt_flock_backend::WHIR_LOG_INV_RATE,
+            },
+            &BinaryWhirDomain::<F>::default(),
+        )?;
+        let cap_height = imt_flock_backend::WHIR_CAP_HEIGHT;
+        let mmcs = Mmcs::new(
+            SerializingHasher::new(Keccak256Hash),
+            CompressionFunctionFromHasher::new(Keccak256Hash),
+            cap_height,
+        );
+        let shape = TableShape::new(log_batch + 11, 1);
+        let protocol = OpeningProtocol::new(
+            (0..2)
+                .map(|_| TableSpec::new(shape, vec![OpeningBatch::new(vec![0], vec![]); openings]))
+                .collect(),
+        );
+        let verifier = BinaryPolyDeferredWhirTraceVerifier::new(
+            &config,
+            protocol,
+            ByteHash::Keccak256,
+            cap_height,
+            ring_seed,
+        )?;
+        Ok(Self {
+            log_batch,
+            cap_height,
+            config,
+            mmcs,
+            verifier,
+        })
+    }
+
+    fn allocate_cap(&self, b: &mut CircuitBuilder<F>) -> Vec<Vec<ExprId>> {
+        (0..1 << self.cap_height)
+            .map(|_| {
+                b.alloc_public_input_array::<16>("Keccak boundary commitment")
+                    .to_vec()
+            })
+            .collect()
+    }
+
+    fn challenger(
+        &self,
+        b: &mut CircuitBuilder<F>,
+        seed: &[u8; 32],
+        cap: &[Vec<ExprId>],
+    ) -> Result<BinaryTower128Challenger> {
+        let initial: Vec<_> = seed
+            .iter()
+            .map(|&v| b.define_const(F::new(u64::from(v))))
+            .collect();
+        let mut ch = BinaryTower128Challenger::with_initial_bytes_with_host::<
+            NativeBinaryEncoding,
+            F,
+        >(b, ByteHash::Keccak256, &initial)?;
+        self.verifier.observe_commitment_native(b, &mut ch, cap)?;
+        Ok(ch)
+    }
+
+    fn public_inputs(&self, statement: &Statement) -> Result<Vec<F>> {
         ensure!(
             statement.log_batch as usize == self.log_batch,
             "incorrect Keccak batch size"
@@ -149,25 +191,35 @@ impl PreparedCheckpoint {
             .flat_map(|root| {
                 bytes_to_limbs(root)
                     .into_iter()
-                    .map(|word| F::new(u64::from(word)))
+                    .map(|w| F::new(u64::from(w)))
             })
             .collect())
     }
 
-    /// Imports proof messages and PCS paths; acceptance is enforced by the circuit.
-    pub fn private_inputs(&self, statement: &Statement, proof: &CommittedProof) -> Result<Vec<F>> {
+    fn native_challenger(&self, statement: &Statement, seed: &[u8; 32]) -> Result<Ch> {
         self.public_inputs(statement)?;
         let commitment = MerkleCap::<F, [u8; 32]>::new(statement.commitment.roots().to_vec());
-        let mut ch = Ch::from_hasher(self.seed.to_vec(), Keccak256Hash);
-        self.pcs.observe_native_commitment(&mut ch, &commitment)?;
-        let input = self.native.recursive_input(proof, &mut ch)?;
-        let points = input.points.map(Point::new);
-        let (values, tensors, whir): Opening = postcard::from_bytes(&input.opening)?;
+        let mut ch = Ch::from_hasher(seed.to_vec(), Keccak256Hash);
+        self.verifier
+            .observe_native_commitment(&mut ch, &commitment)?;
+        Ok(ch)
+    }
+
+    fn private_inputs(
+        &self,
+        statement: &Statement,
+        points: &[Vec<E>],
+        opening: &[u8],
+        ch: &mut Ch,
+    ) -> Result<Vec<F>> {
+        let commitment = MerkleCap::<F, [u8; 32]>::new(statement.commitment.roots().to_vec());
+        let points: Vec<_> = points.iter().cloned().map(Point::new).collect();
+        let (values, tensors, whir): Opening = postcard::from_bytes(opening)?;
         let opening = PcsProof {
             evals: vec![],
             whir,
         };
-        let witness = self.pcs.import_native(
+        Ok(self.verifier.import_native(
             &self.config,
             &self.mmcs,
             &commitment,
@@ -175,10 +227,18 @@ impl PreparedCheckpoint {
             &values,
             &tensors,
             &opening,
-            &mut ch,
-        )?;
-        let mut private = input.private_values;
-        private.extend(witness);
-        Ok(private)
+            ch,
+        )?)
     }
+}
+
+fn builder() -> Result<CircuitBuilder<F>> {
+    let mut b = CircuitBuilder::with_construction_limits(CircuitConstructionLimits {
+        max_expression_nodes: 1 << 27,
+        max_pending_connects: 1 << 26,
+        max_non_primitive_calls: 1 << 21,
+        max_non_primitive_slots: 1 << 29,
+    })?;
+    b.enable_native_keccak_f1600()?;
+    Ok(b)
 }

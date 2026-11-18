@@ -305,9 +305,11 @@ fn validate_configuration(settings: &Settings, parameters: &Parameters) -> Resul
     ensure!(
         settings.pcs_bits == 152
             && settings.pow_bits == 16
-            && settings.log_inv_rate == 1
-            && settings.fold == 4,
-        "binary outer parameters are fixed: PCS 152, PoW 16, rate 1/2, fold 4"
+            && settings.log_inv_rate == imt_flock_backend::WHIR_LOG_INV_RATE
+            && settings.fold == imt_flock_backend::WHIR_FOLD,
+        "binary outer parameters are fixed: PCS 152, PoW 16, inverse-rate log {}, fold {}",
+        imt_flock_backend::WHIR_LOG_INV_RATE,
+        imt_flock_backend::WHIR_FOLD
     );
     ensure!(
         parameters.min_algebraic_bits >= 144,

@@ -7,7 +7,6 @@ use p3_multilinear_util::point::Point;
 use p3_sumcheck::layout::Table;
 
 use super::{E, F, POSITIONS, State, linked::PortOpening};
-use crate::config::Challenger;
 
 pub(super) const PORTS: usize = 232;
 pub(super) const PORT_LOG: usize = 8;
@@ -27,7 +26,7 @@ pub(super) fn table(inputs: &[State], outputs: &[State]) -> Table<F> {
     Table::new(RowMajorMatrix::new(columns, inputs.len()))
 }
 
-pub(super) fn claim(opening: &PortOpening, ch: &mut Challenger) -> (Vec<E>, E) {
+pub(super) fn claim<C: FieldChallenger<F>>(opening: &PortOpening, ch: &mut C) -> (Vec<E>, E) {
     let point = Point::new(
         (0..PORT_LOG)
             .map(|_| ch.sample_algebra_element())
@@ -51,7 +50,7 @@ pub(super) fn claim(opening: &PortOpening, ch: &mut Challenger) -> (Vec<E>, E) {
     (weights, value)
 }
 
-fn location(port: usize) -> (usize, usize, bool) {
+pub(super) fn location(port: usize) -> (usize, usize, bool) {
     match port {
         0..100 => (0, port * 16, false),
         100..200 => (1, (port - 100) * 16, false),

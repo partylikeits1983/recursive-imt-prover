@@ -61,8 +61,7 @@ pub(crate) fn verify<'a, A: VerifierAir<F, Poly192>>(
     bytes: &[u8],
 ) -> Result<()> {
     ensure!(bytes.len() <= 16 << 20, "oversized aggregate proof");
-    let (proof, rest): (AggregateProof, _) = postcard::take_from_bytes(bytes)?;
-    ensure!(rest.is_empty(), "trailing aggregate proof data");
+    let proof: AggregateProof = crate::proof_codec::decode(bytes)?;
     let ports = arithmetic_opening(
         config,
         instances,

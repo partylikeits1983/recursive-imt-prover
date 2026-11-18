@@ -70,37 +70,37 @@ fn checkpoint_aggregate_binds_real_arithmetic_ports_and_cached_authority() {
         assert!(prepared.verify(&bytes, &changed).is_err());
         assert!(cached.verify(&bytes, &changed).is_err());
     }
-    let mut changed: AggregateProof = postcard::from_bytes(&bytes).unwrap();
+    let mut changed: AggregateProof = crate::proof_codec::decode(&bytes).unwrap();
     changed.arithmetic.opening.values[0] += Poly192::ONE;
     assert!(
         cached
-            .verify(&postcard::to_allocvec(&changed).unwrap(), &public)
+            .verify(&crate::proof_codec::encode(&changed).unwrap(), &public)
             .is_err()
     );
-    changed = postcard::from_bytes(&bytes).unwrap();
+    changed = crate::proof_codec::decode(&bytes).unwrap();
     changed.statement.log_batch += 1;
     assert!(
         cached
-            .verify(&postcard::to_allocvec(&changed).unwrap(), &public)
+            .verify(&crate::proof_codec::encode(&changed).unwrap(), &public)
             .is_err()
     );
     let mut other_private = private.clone();
     other_private[0] = OldF::from_repr(other_private[0].to_repr() ^ 1);
     let other_public = self::public(&other_private);
     let (other_bytes, _) = prepared.prove(&other_public, &other_private).unwrap();
-    let other: AggregateProof = postcard::from_bytes(&other_bytes).unwrap();
-    changed = postcard::from_bytes(&bytes).unwrap();
+    let other: AggregateProof = crate::proof_codec::decode(&other_bytes).unwrap();
+    changed = crate::proof_codec::decode(&bytes).unwrap();
     changed.statement = other.statement;
     assert!(
         cached
-            .verify(&postcard::to_allocvec(&changed).unwrap(), &public)
+            .verify(&crate::proof_codec::encode(&changed).unwrap(), &public)
             .is_err()
     );
-    changed = postcard::from_bytes(&bytes).unwrap();
+    changed = crate::proof_codec::decode(&bytes).unwrap();
     changed.keccak = other.keccak;
     assert!(
         cached
-            .verify(&postcard::to_allocvec(&changed).unwrap(), &public)
+            .verify(&crate::proof_codec::encode(&changed).unwrap(), &public)
             .is_err()
     );
     assert!(Verifier::from_bytes(&key, &digest, &prepared.identity(), b"wrong-config").is_err());

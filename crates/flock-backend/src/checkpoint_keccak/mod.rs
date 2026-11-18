@@ -10,7 +10,7 @@
 mod closing;
 mod committed;
 mod linear;
-pub(crate) mod linked;
+pub mod linked;
 mod ports;
 pub mod recursive;
 mod rounds;

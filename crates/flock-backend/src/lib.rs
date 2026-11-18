@@ -7,6 +7,8 @@ pub mod checkpoint_keccak;
 mod checkpoint_tests;
 
 mod config;
+#[cfg(test)]
+mod coordinate_recursion_tests;
 mod copies;
 #[cfg(test)]
 mod copies_tests;
@@ -17,9 +19,11 @@ mod keccak;
 #[cfg(test)]
 mod known_openings_tests;
 mod mixed;
+mod proof_codec;
 mod verifier;
 mod witness;
 
+pub use config::{WHIR_CAP_HEIGHT, WHIR_FOLD, WHIR_LOG_INV_RATE};
 pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
 #[cfg(test)]
 mod tests;
@@ -291,10 +295,10 @@ impl Prepared {
         let mut identity = Keccak256::new();
         identity.update(match backend {
             HashBackend::Flock => {
-                b"imt-flock-backend-v11/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-flock-backend-v12/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
             HashBackend::Checkpoint => {
-                b"imt-checkpoint-backend-v4/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-checkpoint-backend-v5/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
         identity.update((domain.len() as u64).to_le_bytes());
@@ -572,13 +576,13 @@ impl Prepared {
             )?;
             let statement = pending.statement.clone();
             let keccak = scheme.prove(pending, &ports)?;
-            postcard::to_allocvec(&checkpoint::AggregateProof {
+            proof_codec::encode(&checkpoint::AggregateProof {
                 statement,
                 arithmetic: proof,
                 keccak,
             })?
         } else {
-            postcard::to_allocvec(&proof)?
+            proof_codec::encode(&proof)?
         };
         let prove_ms = elapsed(start);
         let start = Instant::now();
@@ -621,8 +625,7 @@ impl Prepared {
                 bytes,
             );
         }
-        let (proof, rest): (Proof, _) = postcard::take_from_bytes(bytes)?;
-        ensure!(rest.is_empty(), "trailing aggregate proof data");
+        let proof: Proof = proof_codec::decode(bytes)?;
         verify(
             &self.config,
             instances,

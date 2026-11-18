@@ -48,6 +48,11 @@ Changes:
   supplied by trusted configuration and bound into the compiled circuit. Existing
   ordinary-opening paths are unchanged. Root `tests/checkpoint_recursion.rs`
   checks real backend proofs, post-import forgeries and an actual outer proof.
+- `src/pcs/binary/coordinate_poly.rs`: expand the trusted current-only arithmetic
+  opening schedule into Boolean coordinates, then reconstruct logical Poly192
+  evaluations after PCS authentication. Zero-width columns reconstruct zero;
+  other columns use exactly their declared low coordinates. Native backend tests
+  cover mixed widths, partial/reordered batches and forged openings.
 
 The repository's `src/binary/veil/whir/recursive/` component tests import actual
 prefixed native proofs, constrain their verification, and reject mutations.

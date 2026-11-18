@@ -234,36 +234,22 @@ impl CommittedBatch {
             self.transcript,
         )?;
         let closing = closing::verify(&proof.closing, &input, &mut ch)?;
-        let mut private_values: Vec<_> = proof
-            .output
-            .coefficients()
-            .map(|c| CF::new(c.to_bits()))
-            .to_vec();
-        private_values
-            .extend(PreparedVerifier::new(self.log_batch)?.private_values(&proof.reduction)?);
-        private_values.extend(sumcheck_values(&proof.closing, POSITION_LOG, 2)?);
+        let private_values = recursive_values(
+            self.log_batch,
+            proof.output,
+            &proof.reduction,
+            &proof.closing,
+        )?;
         let points = [closing.point, output_point].map(|point| {
             point
                 .iter()
                 .map(|v| CE::new(v.coefficients().map(|c| CF::new(c.to_bits()))))
                 .collect()
         });
-        let BooleanWhirOpening::Deferred(opening) = &proof.opening.opening else {
-            anyhow::bail!("recursive Keccak requires deferred WHIR");
-        };
-        ensure!(
-            opening
-                .reduction
-                .claims
-                .iter()
-                .all(|c| c.successor.is_none()),
-            "unexpected successor tensor"
-        );
-        let tensors: Vec<_> = opening.reduction.claims.iter().map(|c| &c.tensor).collect();
         Ok(CommittedInput {
             private_values,
             points,
-            opening: postcard::to_allocvec(&(&proof.opening.values, tensors, &opening.opening))?,
+            opening: recursive_opening(&proof.opening)?,
         })
     }
 
@@ -315,6 +301,38 @@ pub(super) fn table(states: &[State], log_batch: usize) -> Table<F> {
         words.resize(words.len() + POSITIONS / 64 - state.len(), 0);
     }
     Table::from_packed_bits(RowMajorMatrix::new(words, 1), log_batch + POSITION_LOG)
+}
+
+pub(super) fn recursive_values(
+    log_batch: usize,
+    output: E,
+    reduction: &Proof,
+    closing: &closing::Proof,
+) -> Result<Vec<CF>> {
+    let mut values: Vec<_> = output.coefficients().map(|c| CF::new(c.to_bits())).to_vec();
+    values.extend(PreparedVerifier::new(log_batch)?.private_values(reduction)?);
+    values.extend(sumcheck_values(closing, POSITION_LOG, 2)?);
+    Ok(values)
+}
+
+pub(super) fn recursive_opening(proof: &Opening) -> Result<Vec<u8>> {
+    let BooleanWhirOpening::Deferred(opening) = &proof.opening else {
+        anyhow::bail!("recursive Keccak requires deferred WHIR");
+    };
+    ensure!(
+        opening
+            .reduction
+            .claims
+            .iter()
+            .all(|c| c.successor.is_none()),
+        "unexpected successor tensor"
+    );
+    let tensors: Vec<_> = opening.reduction.claims.iter().map(|c| &c.tensor).collect();
+    Ok(postcard::to_allocvec(&(
+        &proof.values,
+        tensors,
+        &opening.opening,
+    ))?)
 }
 
 #[cfg(test)]

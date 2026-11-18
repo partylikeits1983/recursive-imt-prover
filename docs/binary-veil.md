@@ -85,6 +85,45 @@ See [the backend implementation](../crates/flock-backend/README.md).
   preserving every constraint and activation check.
 - Keep Keccak states packed through the first two instance rounds; use upstream
   packed Poly192 arithmetic and accumulate products before field reduction.
+- Encode aggregate field elements at fixed width and use outer rate 1/4 to reduce
+  opening traffic. Johnson, the PCS target and the conditional floor are unchanged.
+
+## Compact aggregate proofs
+
+Aggregate encoding now uses fixed-width field elements instead of variable-length
+integers. The outer initial rate is 1/4; fold 4, Johnson, the 152-bit PCS target,
+16-bit grinding ceiling and 144-bit conditional floor are retained. These are
+size optimizations, not a stronger security claim. Child encoding is unchanged.
+
+Depth-32 checkpoint tree pair on the M2 Pro with four threads, Rust 1.98.1,
+release with thin LTO; one cold and two warm samples, excluding compilation:
+
+| Operation | Measurement |
+|---|---:|
+| Child proving, all six children | 3.152–4.022 s |
+| Child proof bytes | 1,127,590–1,130,405 |
+| Aggregate setup | 6.187 s |
+| Cold aggregation | 20.304 s |
+| Warm aggregation median (range) | 21.018 s (20.710–21.326) |
+| Aggregate proof bytes | 1,346,752–1,347,072 |
+| Warm verification median | 115.5 ms |
+| Fresh verifier wall | 136.2 ms |
+| Warm batch critical path median | 29.186 s |
+| Peak physical footprint / maximum RSS | 8.20 GB / 4.79 GB |
+
+The aggregate is about 24% smaller than the earlier nullifier-statement baseline,
+with about 11% longer aggregation and higher physical footprint (6.52 → 8.20 GB).
+The 1.5 MB aggregate target is met for this pair; the 1 MB target and sub-10-second
+aggregation target remain unmet. The codeword budget includes all 218,103,808
+initial cells, including the checkpoint PCS. Conditional algebraic accounting
+reports 146.218 bits; end-to-end security remains unestablished.
+
+Fresh verification succeeds with only the proof, ordered statement and trusted
+key files. Seventeen mutations of statements, proof bytes, encoding and authority
+are rejected. Recursive Keccak and coordinate-opening components also pass real
+proof tests; the complete in-circuit aggregate verifier and reusable merge remain
+unfinished.
+[Raw samples, resource measurements and checks](../benchmarks/binary/masked-aggregate/compact-d32-n2.json).
 
 ## Nullifier statement
 
@@ -92,8 +131,9 @@ The current depth-32 relation authenticates `(root, nullifier_hash)`. Its extra
 Keccak permutation and four private carry columns fit the same 1,024-row trace
 and 128-column stacking. Parameters remain unchanged.
 
-Checkpoint first aggregation on the M2 Pro, four threads, Rust 1.98.1, release
-with thin LTO; one cold and two warm samples, excluding compilation:
+Earlier rate-1/2 checkpoint first aggregation on the M2 Pro, four threads,
+Rust 1.98.1, release with thin LTO; one cold and two warm samples, excluding
+compilation:
 
 | Operation | Measurement |
 |---|---:|
@@ -237,7 +277,8 @@ For `l = log2(batch)`, the reduction's conditional error numerator is
 charges the PCS candidate-set bound, and combines this with the prescribed-opening
 security ledger. It requires at least 144 conditional algebraic bits and keeps
 Johnson/152 PCS bits, a 16-bit
-PoW ceiling, rate 1/2 and fold 4. This is a conditional algebraic/PCS calculation,
+PoW ceiling and fold 4. The measurements below used rate 1/2; the current
+configuration uses rate 1/4. This is a conditional algebraic/PCS calculation,
 not a Fiat–Shamir, knowledge or end-to-end security theorem. Keccak's generic
 classical collision work factor is reported separately; no new privacy or
 post-quantum claim is made.
@@ -311,7 +352,7 @@ authority bindings and key digests. Separate tests generate invalid port-link
 proofs without a native rejection gate and require the cryptographic verifier
 to reject them. The old Flock path also verifies through the new key format.
 
-Verifier snapshot `imt-binary-trusted-verifier-v2` authenticates the selected
+Verifier snapshot `imt-binary-trusted-verifier-v3` authenticates the selected
 backend along with the constraints, preprocessing, coordinate layout and
-authority. Version-1 snapshots and previous aggregate formats are deliberately
+authority. Earlier snapshots and previous aggregate formats are deliberately
 rejected. Trusted key/digest provisioning remains unchanged. Recursive merging through 64 children and joint child statistical-ZK analysis remain open.

@@ -110,10 +110,9 @@ including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
 Tests check retained occurrences, direct pairs, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
-swap across partitions. The checkpoint aggregate uses protocol v7 / backend
-identity v4; Flock retains protocol v6 / backend identity v11. Both export verifier
-snapshot v2, rejecting older key snapshots. Child proof formats and security
-parameters are unchanged.
+swap across partitions. Checkpoint uses backend identity v5; Flock uses v12.
+Both export verifier snapshot v3 and fixed-width aggregate proof encoding
+(`IMTPRF01`), rejecting older artifacts. Child proof formats are unchanged.
 
 Arithmetic partitions omit preprocessing columns that are identically zero.
 The trusted compiler records the original-to-compact column map, substitutes
@@ -122,7 +121,7 @@ remaining columns into the preprocessing commitment. Tests compare every retaine
 cell and omitted zero against the original native table, then check the imported
 constraints and complete bus multisets. No witness-dependent column is removed.
 
-Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/2,
+Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/4,
 folding factor 4, Poly192 challenges, Keccak-256, and a required 144-bit conditional
 algebraic floor. The 128-bit generic classical hash work factor is reported
 separately. These figures do not establish ROM/knowledge/recursive composition,
@@ -190,7 +189,7 @@ the verifier uses its authenticated port readings and row point. A degree-two
 sumcheck links a fresh random combination of all ports to four ordinary boundary
 PCS openings, shared with the permutation argument. Raw and byte-swapped limbs
 are included. The link cannot be replaced by a native verifier Boolean or by two
-unrelated valid proofs. `Verifier` replays the same linked checks from a v2 key.
+unrelated valid proofs. `Verifier` replays the same linked checks from a v3 key.
 
 The conditional ledger charges the link over the product of both PCS candidate
 sets and combines it with the arithmetic and Keccak budgets. The complete

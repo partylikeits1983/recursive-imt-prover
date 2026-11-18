@@ -121,6 +121,12 @@ bind the new relation and trusted configuration. Old root/amount proofs and keys
 are incompatible and must be regenerated. Historical measurements retain their
 original protocol identifiers and are not measurements of this relation.
 
+Aggregate files use the `IMTPRF01` header and fixed-width little-endian bincode
+2.0.1 serialization. This removes variable-integer overhead from field elements;
+it does not change transcript messages. Decoding caps input at 16 MiB and
+rejects trailing data. Verifier snapshots use v3; regenerate older aggregate
+proofs and verifier data after updating. Child encoding is unchanged.
+
 ## Validation
 
 The updated child, Flock/checkpoint first aggregates and flat checkpoint

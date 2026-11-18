@@ -18,10 +18,14 @@ use super::{
 
 mod bridge;
 mod committed;
+mod linked;
 mod weights;
-pub(super) use bridge::{Bridge, deferred_seed};
+pub(crate) use bridge::{Bridge, deferred_seed};
 pub use committed::{
     BoundaryReduction, CommittedInput, CommittedTargets, PreparedCommittedVerifier,
+};
+pub use linked::{
+    LinkedInput, LinkedReduction, LinkedTargets, PortTargets, PreparedLinkedVerifier,
 };
 use weights::Weights;
 

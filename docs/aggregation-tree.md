@@ -124,12 +124,16 @@ checks tensor readings and closes their linear functional in WHIR's first
 sumcheck, using the backend's existing protocol. Real proofs pass; modified
 commitments, tensors, openings and proof messages fail after witness import.
 An actual outer proof also verifies against a separately restored verifier key.
-For eight Keccak permutations, its circuit has 616,467 witnesses. One first-proof
+At the previous rate 1/2, eight Keccak permutations used 616,467 witnesses. One first-proof
 sample took 1.21 s to prove and 57 ms to verify (1.25 MB, M2 Pro, four threads).
 The full test command's peak RSS was 943 MB; this is not physical footprint.
 [Raw component measurement](../benchmarks/binary/checkpoint-keccak/recursive-committed.json).
-Arithmetic port links and the full aggregate verifier remain to be composed.
-This committed-permutation component is not a merge proof.
+The linked adapter now also constrains the 232 arithmetic port readings against
+four authenticated boundary openings, including byte-swapped words. Its arithmetic
+transcript seed binds the authority and boundary commitment before row challenges.
+The coordinate-opening adapter reconstructs logical columns from authenticated
+bit coordinates using trusted widths. The complete arithmetic verifier and stable
+merge authority remain to be composed; these components are not merge proofs.
 
 Run these component checks with:
 
@@ -139,16 +143,19 @@ RAYON_NUM_THREADS=4 cargo test --locked --release -p imt-flock-backend \
 cargo test --locked --release --test recursive_trace
 RAYON_NUM_THREADS=4 cargo test --locked --release --test checkpoint_recursion \
   -- --include-ignored --nocapture --test-threads=1
+RAYON_NUM_THREADS=4 cargo test --locked --release --test linked_checkpoint \
+  -- --include-ignored --nocapture --test-threads=1
 ```
 
 1. **Retain the child and first aggregation.** Depth is 32. Both are implemented;
    first aggregation constrains two complete masked-child verifiers. Checkpoint
-   is the initial tree backend. The root/nullifier-hash relation's warm two-child
-   median is 18.926 s; [measurements](binary-veil.md#nullifier-statement).
+   is the initial tree backend. The two-child compact aggregate is 1.35 MB,
+   with a 21.018 s warm median;
+   [measurements](binary-veil.md#compact-aggregate-proofs).
 2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
-   native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. Add the
-   missing coordinate-opening adapter and the Keccak GKR/port-link checks. Test
-   each adapter against actual native proofs before composing the whole verifier.
+   native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. Compose
+   the tested coordinate-opening and Keccak port-link adapters with the complete
+   arithmetic verifier. Test the combined relation against actual native proofs.
    A reduction without its authenticated PCS boundaries is not an aggregate.
 3. **Fix the common aggregate layout.** First aggregation and merge must share
    a bounded proof shape, public layout, hash/PCS parameters and AIR layout.

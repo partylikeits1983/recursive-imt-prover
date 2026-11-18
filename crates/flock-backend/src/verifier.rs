@@ -23,7 +23,7 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
-const FORMAT: &str = "imt-binary-trusted-verifier-v2";
+const FORMAT: &str = "imt-binary-trusted-verifier-v3";
 
 #[derive(Serialize, Deserialize)]
 struct VerifierData<K> {
@@ -263,8 +263,7 @@ impl Verifier {
                 bytes,
             );
         }
-        let (proof, rest): (Proof, _) = postcard::take_from_bytes(bytes)?;
-        ensure!(rest.is_empty(), "trailing aggregate proof data");
+        let proof: Proof = crate::proof_codec::decode(bytes)?;
         verify(
             &self.config,
             self.instances(&public),

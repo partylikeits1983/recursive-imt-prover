@@ -40,7 +40,7 @@ commitment inside the proof. See [tree binding](aggregation-tree.md).
 | Fields | Poly64 values, Poly192 challenges |
 | Hashing | Keccak-256 for commitments and transcripts |
 | Child query target | 160 bits; code rate 1/16 |
-| Outer PCS | 152-bit target, at most 16 grinding bits, rate 1/2, fold 4 |
+| Outer PCS | 152-bit target, at most 16 grinding bits, rate 1/4, fold 4 |
 | Conditional algebraic floor | 144 bits |
 | Proximity analysis | Johnson; VEIL binding also capped at half distance |
 

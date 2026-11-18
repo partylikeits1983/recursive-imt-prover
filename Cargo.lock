@@ -86,6 +86,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "bincode"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36eaf5d7b090263e8150820482d5d93cd964a81e4019913c972f4edcc6edb740"
+dependencies = [
+ "serde",
+ "unty",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -391,12 +401,14 @@ name = "imt-flock-backend"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "hex",
  "p3-air 0.8.0",
  "p3-air 0.9.0-rc.2",
  "p3-binary-field 0.8.0",
  "p3-binary-field 0.9.0-rc.2",
  "p3-binary-pcs 0.8.0",
+ "p3-binary-pcs 0.9.0-rc.2",
  "p3-bus 0.8.0",
  "p3-bus 0.9.0-rc.2",
  "p3-challenger 0.8.0",
@@ -407,16 +419,22 @@ dependencies = [
  "p3-field 0.8.0",
  "p3-flock",
  "p3-keccak 0.8.0",
+ "p3-keccak 0.9.0-rc.2",
  "p3-matrix 0.8.0",
  "p3-maybe-rayon 0.8.0",
  "p3-merkle-tree 0.8.0",
+ "p3-merkle-tree 0.9.0-rc.2",
  "p3-multi-stark 0.8.0",
  "p3-multilinear-util 0.8.0",
+ "p3-multilinear-util 0.9.0-rc.2",
  "p3-recursion",
  "p3-security 0.8.0",
  "p3-sumcheck 0.8.0",
+ "p3-sumcheck 0.9.0-rc.2",
  "p3-symmetric 0.8.0",
+ "p3-symmetric 0.9.0-rc.2",
  "p3-whir 0.8.0",
+ "p3-whir 0.9.0-rc.2",
  "postcard",
  "serde",
  "serde_json",
@@ -2114,6 +2132,12 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "unty"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
 name = "utf8parse"

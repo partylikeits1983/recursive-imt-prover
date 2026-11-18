@@ -94,7 +94,7 @@ available as a baseline; it is not the planned recursive merge.
 | Values / challenges | Poly64 / Poly192 |
 | Hashes and transcripts | Keccak-256 |
 | Child query target / code rate | 160 bits / 1/16 |
-| Outer PCS target / initial rate / fold | 152 bits / 1/2 / 4 |
+| Outer PCS target / initial rate / fold | 152 bits / 1/4 / 4 |
 | WHIR grinding ceiling | 16 bits |
 | Conditional algebraic floor | 144 bits |
 | WHIR proximity analysis | `SecurityAssumption::JohnsonBound` |
@@ -119,13 +119,15 @@ includes process startup and authenticated verifier-key loading.
 
 | Backend / children | Aggregation | Aggregate size | Fresh verification |
 |---|---:|---:|---:|
-| Checkpoint tree pair / 2 | 18.9 s | 1.78 MB | 138 ms |
+| Checkpoint tree pair / 2 | 21.0 s | 1.35 MB | 136 ms |
 
-Children took 3.3–4.3 s each. Warm aggregation ranged from 18.0–19.9 s; the complete
-batch critical path was 27.2 s median, excluding setup. Peak physical footprint
-was 6.5 GB. Compilation is excluded; filesystem caches were not reset.
+Children took 3.2–4.0 s each, producing approximately 1.13 MB proofs. Warm
+aggregation ranged from 20.7–21.3 s; the complete batch critical path was 29.2 s
+median, excluding setup. Peak physical footprint was 8.2 GB. The compact format
+is about 24% smaller than the previous aggregate, with about 11% longer aggregation
+and higher memory use. Compilation is excluded; filesystem caches were not reset.
 This measures the first tree level; recursive merging remains unimplemented.
-[Raw measurements and optimization history](docs/binary-veil.md#nullifier-statement).
+[Raw measurements and optimization history](docs/binary-veil.md#compact-aggregate-proofs).
 
 ## Running locally
 
@@ -148,6 +150,8 @@ The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.js
 and a timing report. Keep the verifier key and `trusted.json` with independently
 trusted verifier data. A key and matching digest supplied only by an untrusted
 prover do not establish authority.
+
+Aggregate encoding and verifier snapshots have changed; regenerate older artifacts.
 
 `demo` and `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` produces a diagnostic proof bundle, not one aggregate.

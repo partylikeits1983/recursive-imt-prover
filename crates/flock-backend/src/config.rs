@@ -4,9 +4,7 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use p3_binary_field::{BinaryChallenger, Poly64, Poly192};
-use p3_binary_pcs::whir::{
-    BinaryWhirDomain, BooleanWhirData, BooleanWhirPcs, BooleanWhirProver, recommended_cap_height,
-};
+use p3_binary_pcs::whir::{BinaryWhirDomain, BooleanWhirData, BooleanWhirPcs, BooleanWhirProver};
 use p3_challenger::HashChallenger;
 use p3_keccak::Keccak256Hash;
 use p3_merkle_tree::MerkleTreeMmcs;
@@ -19,6 +17,9 @@ use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
 use p3_whir::{FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig};
 
 type Hash = SerializingHasher<Keccak256Hash>;
+pub const WHIR_FOLD: usize = 4;
+pub const WHIR_LOG_INV_RATE: usize = 2;
+pub const WHIR_CAP_HEIGHT: usize = 0;
 type Compress = CompressionFunctionFromHasher<Keccak256Hash, 2, 32>;
 pub type Mmcs = MerkleTreeMmcs<Poly64, u8, Hash, Compress, 2, 32>;
 pub type Challenger = BinaryChallenger<Poly64, HashChallenger<u8, Keccak256Hash, 32>>;
@@ -45,7 +46,7 @@ impl Config {
         let cells = |shapes: &[TableShape], encoding: &[TableEncoding]| {
             let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, encoding));
             1usize
-                .checked_shl((arity - 6 + 1) as u32)
+                .checked_shl((arity - 6 + WHIR_LOG_INV_RATE) as u32)
                 .ok_or_else(|| anyhow::anyhow!("codeword size overflow"))
         };
         let main_codeword_cells = cells(main, &main_encoding)?;
@@ -95,14 +96,17 @@ pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result
             security_level: 152,
             pow_bits: 16,
             round_log_inv_rates: vec![],
-            folding_factor: FoldingFactor::Constant(4),
+            folding_factor: FoldingFactor::Constant(WHIR_FOLD),
             soundness_type: SecurityAssumption::JohnsonBound,
-            starting_log_inv_rate: 1,
+            starting_log_inv_rate: WHIR_LOG_INV_RATE,
         },
         &domain,
     )?;
-    let cap = recommended_cap_height(&config);
-    let mmcs = Mmcs::new(Hash::new(Keccak256Hash), Compress::new(Keccak256Hash), cap);
+    let mmcs = Mmcs::new(
+        Hash::new(Keccak256Hash),
+        Compress::new(Keccak256Hash),
+        WHIR_CAP_HEIGHT,
+    );
     let bits = BooleanWhirPcs::new(BooleanWhirProver::new(config, domain, mmcs), arity)?;
     Ok(MixedTraceCommitment::new(
         p3_binary_pcs::BooleanTraceCommitment::from_commitment(bits),
