@@ -1,5 +1,5 @@
 //! Partition whole witness-ID groups using bounds from the fixed circuit.
-use crate::F;
+use crate::{F, copies::CopyPruner};
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_binary_field::TowerLevel;
@@ -132,7 +132,9 @@ pub fn coordinate_widths(
     Ok(widths)
 }
 
-pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>> {
+pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<(Vec<Arc<FanoutShard>>, CopyPruner)> {
+    ensure!(fanout.len().is_multiple_of(3), "incomplete fanout row");
+    let mut copies = CopyPruner::new(widths.len());
     let mut shards: Vec<_> = [1, 16, 64]
         .into_iter()
         .flat_map(|coordinate_width| {
@@ -165,7 +167,9 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>
             "invalid fanout witness ID order"
         );
         if count != 0 && id != previous {
-            append_group(&mut shards, widths[previous], previous, start, count)?;
+            if !copies.remove_group(previous, count) {
+                append_group(&mut shards, widths[previous], previous, start, count)?;
+            }
             count = 0;
         }
         if count == 0 {
@@ -174,23 +178,26 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>
         count += 1;
         previous = id;
     }
-    if count != 0 {
+    if count != 0 && !copies.remove_group(previous, count) {
         append_group(&mut shards, widths[previous], previous, start, count)?;
     }
-    Ok(shards
-        .into_iter()
-        .filter(|s| !s.rows.is_empty())
-        .map(|mut s| {
-            s.successor = s.rows.first().is_some_and(|r| r.id == 0)
-                || s.rows.windows(2).any(|r| r[0].id == r[1].id);
-            s.log_height = (s.rows.len() + 1)
-                .next_power_of_two()
-                .trailing_zeros()
-                .max(4) as usize;
-            s.rows.shrink_to_fit();
-            Arc::new(s)
-        })
-        .collect())
+    Ok((
+        shards
+            .into_iter()
+            .filter(|s| !s.rows.is_empty())
+            .map(|mut s| {
+                s.successor = s.rows.first().is_some_and(|r| r.id == 0)
+                    || s.rows.windows(2).any(|r| r[0].id == r[1].id);
+                s.log_height = (s.rows.len() + 1)
+                    .next_power_of_two()
+                    .trailing_zeros()
+                    .max(4) as usize;
+                s.rows.shrink_to_fit();
+                Arc::new(s)
+            })
+            .collect(),
+        copies,
+    ))
 }
 
 fn append_group(

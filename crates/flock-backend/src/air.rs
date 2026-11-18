@@ -1,5 +1,10 @@
 //! Translate the pinned native circuit AIR without changing its constraints.
-use crate::{F, fanout::FanoutShard, gates::GateShard};
+use crate::{
+    F,
+    copies::{CopyPruner, CopySelectors},
+    fanout::FanoutShard,
+    gates::GateShard,
+};
 use anyhow::{Result, ensure};
 use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression};
 use old_air::{AirLayout as OldLayout, BaseAir as OldBaseAir};
@@ -23,6 +28,7 @@ pub enum Chip {
 }
 
 pub struct ImportedAir {
+    copies: CopySelectors,
     source: NativeBusCircuitAir<OldF>,
     successor: bool,
     public_table: bool,
@@ -36,6 +42,26 @@ pub struct ImportedAir {
 }
 
 impl Chip {
+    pub fn prune_copies(&mut self, pruner: &mut CopyPruner) -> Result<()> {
+        if !matches!(self, Self::Native(a) if a.shard.is_none()) {
+            return Ok(());
+        }
+        let pp = self.preprocessed_trace();
+        if let Self::Native(a) = self {
+            ensure!(
+                a.copies.columns.is_empty() && a.copies.replacements.is_empty(),
+                "copies already pruned"
+            );
+            a.copies = pruner.prune(
+                &mut a.interactions,
+                pp.as_ref(),
+                &a.preprocessed_map,
+                a.log_height,
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn has_successor(&self) -> bool {
         matches!(self, Self::Native(a) if a.successor)
     }
@@ -152,6 +178,10 @@ impl Chip {
             successor = false;
         }
         Ok(Self::Native(Box::new(ImportedAir {
+            copies: CopySelectors {
+                columns: vec![],
+                replacements: vec![],
+            },
             successor,
             public_table,
             successor_bus: shard.as_ref().map_or_else(
@@ -186,12 +216,14 @@ impl BaseAir<F> for Chip {
     fn preprocessed_width(&self) -> usize {
         match self {
             Self::Native(a) if a.shard.is_some() => a.shard.as_ref().unwrap().preprocessed_width(),
-            Self::Native(a) => a.preprocessed_map.iter().filter(|c| c.is_some()).count(),
+            Self::Native(a) => {
+                a.preprocessed_map.iter().filter(|c| c.is_some()).count() + a.copies.columns.len()
+            }
             Self::Keccak { .. } => 3,
         }
     }
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
-        match self {
+        let original = match self {
             Self::Native(a) if a.gates.is_some() => {
                 Some(a.gates.as_ref().unwrap().compact_preprocessing())
             }
@@ -201,7 +233,26 @@ impl BaseAir<F> for Chip {
                 .preprocessed_trace()
                 .map(|m| RowMajorMatrix::new(m.values.into_iter().map(convert).collect(), m.width)),
             Self::Keccak { preprocessing } => Some(preprocessing.clone()),
+        };
+        let Self::Native(a) = self else {
+            return original;
+        };
+        if a.copies.columns.is_empty() {
+            return original;
         }
+        let width = self.preprocessed_width();
+        let mut values = vec![F::ZERO; width * (1 << a.log_height)];
+        for (row, output) in values.chunks_exact_mut(width).enumerate() {
+            let old_width = original.as_ref().map_or(0, |pp| pp.width);
+            if let Some(pp) = &original {
+                output[..old_width]
+                    .copy_from_slice(&pp.values[row * old_width..(row + 1) * old_width]);
+            }
+            for (column, selector) in a.copies.columns.iter().enumerate() {
+                output[old_width + column] = F::from_bool(selector[row]);
+            }
+        }
+        Some(RowMajorMatrix::new(values, width))
     }
     fn num_public_values(&self) -> usize {
         match self {
@@ -296,25 +347,32 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                     let value = resolve(c, b, a.successor, &a.preprocessed_map, a.public_table);
                     b.assert_zero(value);
                 }
-                for i in &a.interactions {
+                for (index, i) in a.interactions.iter().enumerate() {
                     let fields: Vec<_> = i
                         .fields
                         .iter()
                         .map(|v| resolve(v, b, a.successor, &a.preprocessed_map, a.public_table))
                         .collect();
-                    let activation = match &i.activation {
-                        OldActivation::Always => BusActivation::Always,
-                        OldActivation::Boundary(v) => BusActivation::Boundary(match v {
-                            OldBoundary::First => BusBoundary::First,
-                            OldBoundary::Last => BusBoundary::Last,
-                        }),
-                        OldActivation::Boolean(v) => BusActivation::Boolean(resolve(
-                            v,
-                            b,
-                            a.successor,
-                            &a.preprocessed_map,
-                            a.public_table,
-                        )),
+                    let activation = if let Some(Some(column)) = a.copies.replacements.get(index) {
+                        let offset = a.preprocessed_map.iter().filter(|c| c.is_some()).count();
+                        BusActivation::Boolean(
+                            b.preprocessed().current(offset + column).unwrap().into(),
+                        )
+                    } else {
+                        match &i.activation {
+                            OldActivation::Always => BusActivation::Always,
+                            OldActivation::Boundary(v) => BusActivation::Boundary(match v {
+                                OldBoundary::First => BusBoundary::First,
+                                OldBoundary::Last => BusBoundary::Last,
+                            }),
+                            OldActivation::Boolean(v) => BusActivation::Boolean(resolve(
+                                v,
+                                b,
+                                a.successor,
+                                &a.preprocessed_map,
+                                a.public_table,
+                            )),
+                        }
                     };
                     b.push_bus_interaction(
                         BusName::new(&i.bus_name),

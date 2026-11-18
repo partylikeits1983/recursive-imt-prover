@@ -1409,3 +1409,84 @@ tampering cases for both
 and [Flock N=2](../benchmarks/binary/masked-aggregate/flock-known-openings-negative.json).
 Sixteen-to-64-child scaling, the statistical-ZK argument and composed 128-bit
 security remain unfinished.
+
+### Eliminating auxiliary copies for single uses and pairs
+
+The adapter now classifies nonzero wire IDs using the trusted native fanout
+preprocessing. For one occurrence, the auxiliary copy value imposes no equality
+after existential elimination, so both bus entries disappear. For exactly two,
+one actual occurrence becomes a pull and the other remains a push of the same
+`(ID, value)` tuple. The original two-occurrence auxiliary row is unnecessary.
+IDs with more occurrences and the zero sentinel keep the grouped copy table.
+All arithmetic equations, coordinate bounds and Keccak port relations remain.
+
+The compiler validates the exact number of removed or redirected occurrences.
+Replacement activations are complete Boolean columns derived from fixed
+preprocessing, committed by the PCS and bound into the verifier identity.
+Witness-dependent IDs or selectors, missing occurrences and excess occurrences
+fail construction. This uses the existing product-bus argument; it introduces
+no multiplicity encoded as a binary-field integer and no new cryptographic
+assumption. Flock identity v10 and checkpoint identity v3 identify the changed
+tables. The cached verifier format remains v2.
+
+At depth 32, N=2 removes 4,246,158 single-use copies and directly matches
+6,313,340 pairs. Stored copy rows fall from 13,579,041 to 3,019,543. The original
+circuit still has 14,415,389 witnesses and 51,376 Keccak calls. Main PCS initial
+codeword cells halve from 134,217,728 to 67,108,864; preprocessing remains
+67,108,864 cells. The checkpoint conditional algebraic ledger is 146.260 bits.
+Child privacy and end-to-end security claims are unchanged.
+
+With the same M2 Pro, four threads, Rust 1.98.1 and security parameters,
+checkpoint N=2 aggregation takes **29.132 s cold**, then 28.850–30.530 s warm,
+median **29.690 s**. This is 8.7% below the preceding 32.521 s warm median.
+Peak physical footprint falls from 10.630 GB to **9.232 GB**, including
+compressed/swapped pages. The aggregate is 1,750,942–1,753,796 bytes. Fresh
+verification takes **155.34 ms** including 136.69 ms decoding/verification and
+13.90 ms key setup, at 28.31 MB RSS. The verifier key is 35,268 bytes. Setup takes
+13.475 s; the warm full-batch critical-path median is 37.172 s. Compilation and
+profiling are excluded; filesystem caches were not reset.
+
+[Checkpoint N=2 raw report](../benchmarks/binary/masked-aggregate/checkpoint-direct-pairs-d32-n2.json)
+uses source fingerprint
+`d178956da80c560ce98c06506e7465e17d655b0fb5c8390a386bb885574db1ff`.
+
+Depth-32 **N=8** also completes three samples and independent verification.
+Aggregation takes **187.390 s cold** and 185.799–218.634 s warm, median
+**202.216 s**. The observed warm median is 8.0% below the preceding 219.720 s,
+but timing ranges overlap. Peak physical footprint falls from 41.453 GB to
+**35.730 GB** (13.8%). Proofs are 1,909,055–1,909,805 bytes. Fresh verification
+takes **186.85 ms**, including 154.76 ms decoding/verification and 20.52 ms key
+setup, at 29.61 MB RSS. The key is 44,804 bytes. Setup increases from 78.849 s to
+97.479 s; the full three-sample process takes 782.686 s. Warm batch critical-path
+median is 228.784 s. The conditional outer ledger is 145.921 bits.
+
+The eight-child layout removes 16,969,212 single-use copies and directly matches
+25,253,360 pairs, leaving 12,076,393 stored copy rows. Main PCS initial codeword
+cells halve to 268,435,456; preprocessing uses the same number, and checkpoint
+boundaries add 33,554,432. No resource or security guard was raised. There was
+no concurrent compilation or profiling. Client proving and aggregation share
+one process in this benchmark, so its memory pressure can affect warm timings.
+
+[Checkpoint N=8 raw report](../benchmarks/binary/masked-aggregate/checkpoint-direct-pairs-d32-n8.json)
+uses the same source fingerprint. This reduces measured memory and proof size;
+it does not meet the latency or 64-child scaling targets.
+
+The default Flock N=2 comparison takes 36.354 s cold and 38.578–40.191 s warm,
+median **39.384 s**. Its proving time regresses from the preceding 36.883 s warm
+median in this run. Proof size falls to 1,350,760–1,351,663 bytes and fresh
+verification improves to **148.21 ms** (126.96 ms decoding/verification and
+14.37 ms setup), at 34.42 MB RSS. Peak physical footprint is 16.422 GB, close to
+the previous 16.650 GB: the Flock hash table keeps its main PCS allocation at
+the same power of two. Setup takes 13.198 s; its key is 35,031 bytes.
+[Flock N=2 raw report](../benchmarks/binary/masked-aggregate/flock-direct-pairs-d32-n2.json).
+Flock retains the smaller proof and slightly faster verification; checkpoint
+is faster to prove and uses less memory. Flock remains the default.
+
+All 52 active library tests and the depth-16 Flock integration test pass, along
+with formatting and workspace Clippy. Tests check exact occurrence counts,
+direct-pair matching, full AIR constraints and bus multisets, zero sentinels,
+and missing, excess or witness-dependent copy declarations. Both backends
+produce real proofs and verify with cached authority. The fresh-process suites
+accept valid aggregates and reject all 13 tampering cases for
+[checkpoint N=8](../benchmarks/binary/masked-aggregate/checkpoint-direct-pairs-negative.json)
+and [Flock N=2](../benchmarks/binary/masked-aggregate/flock-direct-pairs-negative.json).

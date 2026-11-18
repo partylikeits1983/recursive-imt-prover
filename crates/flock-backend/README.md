@@ -34,9 +34,17 @@ Local adaptations:
 - `fanout.rs` partitions whole witness-ID groups into 1-, 16- and 64-coordinate
   tables. Bounds come from constants, Boolean constraints, Keccak ports and a
   forward pass over actual polynomial-coordinate arithmetic. Unknown values
-  retain 64 coordinates; hint execution never supplies a bound. Each original
+  retain 64 coordinates; hint execution never supplies a bound. Each retained
   witness-bus occurrence appears exactly once. Each partition has an inactive
   leading zero row, linked to the zero-sentinel group when present.
+- `copies.rs` removes auxiliary copy rows for nonzero IDs with one or two uses.
+  A singleton's one push and one pull impose no equality after eliminating the
+  auxiliary value. A pair instead matches its two actual values directly: one
+  becomes a pull and the other stays a push. Higher fanout and ID zero retain
+  their original copy constraints. Counts, IDs, directions and any replacement
+  Boolean selectors come only from trusted preprocessing. Construction rejects
+  missing or excess occurrences; all original arithmetic equations and Keccak
+  ports remain constrained. New selectors are committed and authority-bound.
 - Copy occurrences share a row in groups of at most 16. Each occurrence still
   emits its own ordinary product-bus factor, selected by a trusted Boolean
   preprocessing column. No field-valued multiplicity is used: even counts must
@@ -89,10 +97,10 @@ they do not add a probabilistic test or a new soundness-error term. The opening
 tests compare reconstructed evaluations with direct dense multilinear evaluation,
 including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
-Tests check exact occurrence preservation, actual AIR equations and product-bus
+Tests check retained occurrences, direct pairs, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
 swap across partitions. The checkpoint aggregate uses protocol v7 / backend
-identity v2; Flock retains protocol v6 / backend identity v9. Both export verifier
+identity v3; Flock retains protocol v6 / backend identity v10. Both export verifier
 snapshot v2, rejecting older key snapshots. Child proof formats and security
 parameters are unchanged.
 

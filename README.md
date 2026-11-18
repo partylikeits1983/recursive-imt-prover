@@ -35,13 +35,13 @@ Depth-32 measurements on an M2 Pro with four threads:
 
 | Backend / children | Aggregation | Proof | Fresh verification |
 |---|---:|---:|---:|
-| Flock / 2 | 36.9 s warm median | 1.40 MB | 160 ms |
-| Checkpoint / 2 | 32.5 s warm median | 1.82 MB | 172 ms |
-| Checkpoint / 8 | 219.7 s warm median | 1.98 MB | 202 ms |
+| Flock / 2 | 39.4 s warm median | 1.35 MB | 148 ms |
+| Checkpoint / 2 | 29.7 s warm median | 1.75 MB | 155 ms |
+| Checkpoint / 8 | 202.2 s warm median | 1.91 MB | 187 ms |
 
 Proving remains above the latency target. Peak physical footprint, including
-compressed/swapped memory, ranges from 10.6 GB for checkpoint N=2 to about
-41.5 GB for N=8. [Raw measurements and limits](docs/binary-veil.md#reusing-authenticated-boolean-evaluations).
+compressed/swapped memory, ranges from 9.2 GB for checkpoint N=2 to about
+35.7 GB for N=8. [Raw measurements and limits](docs/binary-veil.md#eliminating-auxiliary-copies-for-single-uses-and-pairs).
 Fresh verification includes authenticated key loading; filesystem caches were
 not reset. Keep `verifier.key` and independently trusted `trusted.json` (v2).
 A key/digest pair supplied by an untrusted prover is insufficient.

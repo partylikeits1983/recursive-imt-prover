@@ -247,6 +247,9 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     let scaled = builder.mul(bit, constant);
     let scaled_public = builder.alloc_public_input("scaled_bit");
     builder.connect(scaled, scaled_public);
+    // Keep a sixteen-coordinate ID with three uses after pairs are eliminated.
+    let third_public = builder.public_input();
+    builder.connect(scaled, third_public);
     // Force several packed rows for the same ID, including a partial final
     // row. Distinct outputs prevent common-subexpression elimination.
     let mut extra_public = Vec::new();
@@ -272,7 +275,7 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     .unwrap();
     let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
     let widths = fanout::coordinate_widths(&circuit, &[], 119).unwrap();
-    let shards = fanout::partition(&widths, &fanout_pp.values).unwrap();
+    let (shards, mut copies) = fanout::partition(&widths, &fanout_pp.values).unwrap();
     let mut shard_widths = shards
         .iter()
         .map(|s| s.coordinate_width)
@@ -295,7 +298,25 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         .iter()
         .filter(|r| r[1].to_repr() == 1)
         .count();
-    assert_eq!(source_rows, (0..live as u32).collect::<Vec<_>>());
+    let all_ids: Vec<_> = fanout_pp
+        .values
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .take(live)
+        .map(|r| r[0].to_repr())
+        .collect();
+    let mut occurrences = vec![0usize; widths.len()];
+    for &id in &all_ids {
+        occurrences[id as usize] += 1;
+    }
+    let expected: Vec<_> = all_ids
+        .iter()
+        .enumerate()
+        .filter_map(|(row, &id)| (id == 0 || occurrences[id as usize] > 2).then_some(row as u32))
+        .collect();
+    assert!(expected.len() < live, "fixture must contain singleton IDs");
+    assert_eq!(source_rows, expected);
     assert!(shards.iter().any(|s| {
         s.rows
             .iter()
@@ -308,6 +329,7 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     );
     let mut public = vec![
         OldF::from_repr(0x1234) * OldF::from_repr(3) + OldF::from_repr(1),
+        OldF::from_repr(0x1234),
         OldF::from_repr(0x1234),
     ];
     public.extend(extra_public);
@@ -424,6 +446,20 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         rows.push(RowMajorMatrix::new(values, width));
         publics.push(original_public[i].iter().copied().map(convert).collect());
     }
+    for air in &mut airs {
+        air.prune_copies(&mut copies).unwrap();
+    }
+    let stats = copies.finish().unwrap();
+    assert_eq!(
+        stats.single_use,
+        occurrences[1..].iter().filter(|&&count| count == 1).count()
+    );
+    assert_eq!(
+        stats.pairs,
+        occurrences[1..].iter().filter(|&&count| count == 2).count()
+    );
+    assert!(stats.single_use > 0 && stats.pairs > 0);
+    assert_eq!(stats.single_use + 2 * stats.pairs, live - expected.len());
     assert_eq!(fanout_diagnostics(&airs, &rows, &publics), (true, true));
     // Substituting public copies must still bind their values to witness reads.
     let public_index = airs.iter().position(Chip::is_public_table).unwrap();

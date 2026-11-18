@@ -7,6 +7,9 @@ pub mod checkpoint_keccak;
 mod checkpoint_tests;
 
 mod config;
+mod copies;
+#[cfg(test)]
+mod copies_tests;
 mod encoding;
 mod fanout;
 mod gates;
@@ -88,6 +91,8 @@ pub struct Geometry {
     pub hash_backend: HashBackend,
     pub checkpoint_codeword_cells: usize,
     pub witnesses: u32,
+    pub single_use_copies_removed: usize,
+    pub paired_copy_ids: usize,
     pub fanout_rows_by_width: Vec<(usize, usize)>,
     /// (coordinate width, maximum occurrences per row, stored rows).
     pub fanout_copy_layout: Vec<(usize, usize, usize)>,
@@ -151,7 +156,7 @@ impl Prepared {
             "unexpected native fanout layout"
         );
         let widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
-        let shards =
+        let (shards, mut copies) =
             fanout::partition(&widths, &bus.airs()[0].preprocessed_trace().unwrap().values)?;
         let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
         let gates = gates::partition(
@@ -253,14 +258,22 @@ impl Prepared {
                 gates: None,
             });
         }
+        for air in &mut airs {
+            air.prune_copies(&mut copies)?;
+        }
+        let copy_stats = copies.finish()?;
+        eprintln!(
+            "Eliminated {} singleton copies; directly matched {} pairs",
+            copy_stats.single_use, copy_stats.pairs
+        );
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
         identity.update(match backend {
             HashBackend::Flock => {
-                b"imt-flock-backend-v9/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-flock-backend-v10/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
             HashBackend::Checkpoint => {
-                b"imt-checkpoint-backend-v2/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-checkpoint-backend-v3/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
         identity.update((domain.len() as u64).to_le_bytes());
@@ -414,6 +427,8 @@ impl Prepared {
             hash_backend: backend,
             checkpoint_codeword_cells,
             witnesses: circuit.witness_count,
+            single_use_copies_removed: copy_stats.single_use,
+            paired_copy_ids: copy_stats.pairs,
             fanout_rows_by_width,
             fanout_copy_layout,
             gate_rows_by_width,

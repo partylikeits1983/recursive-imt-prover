@@ -94,11 +94,20 @@ These requirements do not change when inspecting other implementations.
    checkpoint aggregation now takes 32.52 s warm, with 10.63 GB peak footprint.
    N=8 now takes 220.62 s cold and 219.72 s warm median; its peak footprint
    remains about 41.5 GB. Its circuit, parameters and trusted key are unchanged.
-   A new profile caught repeated symbolic AIR evaluation during arithmetic
-   sumcheck. Investigate reusing the captured, simplified verifier AIR in the
-   prover, preserving the ordered constraints and activation checks. Larger
-   batches also need less simultaneous prover storage and circuit construction
-   memory; do not simply raise the guards.
+   Reusing a captured AIR and a shared expression DAG was tested and dropped:
+   warm timing ranges overlapped, with only about a 2% median improvement for
+   the DAG. Avoid adding that evaluator without a stronger measured benefit.
+   The adapter now eliminates single-use auxiliary copies and directly matches
+   pairs; higher-fanout IDs and the zero sentinel retain the product-bus copy
+   table. Counts and selectors are fixed by the trusted circuit. At depth 32,
+   N=2 retains 3.02 million copy rows instead of 13.58 million and halves the
+   main PCS codeword allocation. See the current measurements in `binary-veil.md`.
+   Larger batches still need less simultaneous prover storage and circuit
+   construction memory. Investigate compiling one child-verifier template and
+   instantiating it over an ordered batch, with separate authenticated wire/port
+   namespaces, instead of building every verifier into one large circuit.
+   This is proposed work, not an implemented aggregation mode. Do not simply
+   raise the current resource guards.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover before adding another recursion layer.
