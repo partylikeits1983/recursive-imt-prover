@@ -1,11 +1,15 @@
 //! Reference cubic sumcheck: instance variables first, then bit positions.
-use p3_binary_field::{PackedPoly64, PackedPoly192, PackedPoly192Unreduced, Poly192 as E};
-use p3_field::{PackedFieldExtension, PackedValue, PrimeCharacteristicRing};
+use p3_binary_field::Poly192 as E;
+use p3_field::{ExtensionField, Field, PackedFieldExtension, PackedValue, PrimeCharacteristicRing};
 use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::poly::Poly;
 use p3_sumcheck::generic_degree::{RoundPolyInterpolator, RoundProver};
 
 use super::{BITS, POSITIONS, State, linear::shift};
+use crate::F;
+
+type PackedE = <E as ExtensionField<F>>::ExtensionPacking;
+const PACKING_WIDTH: usize = <F as Field>::Packing::WIDTH;
 
 pub(super) struct ChiSumcheck {
     stage: Stage,
@@ -118,17 +122,24 @@ impl Columns {
         };
         let low = &values[i * BITS..(i + 1) * BITS];
         let high = &values[(i + half) * BITS..(i + half + 1) * BITS];
-        let load = |row: &[E], j| PackedPoly192::from_ext_slice(&row[j..j + PackedPoly64::WIDTH]);
-        let mut sums = [PackedPoly192Unreduced::default(); 3];
-        for j in (0..BITS).step_by(PackedPoly64::WIDTH) {
-            let a: [PackedPoly192; 3] = core::array::from_fn(|k| load(low, shift(j, k)));
-            let d: [PackedPoly192; 3] = core::array::from_fn(|k| load(high, shift(j, k)) + a[k]);
+        let load = |row: &[E], j| {
+            <PackedE as PackedFieldExtension<F, E>>::from_ext_slice(&row[j..j + PACKING_WIDTH])
+        };
+        let mut sums = [PackedE::ZERO.mul_unreduced(PackedE::ZERO); 3];
+        for j in (0..BITS).step_by(PACKING_WIDTH) {
+            let a: [PackedE; 3] = core::array::from_fn(|k| load(low, shift(j, k)));
+            let d: [PackedE; 3] = core::array::from_fn(|k| load(high, shift(j, k)) + a[k]);
             let w = load(&weights.values, j);
             sums[0] += w.mul_unreduced(a[0] + a[2] + a[1] * a[2]);
             sums[1] += w.mul_unreduced(d[0] + d[2] + a[1] * d[2] + d[1] * a[2]);
             sums[2] += (w * d[1]).mul_unreduced(d[2]);
         }
-        sums.map(|sum| sum.sum_lanes().reduce())
+        sums.map(|sum| {
+            let reduced = sum.reduce();
+            (0..PACKING_WIDTH)
+                .map(|lane| <PackedE as PackedFieldExtension<F, E>>::extract(&reduced, lane))
+                .sum()
+        })
     }
 
     fn at(&self, instance: usize, position: usize) -> E {
@@ -146,13 +157,16 @@ impl Columns {
     fn fold(&mut self, half: usize, challenge: E) {
         if let Self::Folded(values) = self {
             let (low, high) = values.split_at_mut(half * BITS);
-            let r = PackedPoly192::from(challenge);
-            low.par_chunks_exact_mut(PackedPoly64::WIDTH)
-                .zip(high.par_chunks_exact(PackedPoly64::WIDTH))
+            let r = PackedE::from(challenge);
+            low.par_chunks_exact_mut(PACKING_WIDTH)
+                .zip(high.par_chunks_exact(PACKING_WIDTH))
                 .for_each(|(a, b)| {
-                    let low = PackedPoly192::from_ext_slice(a);
-                    let high = PackedPoly192::from_ext_slice(b);
-                    (low + (high + low) * r).to_ext_slice(a);
+                    let low = <PackedE as PackedFieldExtension<F, E>>::from_ext_slice(a);
+                    let high = <PackedE as PackedFieldExtension<F, E>>::from_ext_slice(b);
+                    <PackedE as PackedFieldExtension<F, E>>::to_ext_slice(
+                        &(low + (high + low) * r),
+                        a,
+                    );
                 });
             values.truncate(half * BITS);
             values.shrink_to_fit();
