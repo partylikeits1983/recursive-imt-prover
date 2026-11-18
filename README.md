@@ -121,18 +121,19 @@ Fresh verification includes process startup and authenticated verifier-key loadi
 
 | Backend / children | Aggregation | Aggregate size | Fresh verification |
 |---|---:|---:|---:|
-| Checkpoint tree pair / 2 | 21.5 s | 1.39 MB | 145 ms |
-| Checkpoint merge / 4 | 52.3 s | 1.43 MB | 146 ms |
+| Checkpoint tree pair / 2 | 21.6 s | 1.39 MB | 140 ms |
+| Checkpoint merge / 4 | 36.4 s | 1.43 MB | 135 ms |
 
-Children took 3.1–3.4 s warm and 3.9–5.1 s cold, producing approximately 1.13 MB
-proofs. Aggregation excludes setup: 7.1 s for the pair and 27.4 s for the merge.
+Children took 3.3–4.0 s warm and 4.2–4.6 s cold, producing approximately 1.13 MB
+proofs. Aggregation excludes setup: 6.7 s for the pair and 20.9 s for the merge.
 The merge consumes two already-created first aggregates; its timing excludes
-child and first-aggregate proving. Warm merges ranged from 50.5–54.2 s.
+child and first-aggregate proving. Warm merges ranged from 35.3–37.4 s.
 
 Packing linear constraints reduced the merge's initial codeword cells from
-688 million to 419 million. Peak physical footprint was 15.2 GB (5.98 GB maximum
-RSS), including compressed/swapped memory. Timings vary on this shared machine;
-the detailed results retain both the current run and an earlier 33.0 s merge.
+688 million to 419 million. Releasing trace storage earlier preserves proof bytes
+and verifier keys. Peak physical footprint was 14.6 GB (6.64 GB maximum RSS),
+including compressed/swapped memory. Timings vary on this shared machine;
+the detailed results retain earlier runs for comparison.
 
 Both aggregate sizes meet the 1.5 MB target. The 1 MB and sub-10-second targets
 remain unmet; a tree speed advantage has not been demonstrated. Compilation is

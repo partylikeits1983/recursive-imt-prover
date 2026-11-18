@@ -120,10 +120,10 @@ older checkpoint proofs and verifier keys must be regenerated.
 
 `PreparedMerge` embeds two instances of that verifier and constrains their
 ordered parent digest/count. The four-child run uses 15.8 million witnesses per
-template and 419 million initial codeword cells. Warm merge time is 52.3 s median,
-with a 1.429 MB proof and 146 ms fresh verification. Setup takes another 27.4 s.
+template and 419 million initial codeword cells. Warm merge time is 36.4 s median,
+with a 1.429 MB proof and 135 ms fresh verification. Setup takes another 20.9 s.
 This measures only the merge stage, excluding child and first-aggregate proving.
-Peak physical footprint is 15.2 GB; the sub-10-second target remains unmet.
+Peak physical footprint is 14.6 GB; the sub-10-second target remains unmet.
 [Raw measurements and optimization](binary-veil.md#four-child-tree-merge).
 
 Real-proof tests reject changes to public inputs and imported proof messages.
@@ -150,7 +150,7 @@ RAYON_NUM_THREADS=4 cargo test --locked --release --test linked_checkpoint \
 1. **Retain the child and first aggregation.** Depth is 32. Both are implemented;
    first aggregation constrains two complete masked-child verifiers. Checkpoint
    is the initial tree backend. The two-child aggregate is 1.39 MB,
-   with a 21.508 s warm median;
+   with a 21.642 s warm median;
    [measurements](binary-veil.md#four-child-tree-merge).
 2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
    native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. The

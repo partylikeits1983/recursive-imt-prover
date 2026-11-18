@@ -84,6 +84,7 @@ See [the backend implementation](../crates/flock-backend/README.md).
   constraints and every live copy-bus endpoint. Only internal values used exactly
   twice are eliminated; their prefix sums reconstruct them exactly.
 - Regenerate product-bus leaves in bounded chunks and defer column folds.
+- Release original trace tables before opening their committed bit coordinates.
 - Reuse only PCS-authenticated evaluations with unchanged opening requests.
 - Specialize affine bus rounds and skip discarded AIR bus payload construction,
   preserving every constraint and activation check.
@@ -106,19 +107,24 @@ caches were not reset, and memory pressure was not controlled on this shared hos
 
 | Measurement | First aggregation / 2 children | Merge / 4 children |
 |---|---:|---:|
-| Setup | 7.087 s | 27.432 s |
-| Cold aggregation | 21.951 s | 80.356 s |
-| Warm median (range) | 21.508 s (19.821–23.195) | 52.337 s (50.516–54.158) |
-| Proof bytes | 1,391,480–1,392,696 | 1,429,334 |
-| Fresh verification / full process wall | 120.2 ms / 145.2 ms | 131.6 ms / 146.3 ms |
+| Setup | 6.731 s | 20.860 s |
+| Cold aggregation | 22.109 s | 39.643 s |
+| Warm median (range) | 21.642 s (21.559–21.726) | 36.378 s (35.320–37.436) |
+| Proof bytes | 1,391,160–1,392,472 | 1,429,334 |
+| Fresh verification / full process wall | 119.6 ms / 140.4 ms | 125.6 ms / 134.7 ms |
 | Witnesses per verifier template | 7,304,377 | 15,763,977 |
 | Initial codeword cells | 218,103,808 | 419,430,400 |
-| Peak physical footprint / maximum RSS | 8.13 GB / 5.07 GB | 15.19 GB / 5.98 GB |
+| Peak physical footprint / maximum RSS | 7.93 GB / 4.43 GB | 14.57 GB / 6.64 GB |
 
-Warm child proving took 3.094–3.358 s; the first sample's children took
-3.861–5.109 s. Child proofs were 1,128,734–1,129,669 bytes. The first stage's warm
-critical-path median, including child proving and verification, was 28.895 s.
-A separate fresh process generated the second pair used by the merge.
+Warm child proving took 3.308–4.026 s; the first sample's children took
+4.213–4.594 s. Child proofs were 1,128,290–1,130,926 bytes. The first stage's warm
+critical-path median, including child proving and verification, was 29.874 s.
+The merge reuses the baseline's two first aggregates; the first-stage benchmark
+generates fresh children under the same verifier key.
+
+The latest change drops original mixed trace tables before the Boolean PCS
+opening. The saved final proof, statement, verifier key and trusted metadata are
+byte-identical to the preceding checkpoint. No circuit or protocol changes.
 
 The backend packs up to 16 constant-weighted bit additions into one linear AIR
 row. It retains Boolean constraints and all live copy-bus endpoints. An omitted
@@ -131,7 +137,7 @@ With the earlier source authority held fixed, packing reduced initial codeword
 cells from 687,865,856 to 419,430,400 (39.0%). That run measured a 33.046 s warm
 median (32.308–33.784), a 1,382,186-byte proof and 15.44 GB physical footprint,
 versus the previous 59.445 s median and 23.40 GB footprint. The table above uses
-newly packed first aggregates and final allocation cleanup. Source authorities,
+packed first aggregates and releases trace storage earlier. Source authorities,
 code fingerprints and all samples are retained; these runs are not a controlled
 timing comparison. A tree speed advantage over flat aggregation is still unproven.
 
@@ -142,161 +148,49 @@ aggregate also passes the complete verifier circuit directly; changed public
 inputs fail. The newly packed first aggregate passes 17 fresh-process mutation
 checks. Conditional algebraic accounting reports 146.211 bits for the current
 merge; end-to-end security and joint child statistical ZK remain unestablished.
-[Current samples, resource measurements and checks](../benchmarks/binary/tree-merge/packed-linear.json).
+[Current samples, resource measurements and checks](../benchmarks/binary/tree-merge/release-traces.json).
+[Packing measurements](../benchmarks/binary/tree-merge/packed-linear.json).
 [Earlier merge measurements](../benchmarks/binary/tree-merge/depth32-four.json).
 
 ## Compact aggregate proofs
 
-Aggregate encoding now uses fixed-width field elements instead of variable-length
-integers. The outer initial rate is 1/4; fold 4, Johnson, the 152-bit PCS target,
-16-bit grinding ceiling and 144-bit conditional floor are retained. These are
-size optimizations, not a stronger security claim. Child encoding is unchanged.
-
-Depth-32 checkpoint tree pair on the M2 Pro with four threads, Rust 1.98.1,
-release with thin LTO; one cold and two warm samples, excluding compilation:
-
-| Operation | Measurement |
-|---|---:|
-| Child proving, all six children | 3.152–4.022 s |
-| Child proof bytes | 1,127,590–1,130,405 |
-| Aggregate setup | 6.187 s |
-| Cold aggregation | 20.304 s |
-| Warm aggregation median (range) | 21.018 s (20.710–21.326) |
-| Aggregate proof bytes | 1,346,752–1,347,072 |
-| Warm verification median | 115.5 ms |
-| Fresh verifier wall | 136.2 ms |
-| Warm batch critical path median | 29.186 s |
-| Peak physical footprint / maximum RSS | 8.20 GB / 4.79 GB |
-
-The aggregate is about 24% smaller than the earlier nullifier-statement baseline,
-with about 11% longer aggregation and higher physical footprint (6.52 → 8.20 GB).
-The 1.5 MB aggregate target is met for this pair; the 1 MB target and sub-10-second
-aggregation target remain unmet. The codeword budget includes all 218,103,808
-initial cells, including the checkpoint PCS. Conditional algebraic accounting
-reports 146.218 bits; end-to-end security remains unestablished.
-
-Fresh verification succeeds with only the proof, ordered statement and trusted
-key files. Seventeen mutations of statements, proof bytes, encoding and authority
-are rejected. Recursive Keccak and coordinate-opening components also pass real
-proof tests. These measurements predate the complete aggregate-verifier circuit
-and fixed-authority merge above; cyclic same-key merging remains unfinished.
-[Raw samples, resource measurements and checks](../benchmarks/binary/masked-aggregate/compact-d32-n2.json).
+Aggregate encoding uses fixed-width field elements. The outer initial rate is
+1/4, with fold 4, Johnson, a 152-bit PCS target, 16-bit grinding ceiling and
+144-bit conditional floor. Child encoding is unchanged.
+[Earlier encoding measurements](../benchmarks/binary/masked-aggregate/compact-d32-n2.json)
+retain the original parameters and source fingerprints.
 
 ## Nullifier statement
 
-The current depth-32 relation authenticates `(root, nullifier_hash)`. Its extra
-Keccak permutation and four private carry columns fit the same 1,024-row trace
-and 128-column stacking. Parameters remain unchanged.
-
-Earlier rate-1/2 checkpoint first aggregation on the M2 Pro, four threads,
-Rust 1.98.1, release with thin LTO; one cold and two warm samples, excluding
-compilation:
-
-| Operation | Measurement |
-|---|---:|
-| Child proving, all six children | 3.319–4.330 s |
-| Child decoding and verification | 416–464 ms |
-| Child proof size | 1.128–1.130 MB |
-| Aggregate setup | 6.409 s |
-| Cold first aggregation | 18.068 s |
-| Warm aggregation median (range) | 18.926 s (17.958–19.894) |
-| Warm complete batch critical path median (range) | 27.190 s (25.596–28.783) |
-| Aggregate proof size | 1.775–1.777 MB |
-| Fresh verification, including process and key loading | 138.2 ms |
-| Peak RSS / physical footprint | 4.286 / 6.522 GB |
-
-Aggregation includes child import, circuit-witness generation, proving and an
-internal verification. Setup is measured separately. Filesystem caches and
-thermal state were not reset. The aggregate uses 51,386 Keccak permutations and
-has a 146.253-bit conditional algebraic ledger, not an end-to-end security proof.
-Plonky3's associated packing type now selects SIMD or scalar arithmetic, so the
-optimized prover also compiles on generic x86 targets.
-
-Single cold validation runs also passed for the Flock first aggregate
-(31.622 s) and flat checkpoint aggregate (18.058 s), including fresh verification.
-These are not warm medians. Each first-aggregation backend rejected all tested
-statement, proof, encoding and authority mutations in separate verifier processes.
-
-Raw reports: [current relation](../benchmarks/binary/masked-aggregate/nullifier-d32-n2.json).
+The depth-32 `(root, nullifier_hash)` relation uses 34 Keccak permutations and
+four private carry columns in the same 1,024-row trace and 128-column stacking.
+The [initial measurements](../benchmarks/binary/masked-aggregate/nullifier-d32-n2.json)
+used outer rate 1/2; they are historical, not current timings.
 
 ## Packed Keccak rounds
 
-The measurements below predate the nullifier relation and authenticate public
-root/amount statements. They remain historical baselines, with their original
-protocol versions and source fingerprints.
+The checkpoint prover keeps Boolean states packed until two instance challenges
+are bound. Four-bit subset-sum tables compute the early rounds exactly. Later
+rounds use Plonky3's packed multiplication and unreduced accumulators. Tests
+compare every round against the dense reference, including zero and one
+challenges; real component proofs were byte-identical.
 
-The checkpoint prover delays expanding Boolean states into Poly192 tables until
-two instance challenges are bound. Four-bit subset-sum tables evaluate the early
-rounds exactly; the first field table has half as many elements. Later rounds use
-Plonky3's packed multiplication and unreduced accumulators. Proof equations,
-messages, verifier keys and security parameters are unchanged.
-
-Same-session measurements on the M2 Pro with four threads, one cold and two warm
-samples per version, excluding compilation:
-
-| Operation | Before warm median (range) | After warm median (range) |
-|---|---:|---:|
-| 65,536 committed Keccak permutations | 10.437 s (10.199–10.675) | 5.726 s (5.461–5.992) |
-| Depth-32 two-child tree aggregation | 26.181 s (25.566–26.796) | 19.244 s (18.473–20.015) |
-| Complete two-child batch critical path | 35.452 s (34.894–36.010) | 27.933 s (26.991–28.875) |
-
-Cold aggregation changed from 22.135 to 18.610 s. Filesystem caches and thermal
-state were not reset; use the raw ranges rather than treating these as universal
-speedups. The component's peak physical footprint fell from 1.662 to 1.032 GB;
-the aggregate still peaks at about 6.4 GB. Child proving remains 3.78–4.25 s in
-the new batch, with a 1.81 MB aggregate and 147.86 ms fresh verification.
-
-The component produced byte-identical proofs at 4,096 and 65,536 permutations.
-The dense-reference test compares every sumcheck round, including zero and one
-challenges. The old aggregate verifier accepts the new proof with the same key;
-fresh-process tamper tests still reject changed statements, proofs and authority.
-This is a prover optimization, not a security or privacy change. Recursive merging
-and the sub-ten-second aggregate target remain unfinished.
-
-Raw reports: [component comparison](../benchmarks/binary/checkpoint-keccak/packed-rounds-65536.json)
-and [complete aggregation comparison](../benchmarks/binary/masked-aggregate/tree-pair-packed-rounds-d32-n2.json).
+[Component comparison](../benchmarks/binary/checkpoint-keccak/packed-rounds-65536.json)
+and [aggregation comparison](../benchmarks/binary/masked-aggregate/tree-pair-packed-rounds-d32-n2.json)
+record the original root/amount relation, which predates nullifier hashes.
 
 ## Specialized AIR evaluation
 
-Retained depth-32 measurements use an M2 Pro, four threads, Rust 1.98.1, release
-with thin LTO. Each run has one cold and two warm samples. Compilation/profiling
-are excluded; filesystem caches were not reset. Fresh verification includes
-trusted-key loading. Physical footprint includes compressed/swapped memory.
+Affine bus rounds avoid higher-degree evaluation work, while every constraint
+and activation remains enforced. Historical reports preserve source revisions,
+parameters, repeated samples and tamper checks:
 
-| Backend / children | Cold aggregate | Warm median (range) | Proof size | Fresh verify | Peak physical footprint |
-|---|---:|---:|---:|---:|---:|
-| Checkpoint / 2 | 22.355 s | 22.488 s (22.371-22.605) | 1.817-1.819 MB | 143.54 ms | 6.436 GB |
-| Flock / 2 | 28.505 s | 27.768 s (27.508-28.028) | 1.418-1.419 MB | 133.38 ms | 13.995 GB |
-| Checkpoint / 8 | 122.334 s | 121.289 s (120.741-121.837) | 2.546 MB | 175.19 ms | 16.344 GB |
+- [Checkpoint / 2](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-d32-n2.json).
+- [Flock / 2](../benchmarks/binary/masked-aggregate/flock-specialized-air-d32-n2.json).
+- [Checkpoint / 8](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-d32-n8.json).
 
-The two-child setup costs 5.716/5.762 s for checkpoint/Flock; warm batch critical
-paths are 30.148/34.683 s. The eight-child setup costs 5.520 s and warm critical
-path is 148.493 s. Its key is 259,099 bytes and conditional algebraic ledger is
-145.995 bits. None meets the sub-ten-second aggregate target.
-
-Raw reports preserve exact parameters and source fingerprints:
-
-- [Checkpoint / 2](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-d32-n2.json)
-  and [tamper checks](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-negative.json).
-- [Flock / 2](../benchmarks/binary/masked-aggregate/flock-specialized-air-d32-n2.json)
-  and [tamper checks](../benchmarks/binary/masked-aggregate/flock-specialized-air-negative.json).
-- [Checkpoint / 8](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-d32-n8.json)
-  and [tamper checks](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-n8-negative.json).
-
-First tree-pair runs at depth 32 use the same parameters. These are single cold
-correctness runs, not warm speed comparisons:
-
-| Backend | Aggregate | Proof bytes | Fresh verify |
-|---|---:|---:|---:|
-| [Checkpoint](../benchmarks/binary/masked-aggregate/tree-pair-checkpoint-d32-n2.json) | 22.270 s | 1,812,906 | 139.91 ms |
-| [Flock](../benchmarks/binary/masked-aggregate/tree-pair-flock-d32-n2.json) | 27.937 s | 1,413,185 | 128.67 ms |
-
-[Tamper checks](../benchmarks/binary/masked-aggregate/tree-pair-negative.json)
-include statement-format and verifier-configuration substitution.
-
-Superseded measurements and smaller-depth experiments are available in Git
-history before the depth-32 cleanup. Retained timings are never rewritten after
-source changes.
+Older formats and smaller-depth experiments remain in Git history. Measurements
+are never rewritten to describe a different source revision.
 
 ## Committed Keccak GKR component
 

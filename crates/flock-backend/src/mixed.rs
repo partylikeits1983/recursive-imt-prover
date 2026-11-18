@@ -540,6 +540,7 @@ where
     ) -> Result<Self::Proof, Self::ProverError> {
         self.check_regions(&protocol.table_shapes())?;
         let committed = self.expand_protocol(&protocol);
+        drop(prover_data.tables);
         self.inner.open(prover_data.inner, committed, challenger)
     }
 
@@ -590,6 +591,7 @@ where
     ) -> Result<Self::Proof, Self::ProverError> {
         self.check_regions(&protocol.table_shapes())?;
         let committed = self.expand_protocol(protocol);
+        drop(prover_data.tables);
         self.inner
             .open_at(prover_data.inner, &committed, points, challenger)
     }
@@ -605,6 +607,7 @@ where
         self.check_regions(&protocol.table_shapes())?;
         let committed = self.expand_protocol(protocol);
         let known = self.expand_known(protocol, &committed, known)?;
+        drop(prover_data.tables);
         self.inner
             .open_at_known(prover_data.inner, &committed, points, &known, challenger)
     }
@@ -660,6 +663,7 @@ where
             Ok(known) => known,
             Err(error) => return Some(Err(error)),
         };
+        drop(data.tables);
         self.inner
             .open_at_known_weighted(data.inner, &committed, points, &known, weighted, challenger)
     }
