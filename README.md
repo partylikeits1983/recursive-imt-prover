@@ -42,7 +42,7 @@ The tree is designed for balanced batches of 2, 4, 8, 16, 32 or 64 children.
 The 64-child integration test passed: 64 children, 32 first aggregates and 31
 merges, with one merge circuit/key across all five higher levels. Independent
 final verification and statement, proof and authority rejection checks passed.
-The eight- and 64-child baseline runs used the same merge key.
+The eight- and 64-child runs used byte-identical merge keys.
 See the [architecture and acceptance test](docs/aggregation-tree.md).
 
 Aggregates are intentionally non-ZK. Their inputs are child proofs and public
@@ -116,35 +116,37 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-The 64-child baseline used an Apple M2 Pro with four threads. These are
-per-proof medians and ranges within one sequential run, excluding compilation:
+The 64-child test ran on an Apple M2 Pro with eight Rayon workers and one
+active proving node. Times are per-proof medians and ranges within that run.
 
 | Operation | Median | Range |
 |---|---:|---:|
-| Child proving (64 proofs) | 4.07 s | 3.39–4.89 s |
-| First aggregation (32 proofs) | 46.15 s | 42.94–51.59 s |
-| Merge (31 proofs) | 45.55 s | 43.66–54.12 s |
+| Child proving (64 proofs) | 2.28 s | 2.23–5.05 s |
+| First aggregation (32 proofs) | 22.47 s | 20.31–25.55 s |
+| Recursive merge (31 proofs) | 23.50 s | 22.16–27.46 s |
 
-The final proof is **1,484,866 bytes**. Native verification took 121 ms;
-fresh-process verification took 135 ms including startup and trusted-key loading.
-Proof sizes exclude public statements and trusted verifier data. Peak physical
-footprint was 25.5 GB, including compressed/swapped memory. A short profiling
-sample overlapped the first merge level; this was not a controlled performance comparison.
-[Raw measurements and test results](benchmarks/binary/tree-merge/cyclic-sixty-four.json).
+The 63 aggregation operations took **24 min 20 s**. Including setup, child
+generation and final verification, elapsed time was **27 min 53 s** with
+negative tests excluded. The final proof was **1,426,018 bytes**, excluding
+public statements and the trusted verifier key. Fresh-process verification
+took **122 ms**, including startup and key loading. Peak physical footprint
+was 20.2 GB, including compressed or swapped memory.
+[Raw timings and acceptance checks](benchmarks/binary/tree-merge/compact-sixty-four.json).
 
-The 63 aggregation operations took 48.9 minutes in total. Full sequential elapsed
-time was 54.5 minutes excluding negative-test overhead, or 55.4 minutes including
-it. Targets are **at most 10 s per merge and 60 s for 64-to-1 aggregation**, ideally
-30 s. These remain unmet. The proof meets the 1.5 MB target; 1 MB remains a target.
+The proof meets the 1.5 MB size target. The targets of 1 MB, 10 seconds per
+merge and 60 seconds for the full aggregation remain open.
 
-With smaller recursion tables and eight threads, the eight-child run took
-164.0 s to aggregate the prepared children. First aggregates took 21.8–22.6 s
-each and merges took 23.9–26.6 s each. The final proof was 1,427,010 bytes and
-verified in 117 ms in a fresh process. These timings use one active node at a
-time. [Stage times and sibling concurrency experiment](benchmarks/binary/tree-merge/paired-scheduling.json).
+With eight children and eight workers on both versions, the seven aggregation
+nodes took 210.2 s on the previous version and 163.6 s on this one, a 22.1%
+reduction in one run per version. Median merge time fell from 31.28 s to 24.41 s.
+The original 64-child run used four workers, so its 48.9-minute aggregation time
+also reflects a thread-count difference.
+[Matched eight-child measurements](benchmarks/binary/tree-merge/compact-sixty-four.json) ·
+[Original 64-child run](benchmarks/binary/tree-merge/cyclic-sixty-four.json).
 
-[Earlier benchmarks and optimization history](docs/binary-veil.md#four-child-tree-merge)
-use different verifier layouts and do not measure the current reusable circuit.
+Running two nodes concurrently on the M2 Pro increased eight-child aggregation
+wall time from 164.0 s to 230.3 s. Compilation overlapped part of the two-node
+run. [Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json).
 
 ## Running locally
 
@@ -158,7 +160,7 @@ cargo test --locked --release --workspace
 cargo run --locked --release --bin tree-demo -- --batch-size 8 --out run/tree8
 
 # Full acceptance test: 64 children, five merge levels and isolated verification.
-cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
+RAYON_NUM_THREADS=8 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 
 # Requires only the final proof, ordered statements and trusted final key files.
 cargo run --locked --release --bin tree-demo -- --verify --out run/tree8

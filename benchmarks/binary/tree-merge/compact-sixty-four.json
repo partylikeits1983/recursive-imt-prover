@@ -1,0 +1,1907 @@
+{
+  "description": "Depth-32 binary Keccak IMT, 64 independent masked child proofs, 32 first aggregates, 31 same-key merges, one independently verified final proof.",
+  "source_commit": "56670111a78ef25a493ff1fd33ac61b5e80880ed",
+  "summary": {
+    "child_proving_ms": {
+      "count": 64,
+      "median": 2283.6579165000003,
+      "min": 2234.0036250000003,
+      "max": 5046.262208
+    },
+    "first_aggregation_ms": {
+      "count": 32,
+      "median": 22474.3727495,
+      "min": 20307.125458000002,
+      "max": 25545.587709
+    },
+    "merge_ms": {
+      "count": 31,
+      "median": 23501.267583,
+      "min": 22161.515917,
+      "max": 27457.984917
+    },
+    "aggregation_wall_ms": 1459970.305456,
+    "end_to_end_excluding_negative_tests_ms": 1673255.249541,
+    "fresh_verifier_wall_ms": 121.975791,
+    "proof_bytes": 1426018
+  },
+  "artifact_bytes": {
+    "aggregate.proof": 1426018,
+    "statement.json": 56028,
+    "trusted.json": 448,
+    "verifier.key": 101968
+  },
+  "validation": {
+    "integration_test": "sixty_four_children_reuse_one_merge_key_and_verify_independently",
+    "result": "1 passed; 0 failed",
+    "same_merge_key_bytes_as_eight_child_run": true,
+    "independent_files": [
+      "aggregate.proof",
+      "statement.json",
+      "trusted.json",
+      "verifier.key"
+    ],
+    "independent_mutations_rejected": [
+      "root",
+      "nullifier hash",
+      "order"
+    ]
+  },
+  "limitations": [
+    "One release run on an Apple M2 Pro with eight workers and one active proving node. Ranges and medians describe nodes within the run.",
+    "Aggregation wall time sums measured first-aggregation and merge stages. It excludes child generation, setup and negative checks. Each stage includes proof import, proving and intermediate verification.",
+    "A separate experimental circuit setup overlapped initial setup and early child proofs. It finished before aggregation started. Compilation finished before this integration test.",
+    "The original 64-child benchmark used four workers and a different circuit layout. These full-tree runs cannot isolate a code-only speedup.",
+    "Formal statistical zero knowledge of the child proofs and an end-to-end 128-bit security bound have not been established."
+  ],
+  "process": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--release",
+      "--test",
+      "cyclic_tree",
+      "--",
+      "--ignored",
+      "--nocapture"
+    ],
+    "exit_code": 0,
+    "wall_seconds": 1701.7480064170086,
+    "peak_tree_physical_footprint_bytes": 20185124928,
+    "peak_single_process_physical_footprint_bytes": 20225066432,
+    "stopped_at_40_gib_budget": false
+  },
+  "report": {
+    "acceptance_pass": true,
+    "batch_size": 64,
+    "bound": "Johnson",
+    "child_identity": [215, 1, 219, 217, 32, 200, 173, 43, 87, 13, 68, 124, 203, 206, 231, 127, 32, 60, 26, 203, 186, 250, 104, 152, 246, 168, 71, 61, 29, 18, 237, 70],
+    "child_parameters": {
+      "log_inv_rate": 4,
+      "max_message_len": 2097152,
+      "min_algebraic_bits": 144,
+      "query_bits": 160
+    },
+    "children": [
+      {
+        "decode_verify_ms": 569.176541,
+        "proof_bytes": 1129581,
+        "prove_ms": 3635.2227080000002,
+        "witness_ms": 3.757791
+      },
+      {
+        "decode_verify_ms": 480.172875,
+        "proof_bytes": 1129230,
+        "prove_ms": 3581.190375,
+        "witness_ms": 1.903584
+      },
+      {
+        "decode_verify_ms": 406.492708,
+        "proof_bytes": 1130474,
+        "prove_ms": 3890.5902499999997,
+        "witness_ms": 1.626083
+      },
+      {
+        "decode_verify_ms": 412.555791,
+        "proof_bytes": 1129601,
+        "prove_ms": 5046.262208,
+        "witness_ms": 6.885040999999999
+      },
+      {
+        "decode_verify_ms": 453.839875,
+        "proof_bytes": 1129704,
+        "prove_ms": 3058.132583,
+        "witness_ms": 1.588791
+      },
+      {
+        "decode_verify_ms": 467.34220799999997,
+        "proof_bytes": 1129543,
+        "prove_ms": 2427.0440830000002,
+        "witness_ms": 2.2207500000000002
+      },
+      {
+        "decode_verify_ms": 444.4075,
+        "proof_bytes": 1129203,
+        "prove_ms": 2284.567458,
+        "witness_ms": 1.072416
+      },
+      {
+        "decode_verify_ms": 448.938167,
+        "proof_bytes": 1129118,
+        "prove_ms": 2287.660083,
+        "witness_ms": 1.283083
+      },
+      {
+        "decode_verify_ms": 442.863083,
+        "proof_bytes": 1129050,
+        "prove_ms": 2269.574959,
+        "witness_ms": 1.640709
+      },
+      {
+        "decode_verify_ms": 448.968792,
+        "proof_bytes": 1128999,
+        "prove_ms": 2254.818625,
+        "witness_ms": 1.806
+      },
+      {
+        "decode_verify_ms": 435.97137499999997,
+        "proof_bytes": 1126900,
+        "prove_ms": 2311.634375,
+        "witness_ms": 1.583167
+      },
+      {
+        "decode_verify_ms": 453.677542,
+        "proof_bytes": 1129377,
+        "prove_ms": 2253.199125,
+        "witness_ms": 1.747708
+      },
+      {
+        "decode_verify_ms": 440.868917,
+        "proof_bytes": 1129347,
+        "prove_ms": 2271.004125,
+        "witness_ms": 1.298834
+      },
+      {
+        "decode_verify_ms": 470.934667,
+        "proof_bytes": 1129942,
+        "prove_ms": 2338.82675,
+        "witness_ms": 1.5208750000000002
+      },
+      {
+        "decode_verify_ms": 444.254958,
+        "proof_bytes": 1127906,
+        "prove_ms": 2314.135542,
+        "witness_ms": 1.179916
+      },
+      {
+        "decode_verify_ms": 445.527375,
+        "proof_bytes": 1128288,
+        "prove_ms": 2265.106459,
+        "witness_ms": 1.1313339999999998
+      },
+      {
+        "decode_verify_ms": 440.522541,
+        "proof_bytes": 1129301,
+        "prove_ms": 2234.0036250000003,
+        "witness_ms": 1.583583
+      },
+      {
+        "decode_verify_ms": 436.034625,
+        "proof_bytes": 1128954,
+        "prove_ms": 2295.3647090000004,
+        "witness_ms": 1.005833
+      },
+      {
+        "decode_verify_ms": 456.501875,
+        "proof_bytes": 1128636,
+        "prove_ms": 2304.144917,
+        "witness_ms": 1.522459
+      },
+      {
+        "decode_verify_ms": 440.6085,
+        "proof_bytes": 1129698,
+        "prove_ms": 2276.411917,
+        "witness_ms": 1.315
+      },
+      {
+        "decode_verify_ms": 443.838167,
+        "proof_bytes": 1128058,
+        "prove_ms": 2241.436083,
+        "witness_ms": 1.538
+      },
+      {
+        "decode_verify_ms": 464.147917,
+        "proof_bytes": 1128929,
+        "prove_ms": 2265.602542,
+        "witness_ms": 1.853583
+      },
+      {
+        "decode_verify_ms": 455.96941699999996,
+        "proof_bytes": 1129161,
+        "prove_ms": 2291.4955,
+        "witness_ms": 1.590583
+      },
+      {
+        "decode_verify_ms": 435.669125,
+        "proof_bytes": 1129509,
+        "prove_ms": 2262.911083,
+        "witness_ms": 1.454583
+      },
+      {
+        "decode_verify_ms": 445.73891599999996,
+        "proof_bytes": 1128803,
+        "prove_ms": 2251.8933749999997,
+        "witness_ms": 1.6324589999999999
+      },
+      {
+        "decode_verify_ms": 436.943167,
+        "proof_bytes": 1129502,
+        "prove_ms": 2266.923833,
+        "witness_ms": 1.678958
+      },
+      {
+        "decode_verify_ms": 455.051542,
+        "proof_bytes": 1129554,
+        "prove_ms": 2473.553459,
+        "witness_ms": 1.275333
+      },
+      {
+        "decode_verify_ms": 449.73724999999996,
+        "proof_bytes": 1128246,
+        "prove_ms": 2367.872166,
+        "witness_ms": 1.595459
+      },
+      {
+        "decode_verify_ms": 443.98266600000005,
+        "proof_bytes": 1129194,
+        "prove_ms": 2278.826959,
+        "witness_ms": 1.8885
+      },
+      {
+        "decode_verify_ms": 450.650167,
+        "proof_bytes": 1129773,
+        "prove_ms": 2237.749167,
+        "witness_ms": 1.480208
+      },
+      {
+        "decode_verify_ms": 448.434084,
+        "proof_bytes": 1130489,
+        "prove_ms": 2320.759375,
+        "witness_ms": 6.56
+      },
+      {
+        "decode_verify_ms": 435.42350000000005,
+        "proof_bytes": 1129257,
+        "prove_ms": 2258.995541,
+        "witness_ms": 1.631041
+      },
+      {
+        "decode_verify_ms": 437.914084,
+        "proof_bytes": 1129456,
+        "prove_ms": 2345.758666,
+        "witness_ms": 1.804
+      },
+      {
+        "decode_verify_ms": 448.19191600000005,
+        "proof_bytes": 1129791,
+        "prove_ms": 2273.927625,
+        "witness_ms": 1.267125
+      },
+      {
+        "decode_verify_ms": 445.430458,
+        "proof_bytes": 1128595,
+        "prove_ms": 2279.010958,
+        "witness_ms": 1.7047500000000002
+      },
+      {
+        "decode_verify_ms": 445.77020899999997,
+        "proof_bytes": 1129490,
+        "prove_ms": 2267.394167,
+        "witness_ms": 1.381083
+      },
+      {
+        "decode_verify_ms": 454.301625,
+        "proof_bytes": 1130255,
+        "prove_ms": 2297.545666,
+        "witness_ms": 1.7585000000000002
+      },
+      {
+        "decode_verify_ms": 440.41120900000004,
+        "proof_bytes": 1129304,
+        "prove_ms": 2331.554417,
+        "witness_ms": 1.351792
+      },
+      {
+        "decode_verify_ms": 458.20770799999997,
+        "proof_bytes": 1128846,
+        "prove_ms": 2270.550208,
+        "witness_ms": 1.695209
+      },
+      {
+        "decode_verify_ms": 438.467667,
+        "proof_bytes": 1129814,
+        "prove_ms": 2305.367209,
+        "witness_ms": 1.691959
+      },
+      {
+        "decode_verify_ms": 440.223833,
+        "proof_bytes": 1129177,
+        "prove_ms": 2278.687458,
+        "witness_ms": 1.323917
+      },
+      {
+        "decode_verify_ms": 453.798042,
+        "proof_bytes": 1129407,
+        "prove_ms": 2312.8963750000003,
+        "witness_ms": 1.859667
+      },
+      {
+        "decode_verify_ms": 452.002167,
+        "proof_bytes": 1129344,
+        "prove_ms": 2276.421667,
+        "witness_ms": 1.484583
+      },
+      {
+        "decode_verify_ms": 446.96124999999995,
+        "proof_bytes": 1129133,
+        "prove_ms": 2250.194333,
+        "witness_ms": 1.672833
+      },
+      {
+        "decode_verify_ms": 452.615333,
+        "proof_bytes": 1129541,
+        "prove_ms": 2287.208,
+        "witness_ms": 1.786458
+      },
+      {
+        "decode_verify_ms": 448.484084,
+        "proof_bytes": 1128752,
+        "prove_ms": 2261.424292,
+        "witness_ms": 2.156083
+      },
+      {
+        "decode_verify_ms": 453.805583,
+        "proof_bytes": 1130612,
+        "prove_ms": 2306.553041,
+        "witness_ms": 1.1095
+      },
+      {
+        "decode_verify_ms": 451.99687500000005,
+        "proof_bytes": 1128394,
+        "prove_ms": 2315.221625,
+        "witness_ms": 1.770792
+      },
+      {
+        "decode_verify_ms": 461.624709,
+        "proof_bytes": 1130150,
+        "prove_ms": 2242.3692499999997,
+        "witness_ms": 1.896458
+      },
+      {
+        "decode_verify_ms": 441.142333,
+        "proof_bytes": 1128785,
+        "prove_ms": 2247.1557080000002,
+        "witness_ms": 1.807291
+      },
+      {
+        "decode_verify_ms": 438.210958,
+        "proof_bytes": 1128832,
+        "prove_ms": 2283.907583,
+        "witness_ms": 1.496958
+      },
+      {
+        "decode_verify_ms": 454.621292,
+        "proof_bytes": 1128656,
+        "prove_ms": 2242.073459,
+        "witness_ms": 1.659125
+      },
+      {
+        "decode_verify_ms": 447.869,
+        "proof_bytes": 1128809,
+        "prove_ms": 2273.433125,
+        "witness_ms": 1.201209
+      },
+      {
+        "decode_verify_ms": 446.538791,
+        "proof_bytes": 1128541,
+        "prove_ms": 2329.089875,
+        "witness_ms": 1.5167920000000001
+      },
+      {
+        "decode_verify_ms": 438.233875,
+        "proof_bytes": 1128035,
+        "prove_ms": 2287.042166,
+        "witness_ms": 1.7511670000000001
+      },
+      {
+        "decode_verify_ms": 453.92841699999997,
+        "proof_bytes": 1127829,
+        "prove_ms": 2238.982375,
+        "witness_ms": 5.264875
+      },
+      {
+        "decode_verify_ms": 437.272708,
+        "proof_bytes": 1129232,
+        "prove_ms": 2280.607791,
+        "witness_ms": 1.873542
+      },
+      {
+        "decode_verify_ms": 447.32916700000004,
+        "proof_bytes": 1127805,
+        "prove_ms": 2260.985625,
+        "witness_ms": 1.6902499999999998
+      },
+      {
+        "decode_verify_ms": 451.719708,
+        "proof_bytes": 1128454,
+        "prove_ms": 2349.625083,
+        "witness_ms": 1.743125
+      },
+      {
+        "decode_verify_ms": 430.872792,
+        "proof_bytes": 1128628,
+        "prove_ms": 2350.2152920000003,
+        "witness_ms": 1.792583
+      },
+      {
+        "decode_verify_ms": 447.338459,
+        "proof_bytes": 1129702,
+        "prove_ms": 2283.40825,
+        "witness_ms": 1.48775
+      },
+      {
+        "decode_verify_ms": 440.55120800000003,
+        "proof_bytes": 1128961,
+        "prove_ms": 2327.1645,
+        "witness_ms": 2.046459
+      },
+      {
+        "decode_verify_ms": 446.436958,
+        "proof_bytes": 1129378,
+        "prove_ms": 2291.977708,
+        "witness_ms": 1.425333
+      },
+      {
+        "decode_verify_ms": 447.153,
+        "proof_bytes": 1129308,
+        "prove_ms": 2278.3940000000002,
+        "witness_ms": 1.915875
+      }
+    ],
+    "circuit_constructions": {
+      "child": 1,
+      "first_aggregation": 1,
+      "merge": 1
+    },
+    "critical_path_ms": 1673255.249541,
+    "depth": 32,
+    "end_to_end_security_bits": null,
+    "environment": {
+      "compile_time_included": false,
+      "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+      "hardware": "Apple M2 Pro",
+      "legacy_prime_enabled": false,
+      "memory_bytes": "17179869184",
+      "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+      "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+      "plonky3_crates": "0.9.0-rc.2",
+      "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+      "profile": "release",
+      "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+      "release_profile": {
+        "codegen_units": 16,
+        "lto": "thin"
+      },
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "rustflags_runtime": "",
+      "source_keccak256": "dc6437d614d38e3aaaea2e00477e007bece202945dd9f887a660e6a8b5e1c518",
+      "threads": 8
+    },
+    "field": "Poly64/Poly192",
+    "first_aggregates": [
+      {
+        "aggregate": {
+          "proof_bytes": 1427298,
+          "prove_ms": 20209.018375,
+          "verify_ms": 109.508875,
+          "witness_ms": 1158.185209
+        },
+        "aggregation_wall_ms": 22383.177208999998,
+        "witness_import_ms": [
+          471.944542,
+          434.509042
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427010,
+          "prove_ms": 20218.392,
+          "verify_ms": 108.064458,
+          "witness_ms": 608.526292
+        },
+        "aggregation_wall_ms": 21862.8645,
+        "witness_import_ms": [
+          489.680958,
+          438.191709
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1425730,
+          "prove_ms": 21714.8505,
+          "verify_ms": 108.86833299999999,
+          "witness_ms": 638.0162499999999
+        },
+        "aggregation_wall_ms": 23378.635792,
+        "witness_import_ms": [
+          473.55341699999997,
+          443.338459
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427042,
+          "prove_ms": 20942.706167,
+          "verify_ms": 120.835292,
+          "witness_ms": 685.823958
+        },
+        "aggregation_wall_ms": 22641.271667,
+        "witness_import_ms": [
+          464.65662499999996,
+          427.235792
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426818,
+          "prove_ms": 23817.804625,
+          "verify_ms": 108.629334,
+          "witness_ms": 647.506
+        },
+        "aggregation_wall_ms": 25545.587709,
+        "witness_import_ms": [
+          499.451584,
+          472.188084
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426530,
+          "prove_ms": 22032.606834,
+          "verify_ms": 108.581834,
+          "witness_ms": 672.321042
+        },
+        "aggregation_wall_ms": 23735.929500000002,
+        "witness_import_ms": [
+          481.320333,
+          441.08533300000005
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426754,
+          "prove_ms": 18659.732209,
+          "verify_ms": 120.825584,
+          "witness_ms": 584.498416
+        },
+        "aggregation_wall_ms": 20307.125458000002,
+        "witness_import_ms": [
+          496.858542,
+          445.193875
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427170,
+          "prove_ms": 20241.327291,
+          "verify_ms": 107.91025,
+          "witness_ms": 613.351792
+        },
+        "aggregation_wall_ms": 21862.710208,
+        "witness_import_ms": [
+          459.286542,
+          440.826667
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426882,
+          "prove_ms": 21747.396625,
+          "verify_ms": 107.20545800000001,
+          "witness_ms": 620.117583
+        },
+        "aggregation_wall_ms": 23415.604,
+        "witness_import_ms": [
+          482.291583,
+          458.58083300000004
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427202,
+          "prove_ms": 20174.188667,
+          "verify_ms": 108.637875,
+          "witness_ms": 614.016875
+        },
+        "aggregation_wall_ms": 21829.662375,
+        "witness_import_ms": [
+          489.276791,
+          443.528916
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427522,
+          "prove_ms": 20986.440125,
+          "verify_ms": 118.757542,
+          "witness_ms": 638.9285
+        },
+        "aggregation_wall_ms": 22732.872833999998,
+        "witness_import_ms": [
+          530.0640840000001,
+          458.664459
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427266,
+          "prove_ms": 23047.367000000002,
+          "verify_ms": 108.352541,
+          "witness_ms": 622.9884999999999
+        },
+        "aggregation_wall_ms": 24706.945208,
+        "witness_import_ms": [
+          485.889709,
+          442.335
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427458,
+          "prove_ms": 23124.944791,
+          "verify_ms": 111.38445800000001,
+          "witness_ms": 750.4938330000001
+        },
+        "aggregation_wall_ms": 24956.104750000002,
+        "witness_import_ms": [
+          516.3295,
+          452.94262499999996
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1425986,
+          "prove_ms": 20073.225000000002,
+          "verify_ms": 107.829167,
+          "witness_ms": 762.406041
+        },
+        "aggregation_wall_ms": 21893.622625,
+        "witness_import_ms": [
+          493.808583,
+          456.34333300000003
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426370,
+          "prove_ms": 20182.343458,
+          "verify_ms": 117.054542,
+          "witness_ms": 640.526083
+        },
+        "aggregation_wall_ms": 21864.8115,
+        "witness_import_ms": [
+          467.575625,
+          457.303667
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426978,
+          "prove_ms": 21347.0785,
+          "verify_ms": 108.989125,
+          "witness_ms": 602.0895
+        },
+        "aggregation_wall_ms": 22988.705542000003,
+        "witness_import_ms": [
+          477.26995900000003,
+          453.26824999999997
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426306,
+          "prove_ms": 20398.685333,
+          "verify_ms": 107.837958,
+          "witness_ms": 771.216542
+        },
+        "aggregation_wall_ms": 22221.784542,
+        "witness_import_ms": [
+          497.13516699999997,
+          446.898083
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426466,
+          "prove_ms": 19409.482375,
+          "verify_ms": 118.730708,
+          "witness_ms": 594.54025
+        },
+        "aggregation_wall_ms": 21075.352458,
+        "witness_import_ms": [
+          499.508375,
+          453.07912500000003
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427042,
+          "prove_ms": 21667.151667,
+          "verify_ms": 117.176083,
+          "witness_ms": 667.144125
+        },
+        "aggregation_wall_ms": 23392.519750000003,
+        "witness_import_ms": [
+          493.080458,
+          447.949834
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426978,
+          "prove_ms": 20916.71475,
+          "verify_ms": 109.570625,
+          "witness_ms": 597.777084
+        },
+        "aggregation_wall_ms": 22536.472332999998,
+        "witness_import_ms": [
+          475.26220800000004,
+          437.137709
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427298,
+          "prove_ms": 21938.572375,
+          "verify_ms": 119.62308300000001,
+          "witness_ms": 674.119791
+        },
+        "aggregation_wall_ms": 23686.201125,
+        "witness_import_ms": [
+          484.297875,
+          469.579125
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427586,
+          "prove_ms": 20742.15475,
+          "verify_ms": 119.436291,
+          "witness_ms": 626.695084
+        },
+        "aggregation_wall_ms": 22412.273166,
+        "witness_import_ms": [
+          472.733083,
+          451.242291
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427138,
+          "prove_ms": 20703.76825,
+          "verify_ms": 108.177791,
+          "witness_ms": 612.565834
+        },
+        "aggregation_wall_ms": 22344.673042,
+        "witness_import_ms": [
+          470.48116699999997,
+          449.666291
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427874,
+          "prove_ms": 20957.951999999997,
+          "verify_ms": 108.163,
+          "witness_ms": 620.5584170000001
+        },
+        "aggregation_wall_ms": 22618.123625,
+        "witness_import_ms": [
+          481.727042,
+          449.715167
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426018,
+          "prove_ms": 21082.679917,
+          "verify_ms": 108.82858300000001,
+          "witness_ms": 621.507875
+        },
+        "aggregation_wall_ms": 22765.281917,
+        "witness_import_ms": [
+          492.941875,
+          459.30758399999996
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427234,
+          "prove_ms": 21212.833708000002,
+          "verify_ms": 110.458208,
+          "witness_ms": 576.6725
+        },
+        "aggregation_wall_ms": 22818.236083,
+        "witness_import_ms": [
+          470.835125,
+          447.42316700000003
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426370,
+          "prove_ms": 20307.681792,
+          "verify_ms": 107.59037500000001,
+          "witness_ms": 585.213875
+        },
+        "aggregation_wall_ms": 21939.131208,
+        "witness_import_ms": [
+          485.603167,
+          453.02933299999995
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427298,
+          "prove_ms": 19661.742833,
+          "verify_ms": 108.986541,
+          "witness_ms": 601.8574169999999
+        },
+        "aggregation_wall_ms": 21328.1325,
+        "witness_import_ms": [
+          490.73024999999996,
+          464.802584
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426722,
+          "prove_ms": 20584.297917,
+          "verify_ms": 106.876791,
+          "witness_ms": 663.673584
+        },
+        "aggregation_wall_ms": 22317.071958,
+        "witness_import_ms": [
+          488.91725,
+          473.298292
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1425762,
+          "prove_ms": 19463.048375,
+          "verify_ms": 107.376083,
+          "witness_ms": 596.9862919999999
+        },
+        "aggregation_wall_ms": 21114.79775,
+        "witness_import_ms": [
+          493.603875,
+          453.771542
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1426978,
+          "prove_ms": 19708.43375,
+          "verify_ms": 108.88737499999999,
+          "witness_ms": 594.340541
+        },
+        "aggregation_wall_ms": 21346.916125,
+        "witness_import_ms": [
+          488.749375,
+          446.492459
+        ]
+      },
+      {
+        "aggregate": {
+          "proof_bytes": 1427490,
+          "prove_ms": 22010.068542,
+          "verify_ms": 107.25899999999999,
+          "witness_ms": 641.116584
+        },
+        "aggregation_wall_ms": 23699.418375,
+        "witness_import_ms": [
+          487.20891700000004,
+          453.755
+        ]
+      }
+    ],
+    "first_aggregation_wall_ms": 723755.8400829999,
+    "first_verifier_digest": [222, 184, 121, 29, 147, 185, 19, 81, 153, 220, 153, 158, 96, 77, 253, 227, 25, 63, 59, 74, 232, 59, 159, 113, 69, 101, 36, 184, 130, 73, 94, 155],
+    "fixture_ms": 1.394667,
+    "foreign_authority_rejected": true,
+    "fresh_verifier": {
+      "children": 64,
+      "peak_rss_bytes": 25493504,
+      "setup_ms": 6.862792000000001,
+      "verified": true,
+      "verify_ms": 108.1975
+    },
+    "fresh_verifier_wall_ms": 121.975791,
+    "full_zk_established": false,
+    "geometry": {
+      "first_aggregation": {
+        "algebraic_bits": 146.20158793207275,
+        "checkpoint_codeword_cells": 16777216,
+        "fanout_copy_layout": [
+          [1, 2, 1],
+          [1, 4, 12814],
+          [1, 8, 288],
+          [1, 16, 143313],
+          [16, 4, 324859],
+          [16, 8, 379],
+          [16, 16, 16948],
+          [64, 4, 828530],
+          [64, 8, 125310],
+          [64, 16, 97357]
+        ],
+        "fanout_rows_by_width": [
+          [1, 156416],
+          [16, 342186],
+          [64, 1051197]
+        ],
+        "gate_rows_by_width": [
+          [
+            [16, 64, 64, 0, 16],
+            761566
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            1137582
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            0
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            1048576
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            152555
+          ],
+          [
+            [64, 64, 64, 64, 64],
+            21933
+          ]
+        ],
+        "hash_backend": "checkpoint",
+        "initial_codeword_cells": 419430400,
+        "keccak_permutations": 51386,
+        "log_heights": [4, 14, 9, 18, 19, 11, 15, 21, 18, 18, 20, 21, 19, 20, 18, 18, 19, 4, 16, 16],
+        "main_codeword_cells": 268435456,
+        "main_coordinate_widths": [
+          [1, 1, 1, 1],
+          [1, 1],
+          [1, 1],
+          [1, 1, 1, 1],
+          [16, 16],
+          [16, 16],
+          [16, 16, 16, 16],
+          [64, 64],
+          [64, 64],
+          [64, 64, 64, 64],
+          [16, 64, 64, 0, 16, 16, 64, 64, 0, 16],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64],
+          [
+            0
+          ],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+        ],
+        "packed_geometric_rows": 61774,
+        "packed_rows": 61774,
+        "packing_intermediates_removed": 552274,
+        "paired_copy_ids": 5848178,
+        "preprocessed_codeword_cells": 134217728,
+        "preprocessed_coordinate_widths": [
+          [25, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [18, 18, 1],
+          [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 17, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        "security_terms": [
+          [
+            "constraint-batching",
+            171.90699516484983
+          ],
+          [
+            "air-batching",
+            177.10821629678168
+          ],
+          [
+            "zerocheck",
+            175.9638263874465
+          ],
+          [
+            "constraint-sumcheck",
+            174.9638263874465
+          ],
+          [
+            "binary-bus",
+            151.58468181098397
+          ],
+          [
+            "binary-bus-batching",
+            180.35614381022526
+          ],
+          [
+            "whir-opening",
+            147.72179716811735
+          ],
+          [
+            "bit-ring-switch",
+            180.7711813095041
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            181.00564656314114
+          ],
+          [
+            "column-batching",
+            177.39266968625037
+          ],
+          [
+            "whir-opening",
+            147.73982818990433
+          ],
+          [
+            "bit-ring-switch",
+            180.82009090998505
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            179.82009090998505
+          ],
+          [
+            "column-batching",
+            176.22274468480808
+          ],
+          [
+            "commitment-and-transcript-collision",
+            128.0
+          ],
+          [
+            "checkpoint-permutation-pcs-and-port-link",
+            148.0222184143567
+          ]
+        ],
+        "single_use_copies_removed": 4252738,
+        "table_widths": [4, 2, 2, 4, 2, 2, 4, 2, 2, 4, 10, 10, 10, 10, 10, 10, 36, 1, 232, 232],
+        "template_instances": 2,
+        "template_witnesses": 7290252,
+        "witnesses": 14580504
+      },
+      "merge": {
+        "algebraic_bits": 146.20158793207275,
+        "checkpoint_codeword_cells": 16777216,
+        "fanout_copy_layout": [
+          [1, 2, 2],
+          [1, 4, 697],
+          [1, 8, 0],
+          [1, 16, 108479],
+          [16, 4, 216239],
+          [16, 8, 1416],
+          [16, 16, 7310],
+          [64, 4, 1429464],
+          [64, 8, 252117],
+          [64, 16, 193044]
+        ],
+        "fanout_rows_by_width": [
+          [1, 109178],
+          [16, 224965],
+          [64, 1874625]
+        ],
+        "gate_rows_by_width": [
+          [
+            [16, 64, 64, 0, 16],
+            942183
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            2097152
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            465321
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            1048576
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            130728
+          ],
+          [
+            [64, 64, 64, 64, 64],
+            150334
+          ]
+        ],
+        "hash_backend": "checkpoint",
+        "initial_codeword_cells": 419430400,
+        "keccak_permutations": 49828,
+        "log_heights": [4, 14, 9, 18, 19, 11, 15, 21, 18, 18, 20, 21, 19, 20, 18, 18, 19, 4, 16, 16],
+        "main_codeword_cells": 268435456,
+        "main_coordinate_widths": [
+          [1, 1, 1, 1],
+          [1, 1],
+          [1, 1],
+          [1, 1, 1, 1],
+          [16, 16],
+          [16, 16],
+          [16, 16, 16, 16],
+          [64, 64],
+          [64, 64],
+          [64, 64, 64, 64],
+          [16, 64, 64, 0, 16, 16, 64, 64, 0, 16],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64],
+          [
+            0
+          ],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+        ],
+        "packed_geometric_rows": 534664,
+        "packed_rows": 534664,
+        "packing_intermediates_removed": 7879610,
+        "paired_copy_ids": 13890214,
+        "preprocessed_codeword_cells": 134217728,
+        "preprocessed_coordinate_widths": [
+          [25, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [18, 18, 1],
+          [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 17, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        "security_terms": [
+          [
+            "constraint-batching",
+            171.90699516484983
+          ],
+          [
+            "air-batching",
+            177.10821629678168
+          ],
+          [
+            "zerocheck",
+            175.9638263874465
+          ],
+          [
+            "constraint-sumcheck",
+            174.9638263874465
+          ],
+          [
+            "binary-bus",
+            151.58468181098397
+          ],
+          [
+            "binary-bus-batching",
+            180.35614381022526
+          ],
+          [
+            "whir-opening",
+            147.72179716811735
+          ],
+          [
+            "bit-ring-switch",
+            180.7711813095041
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            181.00564656314114
+          ],
+          [
+            "column-batching",
+            177.39266968625037
+          ],
+          [
+            "whir-opening",
+            147.73982818990433
+          ],
+          [
+            "bit-ring-switch",
+            180.82009090998505
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            179.82009090998505
+          ],
+          [
+            "column-batching",
+            176.22274468480808
+          ],
+          [
+            "commitment-and-transcript-collision",
+            128.0
+          ],
+          [
+            "checkpoint-permutation-pcs-and-port-link",
+            148.0222184143567
+          ]
+        ],
+        "single_use_copies_removed": 2784124,
+        "table_widths": [4, 2, 2, 4, 2, 2, 4, 2, 2, 4, 10, 10, 10, 10, 10, 10, 36, 1, 232, 232],
+        "template_instances": 2,
+        "template_witnesses": 14488850,
+        "witnesses": 28977700
+      }
+    },
+    "hash": "Keccak-256",
+    "invalid_child_proof_rejected": true,
+    "invalid_child_statement_rejected": true,
+    "merge_levels": [
+      {
+        "nodes": [
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426338,
+                "prove_ms": 22856.993834,
+                "verify_ms": 121.99283399999999,
+                "witness_ms": 4222.096374999999
+              },
+              "aggregation_wall_ms": 27457.984917,
+              "witness_import_ms": [
+                128.94958300000002,
+                127.92329199999999
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426690,
+                "prove_ms": 22763.470250000002,
+                "verify_ms": 109.21354099999999,
+                "witness_ms": 1123.282791
+              },
+              "aggregation_wall_ms": 24250.637833999997,
+              "witness_import_ms": [
+                127.088708,
+                127.546041
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426530,
+                "prove_ms": 22392.725667,
+                "verify_ms": 128.181542,
+                "witness_ms": 1178.0235
+              },
+              "aggregation_wall_ms": 23965.677834000002,
+              "witness_import_ms": [
+                141.44512500000002,
+                125.277958
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1425986,
+                "prove_ms": 21283.144875,
+                "verify_ms": 112.08725,
+                "witness_ms": 1105.564542
+              },
+              "aggregation_wall_ms": 22767.876459,
+              "witness_import_ms": [
+                138.610958,
+                128.4395
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1425474,
+                "prove_ms": 22048.766791,
+                "verify_ms": 108.93475,
+                "witness_ms": 1071.2174169999998
+              },
+              "aggregation_wall_ms": 23490.293708,
+              "witness_import_ms": [
+                125.85199999999999,
+                135.502542
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427362,
+                "prove_ms": 22061.084749999998,
+                "verify_ms": 109.34425,
+                "witness_ms": 1072.631625
+              },
+              "aggregation_wall_ms": 23501.267583,
+              "witness_import_ms": [
+                128.226667,
+                129.958292
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426786,
+                "prove_ms": 22347.146541000002,
+                "verify_ms": 137.726709,
+                "witness_ms": 1075.07025
+              },
+              "aggregation_wall_ms": 23828.237834,
+              "witness_import_ms": [
+                141.190292,
+                127.075167
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427458,
+                "prove_ms": 21121.412917,
+                "verify_ms": 117.438625,
+                "witness_ms": 1155.019583
+              },
+              "aggregation_wall_ms": 22663.806166000002,
+              "witness_import_ms": [
+                137.82962500000002,
+                132.076334
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427010,
+                "prove_ms": 21233.465959,
+                "verify_ms": 108.445583,
+                "witness_ms": 1087.236375
+              },
+              "aggregation_wall_ms": 22708.608459,
+              "witness_import_ms": [
+                149.833917,
+                129.610584
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426370,
+                "prove_ms": 22755.205166,
+                "verify_ms": 108.55850000000001,
+                "witness_ms": 1077.228917
+              },
+              "aggregation_wall_ms": 24211.784083000002,
+              "witness_import_ms": [
+                142.192625,
+                128.566166
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1425730,
+                "prove_ms": 22470.910334,
+                "verify_ms": 108.647084,
+                "witness_ms": 1074.081333
+              },
+              "aggregation_wall_ms": 23918.138958,
+              "witness_import_ms": [
+                127.81637500000001,
+                136.639125
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427426,
+                "prove_ms": 21461.428832999998,
+                "verify_ms": 116.06495799999999,
+                "witness_ms": 1081.315292
+              },
+              "aggregation_wall_ms": 22935.77475,
+              "witness_import_ms": [
+                148.928208,
+                127.99058299999999
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426370,
+                "prove_ms": 21671.942125,
+                "verify_ms": 115.861334,
+                "witness_ms": 1117.929667
+              },
+              "aggregation_wall_ms": 23169.764791999998,
+              "witness_import_ms": [
+                135.462209,
+                128.547917
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427650,
+                "prove_ms": 21793.684875,
+                "verify_ms": 114.566333,
+                "witness_ms": 1030.8856660000001
+              },
+              "aggregation_wall_ms": 23192.023958,
+              "witness_import_ms": [
+                126.646958,
+                126.220208
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426626,
+                "prove_ms": 21677.166208,
+                "verify_ms": 130.95345799999998,
+                "witness_ms": 1038.972125
+              },
+              "aggregation_wall_ms": 23102.382082999997,
+              "witness_import_ms": [
+                127.914417,
+                127.35433400000001
+              ]
+            }
+          },
+          {
+            "children": 4,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427266,
+                "prove_ms": 20793.8415,
+                "verify_ms": 129.906792,
+                "witness_ms": 1048.450834
+              },
+              "aggregation_wall_ms": 22227.720833,
+              "witness_import_ms": [
+                129.088542,
+                126.41804200000001
+              ]
+            }
+          }
+        ],
+        "verifier_digest": [188, 180, 89, 144, 92, 58, 182, 89, 73, 238, 9, 5, 222, 3, 80, 150, 206, 120, 89, 56, 136, 233, 242, 111, 120, 218, 159, 6, 175, 189, 200, 205],
+        "wall_ms": 379281.25745800004
+      },
+      {
+        "nodes": [
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427394,
+                "prove_ms": 21064.254375,
+                "verify_ms": 137.070625,
+                "witness_ms": 1081.608625
+              },
+              "aggregation_wall_ms": 22546.810625,
+              "witness_import_ms": [
+                132.27866699999998,
+                131.563542
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427586,
+                "prove_ms": 22530.022209,
+                "verify_ms": 116.94787500000001,
+                "witness_ms": 1065.24175
+              },
+              "aggregation_wall_ms": 23979.113,
+              "witness_import_ms": [
+                137.99175,
+                128.882042
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426690,
+                "prove_ms": 21849.2855,
+                "verify_ms": 140.65025,
+                "witness_ms": 1057.468042
+              },
+              "aggregation_wall_ms": 23319.208458999998,
+              "witness_import_ms": [
+                142.134542,
+                129.636
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1425570,
+                "prove_ms": 24044.054959,
+                "verify_ms": 132.97825,
+                "witness_ms": 1062.730125
+              },
+              "aggregation_wall_ms": 25499.241291000002,
+              "witness_import_ms": [
+                130.617083,
+                128.842333
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426402,
+                "prove_ms": 22199.837875,
+                "verify_ms": 106.965167,
+                "witness_ms": 1095.85925
+              },
+              "aggregation_wall_ms": 23662.422708000002,
+              "witness_import_ms": [
+                130.27125,
+                129.459125
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427138,
+                "prove_ms": 21836.465709,
+                "verify_ms": 119.156708,
+                "witness_ms": 1101.782166
+              },
+              "aggregation_wall_ms": 23337.828166000003,
+              "witness_import_ms": [
+                151.207125,
+                129.183875
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427106,
+                "prove_ms": 22599.126500000002,
+                "verify_ms": 130.40591700000002,
+                "witness_ms": 1057.495791
+              },
+              "aggregation_wall_ms": 24044.095917,
+              "witness_import_ms": [
+                130.857875,
+                126.19
+              ]
+            }
+          },
+          {
+            "children": 8,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427042,
+                "prove_ms": 22351.084958,
+                "verify_ms": 123.346334,
+                "witness_ms": 1059.5594580000002
+              },
+              "aggregation_wall_ms": 23792.980499999998,
+              "witness_import_ms": [
+                131.00162500000002,
+                127.966458
+              ]
+            }
+          }
+        ],
+        "verifier_digest": [188, 180, 89, 144, 92, 58, 182, 89, 73, 238, 9, 5, 222, 3, 80, 150, 206, 120, 89, 56, 136, 233, 242, 111, 120, 218, 159, 6, 175, 189, 200, 205],
+        "wall_ms": 191098.814833
+      },
+      {
+        "nodes": [
+          {
+            "children": 16,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426274,
+                "prove_ms": 22185.788667,
+                "verify_ms": 107.377166,
+                "witness_ms": 1069.7056659999998
+              },
+              "aggregation_wall_ms": 23654.784916,
+              "witness_import_ms": [
+                160.892666,
+                130.984917
+              ]
+            }
+          },
+          {
+            "children": 16,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426786,
+                "prove_ms": 21984.869208,
+                "verify_ms": 132.698916,
+                "witness_ms": 1227.73975
+              },
+              "aggregation_wall_ms": 23599.628708,
+              "witness_import_ms": [
+                128.372084,
+                125.90533300000001
+              ]
+            }
+          },
+          {
+            "children": 16,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426722,
+                "prove_ms": 20704.682041,
+                "verify_ms": 115.957917,
+                "witness_ms": 1084.770833
+              },
+              "aggregation_wall_ms": 22161.515917,
+              "witness_import_ms": [
+                126.22091599999999,
+                129.849667
+              ]
+            }
+          },
+          {
+            "children": 16,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426690,
+                "prove_ms": 22023.757458,
+                "verify_ms": 117.46225,
+                "witness_ms": 1034.410958
+              },
+              "aggregation_wall_ms": 23457.732042,
+              "witness_import_ms": [
+                153.99725,
+                128.0615
+              ]
+            }
+          }
+        ],
+        "verifier_digest": [188, 180, 89, 144, 92, 58, 182, 89, 73, 238, 9, 5, 222, 3, 80, 150, 206, 120, 89, 56, 136, 233, 242, 111, 120, 218, 159, 6, 175, 189, 200, 205],
+        "wall_ms": 93342.78533299999
+      },
+      {
+        "nodes": [
+          {
+            "children": 32,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427234,
+                "prove_ms": 21836.418083,
+                "verify_ms": 130.21229200000002,
+                "witness_ms": 1117.446416
+              },
+              "aggregation_wall_ms": 23338.55625,
+              "witness_import_ms": [
+                127.41266700000001,
+                126.98920799999999
+              ]
+            }
+          },
+          {
+            "children": 32,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1427458,
+                "prove_ms": 23113.30775,
+                "verify_ms": 108.78925000000001,
+                "witness_ms": 1039.388458
+              },
+              "aggregation_wall_ms": 24522.515042,
+              "witness_import_ms": [
+                138.35787499999998,
+                122.613708
+              ]
+            }
+          }
+        ],
+        "verifier_digest": [188, 180, 89, 144, 92, 58, 182, 89, 73, 238, 9, 5, 222, 3, 80, 150, 206, 120, 89, 56, 136, 233, 242, 111, 120, 218, 159, 6, 175, 189, 200, 205],
+        "wall_ms": 48080.624958
+      },
+      {
+        "nodes": [
+          {
+            "children": 64,
+            "metrics": {
+              "aggregate": {
+                "proof_bytes": 1426018,
+                "prove_ms": 22672.623832999998,
+                "verify_ms": 134.16066600000002,
+                "witness_ms": 1226.721333
+              },
+              "aggregation_wall_ms": 24301.014708,
+              "witness_import_ms": [
+                138.325583,
+                129.099875
+              ]
+            }
+          }
+        ],
+        "verifier_digest": [188, 180, 89, 144, 92, 58, 182, 89, 73, 238, 9, 5, 222, 3, 80, 150, 206, 120, 89, 56, 136, 233, 242, 111, 120, 218, 159, 6, 175, 189, 200, 205],
+        "wall_ms": 24410.982791
+      }
+    ],
+    "merge_times_ms": {
+      "max": 27457.984917,
+      "median": 23501.267583,
+      "min": 22161.515917
+    },
+    "merge_verifier_digest": [188, 180, 89, 144, 92, 58, 182, 89, 73, 238, 9, 5, 222, 3, 80, 150, 206, 120, 89, 56, 136, 233, 242, 111, 120, 218, 159, 6, 175, 189, 200, 205],
+    "negative_checks": [
+      "root",
+      "nullifier hash",
+      "order",
+      "remove",
+      "insert",
+      "half",
+      "corrupted proof",
+      "truncated proof",
+      "trailing proof bytes"
+    ],
+    "parallel_nodes": 1,
+    "peak_rss_bytes": 8603992064,
+    "protocol": "experimental-binary-checkpoint-cyclic-merge-v1",
+    "run_wall_ms": 1699018.006791,
+    "same_key_recursion": true,
+    "setup_ms": {
+      "child": 11.083541,
+      "first_aggregation": 9260.884333,
+      "merge": 19933.0745
+    },
+    "validation_overhead_ms": 25762.757542,
+    "validation_work": {
+      "extra_first_aggregates": 1
+    }
+  },
+  "eight_worker_comparison": {
+    "method": "One eight-child release run per binary on the same Apple M2 Pro, eight Rayon workers, one active node and independently generated child proofs. Compare the sum of all seven aggregation-node wall times. This omits cross-node I/O, setup and test overhead. Both independent final verifications and all malformed-input checks passed.",
+    "previous": {
+      "source_keccak256": "d7035e81e9ac6c1a7700bfa33bb34f385c1304e4cfea4e35ed28c4aedc97e922",
+      "legacy_prime_feature_compiled": true,
+      "first_aggregation_ms": [
+        29162.315125,
+        27675.220167,
+        28862.769540999998,
+        29072.154333
+      ],
+      "merge_ms": [
+        33556.044042,
+        30575.429540999998,
+        31275.730583
+      ],
+      "median_first_aggregation_ms": 28967.461937,
+      "median_merge_ms": 31275.730583,
+      "sum_aggregation_node_ms": 210179.663332,
+      "final_proof_bytes": 1485794,
+      "fresh_verifier_wall_ms": 133.169958
+    },
+    "optimized": {
+      "source_keccak256": "dc6437d614d38e3aaaea2e00477e007bece202945dd9f887a660e6a8b5e1c518",
+      "legacy_prime_feature_compiled": false,
+      "first_aggregation_ms": [
+        22543.649208000003,
+        21774.259208,
+        22554.173,
+        21773.627375
+      ],
+      "merge_ms": [
+        26644.845208,
+        24406.572833,
+        23934.071917
+      ],
+      "median_first_aggregation_ms": 22158.954208000003,
+      "median_merge_ms": 24406.572833,
+      "sum_aggregation_node_ms": 163631.19874899997,
+      "final_proof_bytes": 1427010,
+      "fresh_verifier_wall_ms": 116.846292
+    },
+    "aggregation_node_time_reduction_percent": 22.146987888867265,
+    "previous_process": {
+      "command": [
+        "run/cyclic-baseline-prover",
+        "--batch-size",
+        "8",
+        "--threads",
+        "8",
+        "--out",
+        "run/eight-worker-baseline"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 304.799857667007,
+      "peak_tree_physical_footprint_bytes": 25340666176,
+      "peak_single_process_physical_footprint_bytes": 25730802176,
+      "stopped_at_40_gib_budget": false
+    },
+    "limitations": "The baseline binary includes the legacy prime-field feature. Both measured proof paths use the same depth-32 binary Keccak protocol, child authority and Johnson parameters. Absolute timings vary across runs."
+  }
+}

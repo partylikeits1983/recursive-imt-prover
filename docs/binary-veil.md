@@ -1,9 +1,9 @@
 # Binary Keccak masking and aggregation
 
 The active child proves membership in a **depth-32** Keccak IMT over
-Poly64/Poly192. VEIL-inspired masking aims for statistical ZK; its joint privacy
-argument and end-to-end 128-bit security remain unestablished. Formal ZK analysis
-is deferred while the recursive aggregation tree is built.
+Poly64/Poly192. VEIL-inspired masking targets statistical ZK. The joint privacy
+argument and end-to-end 128-bit analysis remain open. The recursive tree passed its
+[64-child acceptance test](aggregation-tree.md#validation-and-acceptance).
 
 ## Complete masked child and compact trace openings
 

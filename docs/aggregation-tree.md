@@ -95,14 +95,13 @@ incompatible layouts. This component test does not replace the full tree run.
 
 ## Validation and acceptance
 
-The 64-child baseline passed with 64 real child proofs, 32 first aggregates
-and 31 merges across five levels. The merge circuit was constructed once and its
-key bytes remained identical at every level. They also match the earlier
-eight-child run. The final 1,484,866-byte proof verified in a fresh process with
-only the final proof, ordered statements and trusted verifier files. Invalid
-child statements/proofs, foreign authority, altered statements and damaged
-aggregate encodings were rejected.
-[Raw run and timing limitations](../benchmarks/binary/tree-merge/cyclic-sixty-four.json).
+The integration test verified 64 distinct child proofs, 32 first aggregates
+and 31 merges. It constructed the merge circuit once and checked the same
+key at all five levels. The key also matched the eight-child run byte for
+byte. A fresh process verified the 1,426,018-byte proof against the ordered
+statements using only the trusted verifier files. The test rejected corrupted
+proofs, altered statements and a foreign authority.
+[Raw measurements and validation](../benchmarks/binary/tree-merge/compact-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
