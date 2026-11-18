@@ -2,6 +2,7 @@
 
 pub(crate) mod composition;
 mod context;
+mod equality;
 mod error;
 
 pub(crate) use context::BusContext;

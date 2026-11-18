@@ -415,13 +415,13 @@ fn check<F, EF, R>(
                     generic.fold(challenge);
                     for (actual, reference) in projected.airs.iter().zip(&generic.airs) {
                         if let Some(projection) = &actual.projected {
-                            let scaled = actual
-                                .equality
-                                .as_slice()
-                                .iter()
-                                .map(|&value| projection.equality_prefix * value)
+                            let scaled = (0..actual.equality.len())
+                                .map(|row| projection.equality_prefix * actual.equality.at(row))
                                 .collect::<Vec<_>>();
-                            assert_eq!(scaled.as_slice(), reference.equality.as_slice());
+                            let reference_weights = (0..reference.equality.len())
+                                .map(|row| reference.equality.at(row))
+                                .collect::<Vec<_>>();
+                            assert_eq!(scaled, reference_weights);
                             // The suffix remains an equality table even after its prefix is zero.
                             let remaining = actual.equality.num_variables();
                             let anchor =
@@ -429,7 +429,12 @@ fn check<F, EF, R>(
                             let expected =
                                 Point::new(anchor.iter().copied().map(to_repr).collect::<Vec<_>>())
                                     .equality_weights_msb();
-                            assert_eq!(actual.equality.as_slice(), expected.as_slice());
+                            assert_eq!(
+                                (0..actual.equality.len())
+                                    .map(|row| actual.equality.at(row))
+                                    .collect::<Vec<_>>(),
+                                expected
+                            );
                         }
                     }
                 }

@@ -37,6 +37,7 @@ use p3_sumcheck::generic_degree::{RoundPolyInterpolator, RoundProver};
 use p3_sumcheck::layout::{ColumnView, Table};
 
 use crate::bus::BusContext;
+use crate::bus::equality::FactoredEquality;
 use crate::selectors::BoundaryEvals;
 
 /// Prover state for the mixed-height bus composition polynomial.
@@ -169,9 +170,8 @@ impl<R: Field> ProjectedTerm<R> {
 
 impl<R: Field> ProjectedAir<R> {
     /// Weighted body coefficients, before applying the current equality factor.
-    fn round_coefficients(&self, equality: &Poly<R>) -> [R; 3] {
-        let values = equality.as_slice();
-        let half = values.len() / 2;
+    fn round_coefficients(&self, equality: &FactoredEquality<R>) -> [R; 3] {
+        let half = equality.len() / 2;
         let quadratic = self.groups.iter().any(|group| group.activation.is_some());
         let add = |mut sums: [R; 3], row: [R; 3]| {
             for (sum, value) in sums.iter_mut().zip(row) {
@@ -198,7 +198,7 @@ impl<R: Field> ProjectedAir<R> {
                     }
                 }
                 // The leading Boolean equality factor sums to one.
-                let weight = values[row] + values[row + half];
+                let weight = equality.at(row) + equality.at(row + half);
                 sums[0] *= weight;
                 sums[1] *= weight;
                 if quadratic {
@@ -340,7 +340,7 @@ struct AirState<'a, F: Field, R> {
     boundary: BoundaryEvals<R>,
     /// Equality polynomial anchored at the ProductGKR row point. Projected AIRs keep
     /// its unbound factors normalized; generic AIRs include the bound prefix here.
-    equality: Poly<R>,
+    equality: FactoredEquality<R>,
     /// Bus terms emitted by this AIR.
     terms: Vec<CompositionTerm<R>>,
     /// Optional compact affine representation, grouped by exact activation expression.
@@ -382,7 +382,7 @@ where
         let minimum_projections = usize::from(always) + 2 * usize::from(conditional);
         // Poly folding retains its allocation, so compare full projected capacity to
         // half-height source capacity. A one-row table never needs a source fold.
-        if self.equality.as_slice().len() == 1 || minimum_projections > sources / 2 {
+        if self.equality.len() == 1 || minimum_projections > sources / 2 {
             return;
         }
         let affine = |term: &CompositionTerm<R>| {
@@ -405,7 +405,7 @@ where
             // With no terms to combine, skip sparse aggregation and weight
             // whichever is shorter: the affine coefficients or the row table.
             let expression = &mut factor.factor_minus_one;
-            let scale_rows = self.equality.as_slice().len()
+            let scale_rows = self.equality.len()
                 < expression.main.len()
                     + expression.preprocessed.len()
                     + expression.periodic.len()
@@ -499,7 +499,7 @@ where
 
     /// Evaluate one affine expression on the AIR's own Boolean cube, column by column.
     fn materialize_affine(&self, expression: &BusAffineExpression<R>) -> Poly<R> {
-        let height = self.equality.as_slice().len();
+        let height = self.equality.len();
         let mut values = vec![expression.constant + expression.transition; height];
         values[0] += expression.first_row;
         values[height - 1] += expression.last_row - expression.transition;
@@ -559,13 +559,13 @@ where
         fingerprint_weights: &[R],
         offset: R,
     ) {
-        let height = self.equality.as_slice().len();
+        let height = self.equality.len();
 
         if let Some(projected) = &mut self.projected {
             projected.row_claim = (0..height)
                 .into_par_iter()
                 .map(|row| {
-                    self.equality.as_slice()[row]
+                    self.equality.at(row)
                         * projected
                             .groups
                             .iter()
@@ -635,7 +635,7 @@ where
                         is_last_row: boundary.last,
                         is_transition: boundary.transition,
                     };
-                    let weight = equality.as_slice()[row];
+                    let weight = equality.at(row);
                     for (claim, factor) in claims.iter_mut().zip(&factors) {
                         let value = factor
                             .evaluate::<R>(&mut scratch, evaluation)
@@ -757,9 +757,8 @@ where
                         periodic_layout: (periodic_columns.to_vec(), periodic_width),
                         // No row variable is bound yet, so both prefix products are empty.
                         boundary: BoundaryEvals::at(&[]),
-                        equality: Poly::new(
-                            Point::new(row_point.iter().copied().map(to_repr).collect::<Vec<_>>())
-                                .equality_weights_msb(),
+                        equality: FactoredEquality::new(
+                            row_point.iter().copied().map(to_repr).collect(),
                         ),
                         terms: Vec::new(),
                         projected: None,
@@ -812,7 +811,7 @@ where
 
     fn evaluate_air(&self, air: &AirState<'_, F, R>, node: R) -> R {
         debug_assert!(air.projected.is_none());
-        let half = air.equality.as_slice().len() / 2;
+        let half = air.equality.len() / 2;
         // Slot placement is settled once per term, outside the row loop below.
         let factors = air
             .terms
@@ -867,8 +866,8 @@ where
                         is_last_row: boundary.last,
                         is_transition: boundary.transition,
                     };
-                    let values = air.equality.as_slice();
-                    let equality = values[row] + (values[row + half] - values[row]) * node;
+                    let low_weight = air.equality.at(row);
+                    let equality = low_weight + (air.equality.at(row + half) - low_weight) * node;
                     air.terms
                         .iter()
                         .zip(&factors)

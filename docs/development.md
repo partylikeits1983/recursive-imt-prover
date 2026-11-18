@@ -22,8 +22,7 @@ These requirements do not change when inspecting other implementations.
 | `tests/legacy/` | Prime-field regressions, compiled as one optional test target |
 | `scripts/` | Reproducible benchmark drivers |
 | `benchmarks/` | Recorded measurements; no proof or private witness files |
-| `vendor/p3-recursion/` | Pinned upstream code and documented patches |
-| `vendor/p3-sumcheck/`, `vendor/p3-multi-stark/`, `vendor/p3-gkr/`, `vendor/p3-bus/` | Narrow Flock prover memory/work optimizations; documented upstream diffs |
+| `vendor/` | Pinned Plonky3 sources required by documented recursion and prover patches |
 
 ## Next milestones
 

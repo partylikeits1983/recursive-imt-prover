@@ -935,5 +935,13 @@
       "median": 68737.07895899999,
       "min": 68559.977334
     }
+  },
+  "process_measurement": {
+    "exit_code": 0,
+    "wall_seconds": 237.93920170798083,
+    "observed_peak_physical_footprint_bytes": 26273029760,
+    "stopped_at_40_gib_budget": false,
+    "profiled": false,
+    "memory_method": "proc_pid_rusage RUSAGE_INFO_V4 lifetime peak; physical footprint includes compressed and swapped pages, not resident RAM"
   }
 }

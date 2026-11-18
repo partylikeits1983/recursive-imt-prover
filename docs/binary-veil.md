@@ -881,6 +881,20 @@ A separate retry with `MIMALLOC_PURGE_DELAY=0` and allocator statistics enabled
 also stopped at the AIR sumcheck, with an observed 45,793,918,400-byte peak.
 Immediate purging did not remove the bottleneck; allocator defaults are unchanged.
 
+## Factored bus-composition equality weights
+
+The shared AIR sumcheck now stores each bus equality polynomial as two short
+factor tables, with its bound prefix absorbed into one factor. This preserves
+all weights exactly, including a zero prefix, and uses O(sqrt(height)) storage
+per AIR. It removes 2,362,442,112 bytes of dense equality arrays in depth-32 N=4.
+Dense-polynomial differential tests and all 17 upstream bus tests pass; the
+application's 70 enabled release tests pass as well.
+
+The same N=4 diagnostic still exceeded its 40 GiB budget, now at an observed
+43,499,089,152-byte physical peak, about 2.3 GB lower than the regenerated-leaf
+run. No aggregate was completed. The remaining AIR-sumcheck storage is still a
+scaling blocker. [Raw diagnostic](../benchmarks/binary/masked-aggregate/flock-factored-d32-n4-failure.json).
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

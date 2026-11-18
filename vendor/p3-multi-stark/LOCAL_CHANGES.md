@@ -33,3 +33,20 @@ Range tests compare chunk sizes 1/3/7/64 with independent dense AIR rows.
 This selects the [GKR regeneration adapter](../p3-gkr/LOCAL_CHANGES.md) through the
 [bus compact-source API](../p3-bus/LOCAL_CHANGES.md). Only prover allocation and
 computation change; proof serialization and verifier logic are unchanged.
+
+`src/bus/equality.rs` stores each bus-composition equality polynomial as two
+factor tables over the leading/trailing coordinates, with the already-bound
+prefix absorbed into the leading table. Its size is O(sqrt(trace height)),
+instead of one extension-field entry per row. Binding a coordinate multiplies
+the prefix by its equality factor; summing a coordinate removes its normalized
+factor. No division is used, including when the prefix is zero.
+`src/bus/composition.rs` reads those exact weights in place of dense tables.
+
+Differential tests compare every weight against the original dense polynomial
+through binding and summing, including Boolean anchors and zero prefixes.
+Existing projected/generic bus tests and commitment-binding tests remain active.
+Run all bus tests for this patch:
+
+```sh
+cargo test --locked --release --manifest-path vendor/p3-multi-stark/Cargo.toml --target-dir target --features parallel --lib bus::
+```
