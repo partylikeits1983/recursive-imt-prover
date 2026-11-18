@@ -4,7 +4,7 @@ use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_sumcheck::layout::Table;
 
-use crate::{F, Prepared, air::convert};
+use crate::{F, Prepared, air::convert, packing};
 
 type WitnessTables = (Vec<Option<Table<F>>>, Vec<[u64; 100]>);
 
@@ -73,6 +73,17 @@ impl Prepared {
                     let column = table.column(0);
                     for (r, row) in shard.rows.iter().enumerate() {
                         output[r + 1] = convert(column.value(row.source_row as usize));
+                    }
+                } else if let Some(shard) = &mapping.packed {
+                    for (r, row) in shard.rows.iter().enumerate() {
+                        for (term, &source) in row.sources.iter().enumerate() {
+                            output[term * height + r] =
+                                convert(table.column(0).value(source as usize));
+                        }
+                        output[packing::TERMS * height + r] =
+                            convert(table.column(2).value(row.sources[0] as usize));
+                        output[(packing::TERMS + 1) * height + r] =
+                            convert(table.column(4).value(*row.sources.last().unwrap() as usize));
                     }
                 } else if let Some(shard) = &mapping.gates {
                     for c in 0..table.num_polys() {

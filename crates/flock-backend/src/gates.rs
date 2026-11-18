@@ -66,6 +66,7 @@ pub fn partition(
     preprocessing: &[OldF],
     pp_width: usize,
     main_width: usize,
+    removed_rows: &[bool],
 ) -> Result<Vec<Arc<GateShard>>> {
     ensure!(
         (1..=5).contains(&main_width) && pp_width > main_width,
@@ -95,6 +96,9 @@ pub fn partition(
             continue;
         }
         ensure!(!padding, "noncontiguous native gate rows");
+        if removed_rows.get(source_row) == Some(&true) {
+            continue;
+        }
         let mut key = 0;
         for (column, id) in row[..main_width].iter().enumerate() {
             let id = usize::try_from(id.to_repr())?;

@@ -63,7 +63,8 @@ The ordered-vector format supports measured batches through eight children.
 The new `--tree-pair` format verifies two children and authenticates a fixed-size
 Keccak commitment plus count. Both template instances bind the same parent and
 have fixed left/right roles. The full ordered public list remains available.
-Aggregate-of-aggregate verification is the next step; see the
+Two first aggregates can now merge under a fixed source key. Reusing one merge
+circuit/key at every higher level remains unfinished; see the
 [three-circuit design](aggregation-tree.md).
 
 The backend imports actual symbolic constraints and product-bus declarations.
@@ -79,6 +80,9 @@ See [the backend implementation](../crates/flock-backend/README.md).
   values retain all 64 coordinates.
 - Remove auxiliary copies with one or two uses; group larger fanouts without
   losing copy constraints. Compact fixed preprocessing and public-copy tables.
+- Pack constant-weighted bit sums into linear AIR rows, retaining Boolean
+  constraints and every live copy-bus endpoint. Only internal values used exactly
+  twice are eliminated; their prefix sums reconstruct them exactly.
 - Regenerate product-bus leaves in bounded chunks and defer column folds.
 - Reuse only PCS-authenticated evaluations with unchanged opening requests.
 - Specialize affine bus rounds and skip discarded AIR bus payload construction,
@@ -95,36 +99,51 @@ ordered `(root, nullifier_hash)` statements. The merge circuit fixes the source
 authority and verifies both complete proofs. The output uses a new verifier key;
 reuse of one key at every higher level remains unfinished.
 
-Apple M2 Pro, four threads, Rust 1.98.1, release with thin LTO. One cold and two
-warm samples; compilation and creation of the four children/two first aggregates
-are excluded. Filesystem caches were not reset.
+Apple M2 Pro, four threads, Rust 1.98.1, release with thin LTO. Each stage has one
+cold and two warm samples. Aggregation times exclude setup and compilation;
+merge times also exclude creating the children and first aggregates. Filesystem
+caches were not reset, and memory pressure was not controlled on this shared host.
 
-| Operation | Measurement |
-|---|---:|
-| Merge setup | 19.304 s |
-| Cold merge | 62.096 s |
-| Warm merge median (range) | 59.445 s (54.802–64.088) |
-| Aggregate proof bytes | 1,386,223 |
-| Fresh verification / full process wall | 127.5 ms / 141.9 ms |
-| Witnesses per source verifier template | 15,326,145 |
-| Initial codeword cells | 687,865,856 |
-| Peak physical footprint / maximum RSS | 23.40 GB / 8.14 GB |
+| Measurement | First aggregation / 2 children | Merge / 4 children |
+|---|---:|---:|
+| Setup | 7.087 s | 27.432 s |
+| Cold aggregation | 21.951 s | 80.356 s |
+| Warm median (range) | 21.508 s (19.821–23.195) | 52.337 s (50.516–54.158) |
+| Proof bytes | 1,391,480–1,392,696 | 1,429,334 |
+| Fresh verification / full process wall | 120.2 ms / 145.2 ms | 131.6 ms / 146.3 ms |
+| Witnesses per verifier template | 7,304,377 | 15,763,977 |
+| Initial codeword cells | 218,103,808 | 419,430,400 |
+| Peak physical footprint / maximum RSS | 8.13 GB / 5.07 GB | 15.19 GB / 5.98 GB |
 
-Factoring constant Boolean selectors out of the Frobenius closing-weight sum
-and sharing trailing row-coordinate products cut template witnesses from 19.4
-to 15.3 million, and initial codeword cells by 16.3%. Parameters and proof
-relations are unchanged. An earlier single cold run took 116.8 s and produced
-1,441,981 bytes, but briefly overlapped unrelated compilation; it is diagnostic,
-not a controlled timing comparison. The optimized run still exceeds physical
-RAM, and no tree speed advantage over flat aggregation has been established.
+Warm child proving took 3.094–3.358 s; the first sample's children took
+3.861–5.109 s. Child proofs were 1,128,734–1,129,669 bytes. The first stage's warm
+critical-path median, including child proving and verification, was 28.895 s.
+A separate fresh process generated the second pair used by the merge.
+
+The backend packs up to 16 constant-weighted bit additions into one linear AIR
+row. It retains Boolean constraints and all live copy-bus endpoints. An omitted
+intermediate must have exactly two original uses and is reconstructed by its
+prefix sum. In the current merge, this removes 9,434,146 auxiliary values from
+committed tables across the two instances. The witness runner still computes
+them. This is an exact algebraic substitution; security parameters are unchanged.
+
+With the earlier source authority held fixed, packing reduced initial codeword
+cells from 687,865,856 to 419,430,400 (39.0%). That run measured a 33.046 s warm
+median (32.308–33.784), a 1,382,186-byte proof and 15.44 GB physical footprint,
+versus the previous 59.445 s median and 23.40 GB footprint. The table above uses
+newly packed first aggregates and final allocation cleanup. Source authorities,
+code fingerprints and all samples are retained; these runs are not a controlled
+timing comparison. A tree speed advantage over flat aggregation is still unproven.
 
 The final verifier succeeds with only the final proof, ordered statements and
 trusted verifier files. Sixteen mutations are rejected, including changed roots,
 nullifier hashes, ordering, counts, proof encoding and authority. The source
 aggregate also passes the complete verifier circuit directly; changed public
-inputs fail. Conditional algebraic accounting reports 146.119 bits; end-to-end
-security and joint child statistical ZK remain unestablished.
-[Raw samples, resource measurements and checks](../benchmarks/binary/tree-merge/depth32-four.json).
+inputs fail. The newly packed first aggregate passes 17 fresh-process mutation
+checks. Conditional algebraic accounting reports 146.211 bits for the current
+merge; end-to-end security and joint child statistical ZK remain unestablished.
+[Current samples, resource measurements and checks](../benchmarks/binary/tree-merge/packed-linear.json).
+[Earlier merge measurements](../benchmarks/binary/tree-merge/depth32-four.json).
 
 ## Compact aggregate proofs
 

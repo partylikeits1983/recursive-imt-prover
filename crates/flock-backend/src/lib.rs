@@ -19,6 +19,7 @@ mod keccak;
 #[cfg(test)]
 mod known_openings_tests;
 mod mixed;
+mod packing;
 mod proof_codec;
 mod verifier;
 mod witness;
@@ -53,6 +54,7 @@ use p3_multi_stark::{
     VerifierInstances, VerifyingKey, prove, security_report, setup, verify,
 };
 use p3_sumcheck::TableShape;
+use packing::{PackedShard, Packing};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::{sync::Arc, time::Instant};
@@ -91,6 +93,7 @@ struct TableSource {
     index: usize,
     shard: Option<Arc<FanoutShard>>,
     gates: Option<Arc<GateShard>>,
+    packed: Option<Arc<PackedShard>>,
 }
 
 #[derive(Serialize)]
@@ -100,6 +103,8 @@ pub struct Geometry {
     pub witnesses: u32,
     pub template_instances: usize,
     pub template_witnesses: u32,
+    pub packed_rows: usize,
+    pub packing_intermediates_removed: usize,
     pub single_use_copies_removed: usize,
     pub paired_copy_ids: usize,
     pub fanout_rows_by_width: Vec<(usize, usize)>,
@@ -175,15 +180,32 @@ impl Prepared {
             "unexpected native fanout layout"
         );
         let widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
-        let (shards, mut copies) =
-            fanout::partition(&widths, &bus.airs()[0].preprocessed_trace().unwrap().values)?;
+        let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
         let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
+        let packing = Packing::new(
+            &widths,
+            &gates_pp.values,
+            gates_pp.width,
+            bus.airs()[1].width(),
+            &fanout_pp.values,
+        )?;
+        let packed_rows = packing.shard.as_ref().map_or(0, |s| s.rows.len());
+        let packing_intermediates_removed = packing.removed_ids.iter().filter(|&&v| v).count();
+        eprintln!(
+            "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"
+        );
+        let (shards, mut copies) =
+            fanout::partition(&widths, &fanout_pp.values, &packing.removed_ids)?;
+        drop(fanout_pp);
         let gates = gates::partition(
             &widths,
             &gates_pp.values,
             gates_pp.width,
             bus.airs()[1].width(),
+            &packing.removed_rows,
         )?;
+        drop(packing.removed_ids);
+        drop(packing.removed_rows);
         drop(gates_pp);
         drop(widths);
         let gate_rows_by_width: Vec<_> = gates
@@ -250,6 +272,7 @@ impl Prepared {
                 index: 0,
                 shard: Some(shard),
                 gates: None,
+                packed: None,
             });
         }
         for shard in gates {
@@ -259,6 +282,17 @@ impl Prepared {
                 index: 1,
                 shard: None,
                 gates: Some(shard),
+                packed: None,
+            });
+        }
+        if let Some(shard) = packing.shard {
+            airs.push(Chip::packed(shard.clone()));
+            log_heights.push(shard.log_height);
+            sources.push(TableSource {
+                index: 1,
+                shard: None,
+                gates: None,
+                packed: Some(shard),
             });
         }
         let hash_index = source_hash_index + airs.len() - 2;
@@ -279,6 +313,7 @@ impl Prepared {
                 index: i,
                 shard: None,
                 gates: None,
+                packed: None,
             });
         }
         for air in &mut airs {
@@ -359,6 +394,11 @@ impl Prepared {
                 }
                 if let Some(gates) = &sources[i].gates {
                     return TableEncoding::new(gates.coordinate_widths.repeat(instances));
+                }
+                if sources[i].packed.is_some() {
+                    let mut widths = vec![1; packing::TERMS];
+                    widths.extend([64, 64]);
+                    return TableEncoding::new(widths.repeat(instances));
                 }
                 let width = if let Some(shard) = &sources[i].shard {
                     shard.coordinate_width
@@ -458,6 +498,8 @@ impl Prepared {
             witnesses,
             template_instances: instances,
             template_witnesses: circuit.witness_count,
+            packed_rows: packed_rows * instances,
+            packing_intermediates_removed: packing_intermediates_removed * instances,
             single_use_copies_removed: copy_stats.single_use * instances,
             paired_copy_ids: copy_stats.pairs * instances,
             fanout_rows_by_width,

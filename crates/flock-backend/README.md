@@ -121,6 +121,19 @@ remaining columns into the preprocessing commitment. Tests compare every retaine
 cell and omitted zero against the original native table, then check the imported
 constraints and complete bus multisets. No witness-dependent column is removed.
 
+`packing.rs` replaces chains of up to 16 constant-weighted bit additions with
+one linear AIR row. It constrains every input Boolean and enforces
+`end = start + sum(coefficient[i] * bit[i])`. Coefficients and witness IDs come
+from trusted preprocessing. An intermediate is removed only when the original
+copy table contains exactly its definition and the next chain input. Every
+retained witness occurrence stays on the copy bus, including endpoints shared
+between packed rows. Other uses prevent elimination; ID zero is never removed.
+
+This is an exact substitution: each omitted value can be reconstructed from
+its prefix sum. It introduces no probabilistic check or new cryptographic
+assumption. The witness runner remains unchanged. Tests compare retained copy
+tuples and reject altered results and non-Boolean inputs.
+
 Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/4,
 folding factor 4, Poly192 challenges, Keccak-256, and a required 144-bit conditional
 algebraic floor. The 128-bit generic classical hash work factor is reported

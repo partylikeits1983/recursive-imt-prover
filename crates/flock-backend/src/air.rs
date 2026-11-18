@@ -1,12 +1,13 @@
-//! Translate the pinned native circuit AIR without changing its constraints.
+//! Import native AIRs and exact linear packing replacements.
 use crate::{
     F,
     copies::{CopyPruner, CopySelectors},
     fanout::FanoutShard,
     gates::GateShard,
+    packing::{self, PackedShard},
 };
 use anyhow::{Result, ensure};
-use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression};
+use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression, SymbolicVariable};
 use old_air::{AirLayout as OldLayout, BaseAir as OldBaseAir};
 use old_binary_field::Poly64 as OldF;
 use old_binary_field::TowerLevel as OldTowerLevel;
@@ -32,7 +33,7 @@ pub struct ImportedAir {
     instances: usize,
     hash_stride: usize,
     bindings: Vec<InstanceBinding>,
-    source: NativeBusCircuitAir<OldF>,
+    source: Source,
     successor: bool,
     public_table: bool,
     shard: Option<Arc<FanoutShard>>,
@@ -49,7 +50,81 @@ struct InstanceBinding {
     bus_names: Vec<String>,
 }
 
+enum Source {
+    Native(NativeBusCircuitAir<OldF>),
+    Packed(Arc<PackedShard>),
+}
+
+impl Source {
+    fn width(&self) -> usize {
+        match self {
+            Self::Native(a) => a.width(),
+            Self::Packed(_) => packing::WIDTH,
+        }
+    }
+
+    fn num_public_values(&self) -> usize {
+        match self {
+            Self::Native(a) => a.num_public_values(),
+            Self::Packed(_) => 0,
+        }
+    }
+
+    fn preprocessing(&self) -> Option<RowMajorMatrix<F>> {
+        match self {
+            Self::Native(a) => a
+                .preprocessed_trace()
+                .map(|m| RowMajorMatrix::new(m.values.into_iter().map(convert).collect(), m.width)),
+            Self::Packed(shard) => Some(shard.preprocessing()),
+        }
+    }
+}
+
 impl Chip {
+    pub fn packed(shard: Arc<PackedShard>) -> Self {
+        let main =
+            |i| SymbolicExpression::from(SymbolicVariable::new(BaseEntry::Main { offset: 0 }, i));
+        let pp = |i| {
+            SymbolicExpression::from(SymbolicVariable::new(
+                BaseEntry::Preprocessed { offset: 0 },
+                i,
+            ))
+        };
+        let mut equation = main(packing::TERMS + 1) - main(packing::TERMS);
+        let mut constraints = Vec::new();
+        for i in 0..packing::TERMS {
+            equation -= main(i) * pp(packing::COEFFICIENTS + i);
+            constraints.push(main(i) * (main(i) - OldF::from_repr(1)));
+        }
+        constraints.push(equation);
+        Self::Native(Box::new(ImportedAir {
+            copies: CopySelectors {
+                columns: vec![],
+                replacements: vec![],
+            },
+            instances: 1,
+            hash_stride: 0,
+            bindings: vec![],
+            successor: false,
+            public_table: false,
+            shard: None,
+            gates: None,
+            successor_bus: String::new(),
+            preprocessed_map: (0..packing::PP_WIDTH).map(Some).collect(),
+            log_height: shard.log_height,
+            constraints,
+            interactions: (0..packing::WIDTH)
+                .map(|i| SymbolicBusInteraction {
+                    bus_name: "imt.witness".to_owned(),
+                    direction: OldDirection::Push,
+                    fields: vec![pp(i), main(i)],
+                    activation: OldActivation::Boolean(pp(packing::ACTIVE + i)),
+                })
+                .collect(),
+            source: Source::Packed(shard),
+        }))
+    }
+
     pub fn repeat(&mut self, instances: usize, hash_stride: usize) {
         if let Self::Native(a) = self {
             a.instances = instances;
@@ -246,7 +321,7 @@ impl Chip {
             gates: None,
             preprocessed_map: (0..source.preprocessed_width()).map(Some).collect(),
             log_height,
-            source,
+            source: Source::Native(source),
             constraints,
             interactions: symbolic.interactions().to_vec(),
         })))
@@ -276,10 +351,7 @@ impl BaseAir<F> for Chip {
                 Some(a.gates.as_ref().unwrap().compact_preprocessing())
             }
             Self::Native(a) if a.shard.is_some() => Some(a.shard.as_ref().unwrap().preprocessing()),
-            Self::Native(a) => a
-                .source
-                .preprocessed_trace()
-                .map(|m| RowMajorMatrix::new(m.values.into_iter().map(convert).collect(), m.width)),
+            Self::Native(a) => a.source.preprocessing(),
             Self::Keccak { preprocessing } => Some(preprocessing.clone()),
         };
         let Self::Native(a) = self else {

@@ -275,7 +275,7 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     .unwrap();
     let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
     let widths = fanout::coordinate_widths(&circuit, &[], 119).unwrap();
-    let (shards, mut copies) = fanout::partition(&widths, &fanout_pp.values).unwrap();
+    let (shards, mut copies) = fanout::partition(&widths, &fanout_pp.values, &[]).unwrap();
     let mut shard_widths = shards
         .iter()
         .map(|s| s.coordinate_width)
@@ -369,6 +369,7 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         &gate_pp.values,
         gate_pp.width,
         bus.airs()[1].width(),
+        &[],
     )
     .unwrap();
     let mut gate_rows: Vec<_> = gate_shards
@@ -580,7 +581,7 @@ fn arithmetic_partitions_avoid_padding_cliffs_without_losing_preprocessing() {
                 ]
             })
             .collect();
-        let shards = gates::partition(&[1, 16], &source, 3, 1).unwrap();
+        let shards = gates::partition(&[1, 16], &source, 3, 1, &[]).unwrap();
         let indices: Vec<_> = shards
             .iter()
             .flat_map(|s| s.source_rows.iter().copied())

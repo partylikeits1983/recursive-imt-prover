@@ -1,0 +1,1587 @@
+{
+  "scope": "Depth-32 masked Keccak IMT children; checkpoint first aggregation and fixed-authority four-child merging. Packed linear AIR optimization.",
+  "base_commit": "31d14c18ca5f72ad87010bd2cac8aa7212d1dd96",
+  "limitations": [
+    "Same-key recursive merging remains incomplete; output authorities differ from source authorities.",
+    "Joint child statistical zero knowledge and end-to-end 128-bit security remain unestablished.",
+    "Timings are individual measurements on a shared machine, with no cache reset or controlled memory pressure. Merge measurements exclude child and first-aggregate proving.",
+    "The older-source merge predates allocation-only cleanup; source fingerprints are retained verbatim."
+  ],
+  "parameters": {
+    "value_field": "Poly64",
+    "challenge_field": "Poly192",
+    "hash": "Keccak-256",
+    "proximity": "JohnsonBound",
+    "outer_pcs_target_bits": 152,
+    "initial_rate": "1/4",
+    "folding_factor": 4,
+    "grinding_ceiling_bits": 16,
+    "required_conditional_algebraic_floor_bits": 144
+  },
+  "baseline": "depth32-four.json: after_closing_weight_sharing",
+  "packed_merge_older_source": {
+    "command": "/usr/bin/time -l target/release/merge-demo --left run/recursive-checkpoint-pair32 --right run/recursive-checkpoint-pair32-b --samples 3 --out run/merge4-packed-linear",
+    "report": {
+      "acceptance_pass": false,
+      "children": 4,
+      "end_to_end_security_bits": null,
+      "environment": {
+        "compile_time_included": false,
+        "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+        "hardware": "Apple M2 Pro",
+        "legacy_prime_enabled": false,
+        "memory_bytes": "17179869184",
+        "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+        "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+        "plonky3_crates": "0.9.0-rc.2",
+        "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+        "profile": "release",
+        "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+        "release_profile": {
+          "codegen_units": 16,
+          "lto": "thin"
+        },
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+        "rustflags_runtime": "",
+        "source_keccak256": "c362a95cf138a10af6ee652b66c36decb6e5e9968ff3428c6e9dd52456b51a78",
+        "threads": 4
+      },
+      "fresh_verifier": {
+        "peak_rss_bytes": 22904832,
+        "setup_ms": 4.331417,
+        "verified": true,
+        "verify_ms": 119.555541
+      },
+      "fresh_verifier_wall_ms": 127.97762500000002,
+      "geometry": {
+        "algebraic_bits": 146.21184820871846,
+        "checkpoint_codeword_cells": 16777216,
+        "fanout_copy_layout": [
+          [1, 2, 1],
+          [1, 4, 727],
+          [1, 16, 104260],
+          [16, 4, 206638],
+          [16, 8, 1578],
+          [16, 16, 6954],
+          [64, 4, 1434831],
+          [64, 8, 258526],
+          [64, 16, 206857]
+        ],
+        "fanout_rows_by_width": [
+          [1, 104988],
+          [16, 215170],
+          [64, 1900214]
+        ],
+        "gate_rows_by_width": [
+          [
+            [1, 16, 64, 0, 16],
+            211924
+          ],
+          [
+            [64, 64, 64, 64, 64],
+            121169
+          ],
+          [
+            [16, 0, 64, 0, 16],
+            475831
+          ],
+          [
+            [64, 64, 16, 0, 64],
+            846727
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            1048576
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            102206
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            2078733
+          ]
+        ],
+        "hash_backend": "checkpoint",
+        "initial_codeword_cells": 419430400,
+        "keccak_permutations": 47586,
+        "log_heights": [4, 10, 17, 18, 11, 13, 21, 18, 18, 18, 17, 19, 20, 20, 17, 21, 19, 4, 16, 16],
+        "main_codeword_cells": 268435456,
+        "main_coordinate_widths": [
+          [1, 1, 1, 1],
+          [1, 1],
+          [1, 1, 1, 1],
+          [16, 16],
+          [16, 16],
+          [16, 16, 16, 16],
+          [64, 64],
+          [64, 64],
+          [64, 64, 64, 64],
+          [1, 16, 64, 0, 16, 1, 16, 64, 0, 16],
+          [64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+          [16, 0, 64, 0, 16, 16, 0, 64, 0, 16],
+          [64, 64, 16, 0, 64, 64, 64, 16, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64],
+          [0],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+        ],
+        "packed_rows": 615518,
+        "packing_intermediates_removed": 9071650,
+        "paired_copy_ids": 14502778,
+        "preprocessed_codeword_cells": 134217728,
+        "preprocessed_coordinate_widths": [
+          [0, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1],
+          [24, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+          [23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+          [24, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 17, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 1, 1, 1, 1],
+          [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 64, 64, 64, 63, 64, 64, 61, 61, 59, 59, 60, 61, 64, 63, 64, 63, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [17, 17, 1],
+          [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        "security_terms": [
+          [
+            "constraint-batching",
+            171.97460085904066
+          ],
+          [
+            "air-batching",
+            177.10821629678168
+          ],
+          [
+            "zerocheck",
+            175.9638263874465
+          ],
+          [
+            "constraint-sumcheck",
+            174.9638263874465
+          ],
+          [
+            "binary-bus",
+            152.09050696919098
+          ],
+          [
+            "binary-bus-batching",
+            180.35614381022526
+          ],
+          [
+            "whir-opening",
+            147.72179716811735
+          ],
+          [
+            "bit-ring-switch",
+            180.7711813095041
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            180.37429115693553
+          ],
+          [
+            "column-batching",
+            176.7711813095041
+          ],
+          [
+            "whir-opening",
+            147.73982818990433
+          ],
+          [
+            "bit-ring-switch",
+            180.82009090998505
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            180.09310940439147
+          ],
+          [
+            "column-batching",
+            176.49319656220433
+          ],
+          [
+            "commitment-and-transcript-collision",
+            128.0
+          ],
+          [
+            "checkpoint-permutation-pcs-and-port-link",
+            148.0222184143567
+          ]
+        ],
+        "single_use_copies_removed": 2652348,
+        "table_widths": [4, 2, 4, 2, 2, 4, 2, 2, 4, 10, 10, 10, 10, 10, 10, 10, 36, 1, 232, 232],
+        "template_instances": 2,
+        "template_witnesses": 15326145,
+        "witnesses": 30652290
+      },
+      "protocol": "experimental-binary-checkpoint-tree-merge-v1",
+      "same_key_recursion": false,
+      "samples": [
+        {
+          "metrics": {
+            "aggregate": {
+              "proof_bytes": 1382186,
+              "prove_ms": 31832.700708,
+              "verify_ms": 122.315834,
+              "witness_ms": 3082.746333
+            },
+            "aggregation_wall_ms": 35310.890375,
+            "witness_import_ms": [139.1095, 134.005458]
+          },
+          "peak_rss_bytes": 5597855744,
+          "phase": "cold-first-proof"
+        },
+        {
+          "metrics": {
+            "aggregate": {
+              "proof_bytes": 1382186,
+              "prove_ms": 29230.184959,
+              "verify_ms": 123.020375,
+              "witness_ms": 2668.330291
+            },
+            "aggregation_wall_ms": 32307.715375,
+            "witness_import_ms": [143.605917, 142.557]
+          },
+          "peak_rss_bytes": 6957416448,
+          "phase": "warm"
+        },
+        {
+          "metrics": {
+            "aggregate": {
+              "proof_bytes": 1382186,
+              "prove_ms": 32073.167208000003,
+              "verify_ms": 129.018625,
+              "witness_ms": 1297.712625
+            },
+            "aggregation_wall_ms": 33784.124291,
+            "witness_import_ms": [142.836459, 141.369958]
+          },
+          "peak_rss_bytes": 7095451648,
+          "phase": "warm"
+        }
+      ],
+      "setup_ms": 17453.591167,
+      "source_authority_digest": [57, 83, 210, 201, 121, 242, 15, 69, 8, 42, 211, 154, 84, 165, 11, 216, 220, 10, 79, 102, 139, 170, 66, 157, 182, 164, 61, 47, 239, 62, 207, 236],
+      "summary": {
+        "all": {
+          "max": 35310.890375,
+          "median": 33784.124291,
+          "min": 32307.715375
+        },
+        "warm": {
+          "max": 33784.124291,
+          "median": 33045.919833,
+          "min": 32307.715375
+        }
+      }
+    },
+    "resource_measurement": {
+      "method": "/usr/bin/time -l; full command, including setup and every sample",
+      "maximum_rss_bytes": 7095451648,
+      "peak_physical_footprint_bytes": 15437386560
+    },
+    "verification_checks": {
+      "scope": "Fresh process; only final proof, ordered four-child statement, and trusted final verifier data. No child or intermediate proofs.",
+      "checks": [
+        {
+          "case": "valid",
+          "exit_code": 0,
+          "passed": true,
+          "stderr": ""
+        },
+        {
+          "case": "root",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "nullifier-hash",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "swap-within-pair",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "swap-pairs",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "reverse",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "remove",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: tree requires a power-of-two count in 1..=64"
+        },
+        {
+          "case": "insert",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: tree requires a power-of-two count in 1..=64"
+        },
+        {
+          "case": "corrupt",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: opening: Boolean(ReductionProof(ClaimMismatch))"
+        },
+        {
+          "case": "header",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unsupported aggregate proof encoding"
+        },
+        {
+          "case": "truncate",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: UnexpectedEnd { additional: 1 }"
+        },
+        {
+          "case": "trailing",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trailing aggregate proof data"
+        },
+        {
+          "case": "identity",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier identity mismatch"
+        },
+        {
+          "case": "key-digest",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier digest mismatch"
+        },
+        {
+          "case": "key-bytes",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier digest mismatch"
+        },
+        {
+          "case": "protocol",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unknown field `identity`, expected one of `protocol`, `settings`, `child_parameters`, `child_identity`, `components`, `identities`, `verifier_digest`, `keccak_backend`, `statement_format`"
+        },
+        {
+          "case": "unknown-field",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: decode JSON run/merge4-packed-linear-negative/statement.json\n\nCaused by:\n    unknown field `amount`, expected `root` or `nullifier_hash` at line 1 column 348"
+        }
+      ]
+    },
+    "source_commit": "31d14c18ca5f72ad87010bd2cac8aa7212d1dd96"
+  },
+  "first_aggregation_a": {
+    "command": "/usr/bin/time -l target/release/masked-demo --tree-pair --batch-size 2 --samples 3 --keccak-backend checkpoint --out run/packed-pair32-a",
+    "report": {
+      "acceptance_pass": false,
+      "aggregate": true,
+      "batch_size": 2,
+      "bound": "Johnson",
+      "child_parameters": {
+        "log_inv_rate": 4,
+        "max_message_len": 2097152,
+        "min_algebraic_bits": 144,
+        "query_bits": 160
+      },
+      "complete": true,
+      "component_proof_count": 1,
+      "depth": 32,
+      "end_to_end_security_bits": null,
+      "environment": {
+        "compile_time_included": false,
+        "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+        "hardware": "Apple M2 Pro",
+        "legacy_prime_enabled": false,
+        "memory_bytes": "17179869184",
+        "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+        "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+        "plonky3_crates": "0.9.0-rc.2",
+        "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+        "profile": "release",
+        "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+        "release_profile": {
+          "codegen_units": 16,
+          "lto": "thin"
+        },
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+        "rustflags_runtime": "",
+        "source_keccak256": "8f136266fb7a10b143dee77fb7bb561dfe83d39c27e5211095ccee99a5df16eb",
+        "threads": 4
+      },
+      "experimental_statistical_zk_candidate": true,
+      "field": "Poly64/Poly192",
+      "fresh_verifier": {
+        "cached_verifier": true,
+        "decode_verify_ms": 120.162375,
+        "peak_rss_bytes": 29900800,
+        "process_wall_ms": 145.161875,
+        "setup_ms": 16.877833,
+        "verified": true
+      },
+      "full_zk_established": false,
+      "geometry": {
+        "aggregate": {
+          "algebraic_bits": 146.2187906575759,
+          "checkpoint_codeword_cells": 16777216,
+          "fanout_copy_layout": [
+            [1, 1, 1],
+            [1, 4, 12814],
+            [1, 8, 288],
+            [1, 16, 143313],
+            [16, 4, 324859],
+            [16, 8, 379],
+            [16, 16, 16948],
+            [64, 4, 828530],
+            [64, 8, 125310],
+            [64, 16, 97357]
+          ],
+          "fanout_rows_by_width": [
+            [1, 156416],
+            [16, 342186],
+            [64, 1051197]
+          ],
+          "gate_rows_by_width": [
+            [
+              [64, 64, 64, 64, 64],
+              15895
+            ],
+            [
+              [1, 64, 16, 0, 16],
+              262144
+            ],
+            [
+              [1, 64, 16, 0, 16],
+              60358
+            ],
+            [
+              [64, 64, 0, 0, 64],
+              262144
+            ],
+            [
+              [64, 64, 0, 0, 64],
+              52036
+            ],
+            [
+              [16, 16, 64, 0, 16],
+              435944
+            ],
+            [
+              [64, 64, 64, 0, 64],
+              1996156
+            ]
+          ],
+          "hash_backend": "checkpoint",
+          "initial_codeword_cells": 218103808,
+          "keccak_permutations": 51386,
+          "log_heights": [4, 14, 9, 18, 19, 9, 15, 20, 17, 17, 14, 18, 16, 18, 16, 19, 21, 16, 4, 16, 16],
+          "main_codeword_cells": 134217728,
+          "main_coordinate_widths": [
+            [1, 1, 1, 1],
+            [1, 1],
+            [1, 1],
+            [1, 1, 1, 1],
+            [16, 16],
+            [16, 16],
+            [16, 16, 16, 16],
+            [64, 64],
+            [64, 64],
+            [64, 64, 64, 64],
+            [64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+            [1, 64, 16, 0, 16, 1, 64, 16, 0, 16],
+            [1, 64, 16, 0, 16, 1, 64, 16, 0, 16],
+            [64, 64, 0, 0, 64, 64, 64, 0, 0, 64],
+            [64, 64, 0, 0, 64, 64, 64, 0, 0, 64],
+            [16, 16, 64, 0, 16, 16, 16, 64, 0, 16],
+            [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64],
+            [0],
+            [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+            [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+          ],
+          "packed_rows": 73538,
+          "packing_intermediates_removed": 643958,
+          "paired_copy_ids": 5784872,
+          "preprocessed_codeword_cells": 67108864,
+          "preprocessed_coordinate_widths": [
+            [0, 1, 1],
+            [23, 1, 0, 1, 1, 1],
+            [19, 1, 0, 1, 1, 1, 1, 1, 0, 0],
+            [23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+            [13, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+            [23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 23, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 19, 23, 23, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 17, 23, 23, 0, 1, 0, 0, 1, 1],
+            [23, 23, 23, 1, 1, 1, 1, 1],
+            [23, 23, 23, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 49, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 64, 64, 64, 64, 64, 64, 63, 61, 61, 59, 59, 61, 64, 64, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [17, 17, 1],
+            [23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+          ],
+          "security_terms": [
+            [
+              "constraint-batching",
+              171.97460085904066
+            ],
+            [
+              "air-batching",
+              177.0342157153379
+            ],
+            [
+              "zerocheck",
+              175.9638263874465
+            ],
+            [
+              "constraint-sumcheck",
+              174.9638263874465
+            ],
+            [
+              "binary-bus",
+              152.64377386985734
+            ],
+            [
+              "binary-bus-batching",
+              180.35614381022526
+            ],
+            [
+              "whir-opening",
+              147.73982818990433
+            ],
+            [
+              "bit-ring-switch",
+              180.82009090998505
+            ],
+            [
+              "bit-ring-switch-claim-batching",
+              180.25180715041054
+            ],
+            [
+              "column-batching",
+              176.65016590854276
+            ],
+            [
+              "whir-opening",
+              147.7192803608524
+            ],
+            [
+              "bit-ring-switch",
+              180.87071698305502
+            ],
+            [
+              "bit-ring-switch-claim-batching",
+              179.83258185416827
+            ],
+            [
+              "column-batching",
+              176.2351284092639
+            ],
+            [
+              "commitment-and-transcript-collision",
+              128.0
+            ],
+            [
+              "checkpoint-permutation-pcs-and-port-link",
+              148.0222184143567
+            ]
+          ],
+          "single_use_copies_removed": 4252610,
+          "table_widths": [4, 2, 2, 4, 2, 2, 4, 2, 2, 4, 10, 10, 10, 10, 10, 10, 10, 36, 1, 232, 232],
+          "template_instances": 2,
+          "template_witnesses": 7304377,
+          "witnesses": 14608754
+        }
+      },
+      "hash": "Keccak-256",
+      "outer_parameters": {
+        "fold": 4,
+        "log_inv_rate": 2,
+        "max_initial_codeword_cells": 1073741824,
+        "pcs_bits": 152,
+        "pow_bits": 16
+      },
+      "protocol": "experimental-binary-masked-checkpoint-tree-pair-v3",
+      "samples": [
+        {
+          "aggregate_decode_verify_ms": 118.55966599999999,
+          "aggregation": {
+            "aggregate": {
+              "proof_bytes": 1391992,
+              "prove_ms": 20244.988084,
+              "verify_ms": 119.254,
+              "witness_ms": 678.690541
+            },
+            "aggregation_wall_ms": 21951.054207999998,
+            "witness_import_ms": [461.018459, 447.09329199999996]
+          },
+          "aggregation_wall_ms": 21951.054207999998,
+          "children": [
+            {
+              "decode_verify_ms": 459.098666,
+              "proof_bytes": 1128946,
+              "prove_ms": 5109.08775,
+              "witness_ms": 3.70425
+            },
+            {
+              "decode_verify_ms": 457.214583,
+              "proof_bytes": 1129028,
+              "prove_ms": 3861.3065840000004,
+              "witness_ms": 2.874084
+            }
+          ],
+          "critical_path_ms": 31965.155458,
+          "peak_rss_bytes": 4795138048,
+          "phase": "cold-first-proof"
+        },
+        {
+          "aggregate_decode_verify_ms": 120.33654200000001,
+          "aggregation": {
+            "aggregate": {
+              "proof_bytes": 1391480,
+              "prove_ms": 18150.526791,
+              "verify_ms": 120.67008299999999,
+              "witness_ms": 677.287583
+            },
+            "aggregation_wall_ms": 19820.790083,
+            "witness_import_ms": [437.87725, 434.424]
+          },
+          "aggregation_wall_ms": 19820.790083,
+          "children": [
+            {
+              "decode_verify_ms": 457.86204200000003,
+              "proof_bytes": 1129632,
+              "prove_ms": 3164.2720830000003,
+              "witness_ms": 3.0561249999999998
+            },
+            {
+              "decode_verify_ms": 418.690458,
+              "proof_bytes": 1128900,
+              "prove_ms": 3155.481708,
+              "witness_ms": 1.110792
+            }
+          ],
+          "critical_path_ms": 27143.716915999998,
+          "peak_rss_bytes": 5066194944,
+          "phase": "warm-process"
+        },
+        {
+          "aggregate_decode_verify_ms": 120.149625,
+          "aggregation": {
+            "aggregate": {
+              "proof_bytes": 1392696,
+              "prove_ms": 21533.909292,
+              "verify_ms": 119.690708,
+              "witness_ms": 691.248292
+            },
+            "aggregation_wall_ms": 23195.329375,
+            "witness_import_ms": [432.808083, 417.667458]
+          },
+          "aggregation_wall_ms": 23195.329375,
+          "children": [
+            {
+              "decode_verify_ms": 438.800542,
+              "proof_bytes": 1128734,
+              "prove_ms": 3358.3647499999997,
+              "witness_ms": 2.231959
+            },
+            {
+              "decode_verify_ms": 434.286667,
+              "proof_bytes": 1129669,
+              "prove_ms": 3094.281333,
+              "witness_ms": 1.3502919999999998
+            }
+          ],
+          "critical_path_ms": 30647.226875,
+          "peak_rss_bytes": 5066194944,
+          "phase": "warm-process"
+        }
+      ],
+      "settings": {
+        "batch_size": 2,
+        "depth": 32,
+        "fold": 4,
+        "log_inv_rate": 2,
+        "max_codeword_cells": 536870912,
+        "min_algebraic_bits": 144,
+        "min_security_bits": 127,
+        "packed_log_inv_rate": 3,
+        "pcs_bits": 152,
+        "pow_bits": 16
+      },
+      "setup_ms": 7086.9214170000005,
+      "statement_format": "tree-pair",
+      "succinct": true,
+      "summary": {
+        "aggregate_verify_ms": {
+          "max": 120.33654200000001,
+          "median": 120.24308350000001,
+          "min": 120.149625
+        },
+        "aggregation_wall_ms": {
+          "max": 23195.329375,
+          "median": 21508.059729,
+          "min": 19820.790083
+        },
+        "critical_path_ms": {
+          "max": 30647.226875,
+          "median": 28895.4718955,
+          "min": 27143.716915999998
+        }
+      },
+      "verifier_key_bytes": 66317,
+      "verifier_key_export_ms": 1.142417
+    },
+    "resource_measurement": {
+      "method": "/usr/bin/time -l; full command, including setup and every sample",
+      "maximum_rss_bytes": 5066194944,
+      "peak_physical_footprint_bytes": 8126042432
+    },
+    "verification_checks": {
+      "source": "run/packed-pair32-a",
+      "scope": "fresh verifier with proof, ordered statement, and trusted verifier files only",
+      "checks": [
+        {
+          "case": "valid",
+          "exit_code": 0,
+          "passed": true,
+          "stderr": ""
+        },
+        {
+          "case": "root",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "nullifier-first",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "nullifier-last",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "swap",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "remove",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: incorrect public count"
+        },
+        {
+          "case": "insert",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: incorrect public count"
+        },
+        {
+          "case": "corrupt",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: opening: Boolean(ReductionProof(ClaimMismatch))"
+        },
+        {
+          "case": "header",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unsupported aggregate proof encoding"
+        },
+        {
+          "case": "truncate",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: UnexpectedEnd { additional: 1 }"
+        },
+        {
+          "case": "trailing",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trailing aggregate proof data"
+        },
+        {
+          "case": "authority",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier identity mismatch"
+        },
+        {
+          "case": "key-digest",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier digest mismatch"
+        },
+        {
+          "case": "key-bytes",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier digest mismatch"
+        },
+        {
+          "case": "child-authority",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: child verifier identity mismatch"
+        },
+        {
+          "case": "format",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unsupported aggregate protocol"
+        },
+        {
+          "case": "backend",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unsupported aggregate protocol"
+        },
+        {
+          "case": "unknown-field",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: decode JSON run/packed-pair32-a-negative/statement.json\n\nCaused by:\n    unknown field `amount`, expected `root` or `nullifier_hash` at line 1 column 348"
+        }
+      ]
+    }
+  },
+  "first_aggregation_b": {
+    "command": "/usr/bin/time -l target/release/masked-demo --tree-pair --batch-size 2 --keccak-backend checkpoint --out run/packed-pair32-b",
+    "report": {
+      "acceptance_pass": false,
+      "aggregate": true,
+      "batch_size": 2,
+      "bound": "Johnson",
+      "child_parameters": {
+        "log_inv_rate": 4,
+        "max_message_len": 2097152,
+        "min_algebraic_bits": 144,
+        "query_bits": 160
+      },
+      "complete": true,
+      "component_proof_count": 1,
+      "depth": 32,
+      "end_to_end_security_bits": null,
+      "environment": {
+        "compile_time_included": false,
+        "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+        "hardware": "Apple M2 Pro",
+        "legacy_prime_enabled": false,
+        "memory_bytes": "17179869184",
+        "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+        "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+        "plonky3_crates": "0.9.0-rc.2",
+        "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+        "profile": "release",
+        "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+        "release_profile": {
+          "codegen_units": 16,
+          "lto": "thin"
+        },
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+        "rustflags_runtime": "",
+        "source_keccak256": "8f136266fb7a10b143dee77fb7bb561dfe83d39c27e5211095ccee99a5df16eb",
+        "threads": 4
+      },
+      "experimental_statistical_zk_candidate": true,
+      "field": "Poly64/Poly192",
+      "fresh_verifier": {
+        "cached_verifier": true,
+        "decode_verify_ms": 124.693791,
+        "peak_rss_bytes": 29851648,
+        "process_wall_ms": 145.914458,
+        "setup_ms": 15.607167,
+        "verified": true
+      },
+      "full_zk_established": false,
+      "geometry": {
+        "aggregate": {
+          "algebraic_bits": 146.2187906575759,
+          "checkpoint_codeword_cells": 16777216,
+          "fanout_copy_layout": [
+            [1, 1, 1],
+            [1, 4, 12814],
+            [1, 8, 288],
+            [1, 16, 143313],
+            [16, 4, 324859],
+            [16, 8, 379],
+            [16, 16, 16948],
+            [64, 4, 828530],
+            [64, 8, 125310],
+            [64, 16, 97357]
+          ],
+          "fanout_rows_by_width": [
+            [1, 156416],
+            [16, 342186],
+            [64, 1051197]
+          ],
+          "gate_rows_by_width": [
+            [
+              [64, 64, 64, 64, 64],
+              15895
+            ],
+            [
+              [1, 64, 16, 0, 16],
+              262144
+            ],
+            [
+              [1, 64, 16, 0, 16],
+              60358
+            ],
+            [
+              [64, 64, 0, 0, 64],
+              262144
+            ],
+            [
+              [64, 64, 0, 0, 64],
+              52036
+            ],
+            [
+              [16, 16, 64, 0, 16],
+              435944
+            ],
+            [
+              [64, 64, 64, 0, 64],
+              1996156
+            ]
+          ],
+          "hash_backend": "checkpoint",
+          "initial_codeword_cells": 218103808,
+          "keccak_permutations": 51386,
+          "log_heights": [4, 14, 9, 18, 19, 9, 15, 20, 17, 17, 14, 18, 16, 18, 16, 19, 21, 16, 4, 16, 16],
+          "main_codeword_cells": 134217728,
+          "main_coordinate_widths": [
+            [1, 1, 1, 1],
+            [1, 1],
+            [1, 1],
+            [1, 1, 1, 1],
+            [16, 16],
+            [16, 16],
+            [16, 16, 16, 16],
+            [64, 64],
+            [64, 64],
+            [64, 64, 64, 64],
+            [64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+            [1, 64, 16, 0, 16, 1, 64, 16, 0, 16],
+            [1, 64, 16, 0, 16, 1, 64, 16, 0, 16],
+            [64, 64, 0, 0, 64, 64, 64, 0, 0, 64],
+            [64, 64, 0, 0, 64, 64, 64, 0, 0, 64],
+            [16, 16, 64, 0, 16, 16, 16, 64, 0, 16],
+            [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64],
+            [0],
+            [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+            [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+          ],
+          "packed_rows": 73538,
+          "packing_intermediates_removed": 643958,
+          "paired_copy_ids": 5784872,
+          "preprocessed_codeword_cells": 67108864,
+          "preprocessed_coordinate_widths": [
+            [0, 1, 1],
+            [23, 1, 0, 1, 1, 1],
+            [19, 1, 0, 1, 1, 1, 1, 1, 0, 0],
+            [23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+            [13, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1],
+            [23, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+            [23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 23, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 19, 23, 23, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 17, 23, 23, 0, 1, 0, 0, 1, 1],
+            [23, 23, 23, 1, 1, 1, 1, 1],
+            [23, 23, 23, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 49, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 64, 64, 64, 64, 64, 64, 63, 61, 61, 59, 59, 61, 64, 64, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [17, 17, 1],
+            [23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+          ],
+          "security_terms": [
+            [
+              "constraint-batching",
+              171.97460085904066
+            ],
+            [
+              "air-batching",
+              177.0342157153379
+            ],
+            [
+              "zerocheck",
+              175.9638263874465
+            ],
+            [
+              "constraint-sumcheck",
+              174.9638263874465
+            ],
+            [
+              "binary-bus",
+              152.64377386985734
+            ],
+            [
+              "binary-bus-batching",
+              180.35614381022526
+            ],
+            [
+              "whir-opening",
+              147.73982818990433
+            ],
+            [
+              "bit-ring-switch",
+              180.82009090998505
+            ],
+            [
+              "bit-ring-switch-claim-batching",
+              180.25180715041054
+            ],
+            [
+              "column-batching",
+              176.65016590854276
+            ],
+            [
+              "whir-opening",
+              147.7192803608524
+            ],
+            [
+              "bit-ring-switch",
+              180.87071698305502
+            ],
+            [
+              "bit-ring-switch-claim-batching",
+              179.83258185416827
+            ],
+            [
+              "column-batching",
+              176.2351284092639
+            ],
+            [
+              "commitment-and-transcript-collision",
+              128.0
+            ],
+            [
+              "checkpoint-permutation-pcs-and-port-link",
+              148.0222184143567
+            ]
+          ],
+          "single_use_copies_removed": 4252610,
+          "table_widths": [4, 2, 2, 4, 2, 2, 4, 2, 2, 4, 10, 10, 10, 10, 10, 10, 10, 36, 1, 232, 232],
+          "template_instances": 2,
+          "template_witnesses": 7304377,
+          "witnesses": 14608754
+        }
+      },
+      "hash": "Keccak-256",
+      "outer_parameters": {
+        "fold": 4,
+        "log_inv_rate": 2,
+        "max_initial_codeword_cells": 1073741824,
+        "pcs_bits": 152,
+        "pow_bits": 16
+      },
+      "protocol": "experimental-binary-masked-checkpoint-tree-pair-v3",
+      "samples": [
+        {
+          "aggregate_decode_verify_ms": 133.511042,
+          "aggregation": {
+            "aggregate": {
+              "proof_bytes": 1392376,
+              "prove_ms": 32080.865167,
+              "verify_ms": 153.833958,
+              "witness_ms": 752.912875
+            },
+            "aggregation_wall_ms": 33838.69979100001,
+            "witness_import_ms": [433.029, 418.049208]
+          },
+          "aggregation_wall_ms": 33838.69979100001,
+          "children": [
+            {
+              "decode_verify_ms": 438.72475,
+              "proof_bytes": 1129610,
+              "prove_ms": 4462.511667000001,
+              "witness_ms": 5.678083
+            },
+            {
+              "decode_verify_ms": 411.883917,
+              "proof_bytes": 1129498,
+              "prove_ms": 4157.7362920000005,
+              "witness_ms": 4.3321250000000004
+            }
+          ],
+          "critical_path_ms": 43455.610708,
+          "peak_rss_bytes": 4339351552,
+          "phase": "cold-first-proof"
+        }
+      ],
+      "settings": {
+        "batch_size": 2,
+        "depth": 32,
+        "fold": 4,
+        "log_inv_rate": 2,
+        "max_codeword_cells": 536870912,
+        "min_algebraic_bits": 144,
+        "min_security_bits": 127,
+        "packed_log_inv_rate": 3,
+        "pcs_bits": 152,
+        "pow_bits": 16
+      },
+      "setup_ms": 6351.285334,
+      "statement_format": "tree-pair",
+      "succinct": true,
+      "summary": {
+        "aggregate_verify_ms": {
+          "max": 133.511042,
+          "median": 133.511042,
+          "min": 133.511042
+        },
+        "aggregation_wall_ms": {
+          "max": 33838.69979100001,
+          "median": 33838.69979100001,
+          "min": 33838.69979100001
+        },
+        "critical_path_ms": {
+          "max": 43455.610708,
+          "median": 43455.610708,
+          "min": 43455.610708
+        }
+      },
+      "verifier_key_bytes": 66317,
+      "verifier_key_export_ms": 1.321917
+    },
+    "resource_measurement": {
+      "method": "/usr/bin/time -l; full command, including setup and every sample",
+      "maximum_rss_bytes": 4339351552,
+      "peak_physical_footprint_bytes": 8085246144
+    }
+  },
+  "packed_merge_current_source": {
+    "command": "/usr/bin/time -l target/release/merge-demo --left run/packed-pair32-a --right run/packed-pair32-b --samples 3 --out run/packed-merge4",
+    "report": {
+      "acceptance_pass": false,
+      "children": 4,
+      "end_to_end_security_bits": null,
+      "environment": {
+        "compile_time_included": false,
+        "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+        "hardware": "Apple M2 Pro",
+        "legacy_prime_enabled": false,
+        "memory_bytes": "17179869184",
+        "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+        "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+        "plonky3_crates": "0.9.0-rc.2",
+        "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+        "profile": "release",
+        "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+        "release_profile": {
+          "codegen_units": 16,
+          "lto": "thin"
+        },
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+        "rustflags_runtime": "",
+        "source_keccak256": "8f136266fb7a10b143dee77fb7bb561dfe83d39c27e5211095ccee99a5df16eb",
+        "threads": 4
+      },
+      "fresh_verifier": {
+        "peak_rss_bytes": 23248896,
+        "setup_ms": 7.393416,
+        "verified": true,
+        "verify_ms": 131.557208
+      },
+      "fresh_verifier_wall_ms": 146.263084,
+      "geometry": {
+        "algebraic_bits": 146.21052368967804,
+        "checkpoint_codeword_cells": 16777216,
+        "fanout_copy_layout": [
+          [1, 2, 1],
+          [1, 4, 751],
+          [1, 16, 104235],
+          [16, 4, 206558],
+          [16, 8, 1422],
+          [16, 16, 7267],
+          [64, 4, 1459388],
+          [64, 8, 259877],
+          [64, 16, 209316]
+        ],
+        "fanout_rows_by_width": [
+          [1, 104987],
+          [16, 215247],
+          [64, 1928581]
+        ],
+        "gate_rows_by_width": [
+          [
+            [1, 16, 64, 0, 16],
+            211780
+          ],
+          [
+            [64, 64, 16, 0, 64],
+            849135
+          ],
+          [
+            [64, 64, 64, 64, 64],
+            130694
+          ],
+          [
+            [16, 0, 64, 0, 16],
+            501822
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            1048576
+          ],
+          [
+            [64, 0, 64, 0, 64],
+            132639
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            2097152
+          ],
+          [
+            [64, 64, 64, 0, 64],
+            928
+          ]
+        ],
+        "hash_backend": "checkpoint",
+        "initial_codeword_cells": 419430400,
+        "keccak_permutations": 48328,
+        "log_heights": [4, 10, 17, 18, 11, 13, 21, 18, 18, 18, 20, 17, 19, 20, 18, 21, 10, 19, 4, 16, 16],
+        "main_codeword_cells": 268435456,
+        "main_coordinate_widths": [
+          [1, 1, 1, 1],
+          [1, 1],
+          [1, 1, 1, 1],
+          [16, 16],
+          [16, 16],
+          [16, 16, 16, 16],
+          [64, 64],
+          [64, 64],
+          [64, 64, 64, 64],
+          [1, 16, 64, 0, 16, 1, 16, 64, 0, 16],
+          [64, 64, 16, 0, 64, 64, 64, 16, 0, 64],
+          [64, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+          [16, 0, 64, 0, 16, 16, 0, 64, 0, 16],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 0, 64, 0, 64, 64, 0, 64, 0, 64],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [64, 64, 64, 0, 64, 64, 64, 64, 0, 64],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64],
+          [0],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16],
+          [16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16]
+        ],
+        "packed_rows": 640094,
+        "packing_intermediates_removed": 9434146,
+        "paired_copy_ids": 14956412,
+        "preprocessed_codeword_cells": 134217728,
+        "preprocessed_coordinate_widths": [
+          [0, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1],
+          [24, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+          [23, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1],
+          [24, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+          [24, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 64, 1, 1, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 1, 1, 1, 1, 1],
+          [24, 24, 24, 24, 1, 1, 1],
+          [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 64, 64, 64, 63, 64, 64, 61, 61, 59, 59, 60, 61, 64, 63, 64, 63, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [17, 17, 1],
+          [24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        "security_terms": [
+          [
+            "constraint-batching",
+            171.97460085904066
+          ],
+          [
+            "air-batching",
+            177.0342157153379
+          ],
+          [
+            "zerocheck",
+            175.9638263874465
+          ],
+          [
+            "constraint-sumcheck",
+            174.9638263874465
+          ],
+          [
+            "binary-bus",
+            152.01457390658487
+          ],
+          [
+            "binary-bus-batching",
+            180.35614381022526
+          ],
+          [
+            "whir-opening",
+            147.72179716811735
+          ],
+          [
+            "bit-ring-switch",
+            180.7711813095041
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            180.39266968625037
+          ],
+          [
+            "column-batching",
+            176.78932865621437
+          ],
+          [
+            "whir-opening",
+            147.73982818990433
+          ],
+          [
+            "bit-ring-switch",
+            180.82009090998505
+          ],
+          [
+            "bit-ring-switch-claim-batching",
+            179.80770718552924
+          ],
+          [
+            "column-batching",
+            176.21046635502964
+          ],
+          [
+            "commitment-and-transcript-collision",
+            128.0
+          ],
+          [
+            "checkpoint-permutation-pcs-and-port-link",
+            148.0222184143567
+          ]
+        ],
+        "single_use_copies_removed": 2659806,
+        "table_widths": [4, 2, 4, 2, 2, 4, 2, 2, 4, 10, 10, 10, 10, 10, 10, 10, 10, 36, 1, 232, 232],
+        "template_instances": 2,
+        "template_witnesses": 15763977,
+        "witnesses": 31527954
+      },
+      "protocol": "experimental-binary-checkpoint-tree-merge-v1",
+      "same_key_recursion": false,
+      "samples": [
+        {
+          "metrics": {
+            "aggregate": {
+              "proof_bytes": 1429334,
+              "prove_ms": 74110.12,
+              "verify_ms": 173.169875,
+              "witness_ms": 5562.133334
+            },
+            "aggregation_wall_ms": 80355.589584,
+            "witness_import_ms": [202.64641699999999, 307.50429099999997]
+          },
+          "peak_rss_bytes": 5953028096,
+          "phase": "cold-first-proof"
+        },
+        {
+          "metrics": {
+            "aggregate": {
+              "proof_bytes": 1429334,
+              "prove_ms": 43772.802083999995,
+              "verify_ms": 196.292833,
+              "witness_ms": 6015.628792
+            },
+            "aggregation_wall_ms": 50516.205542,
+            "witness_import_ms": [276.04400000000004, 254.957]
+          },
+          "peak_rss_bytes": 5984452608,
+          "phase": "warm"
+        },
+        {
+          "metrics": {
+            "aggregate": {
+              "proof_bytes": 1429334,
+              "prove_ms": 46615.967541000005,
+              "verify_ms": 131.079208,
+              "witness_ms": 7050.62425
+            },
+            "aggregation_wall_ms": 54157.70925,
+            "witness_import_ms": [188.760333, 170.607167]
+          },
+          "peak_rss_bytes": 5984452608,
+          "phase": "warm"
+        }
+      ],
+      "setup_ms": 27432.400125,
+      "source_authority_digest": [90, 58, 208, 236, 44, 174, 24, 142, 152, 74, 123, 175, 208, 11, 131, 90, 198, 230, 191, 35, 172, 218, 253, 223, 142, 113, 223, 79, 164, 166, 87, 194],
+      "summary": {
+        "all": {
+          "max": 80355.589584,
+          "median": 54157.70925,
+          "min": 50516.205542
+        },
+        "warm": {
+          "max": 54157.70925,
+          "median": 52336.957396,
+          "min": 50516.205542
+        }
+      }
+    },
+    "resource_measurement": {
+      "method": "/usr/bin/time -l; full command, including setup and every sample",
+      "maximum_rss_bytes": 5984452608,
+      "peak_physical_footprint_bytes": 15185843328
+    },
+    "verification_checks": {
+      "scope": "Fresh process; only final proof, ordered four-child statement, and trusted final verifier data. No child or intermediate proofs.",
+      "checks": [
+        {
+          "case": "valid",
+          "exit_code": 0,
+          "passed": true,
+          "stderr": ""
+        },
+        {
+          "case": "root",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "nullifier-hash",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "swap-within-pair",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "swap-pairs",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "reverse",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: binary-bus product reduction failed: product GKR layer 1 failed its consistency check\n\nCaused by:\n    product GKR layer 1 failed its consistency check"
+        },
+        {
+          "case": "remove",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: tree requires a power-of-two count in 1..=64"
+        },
+        {
+          "case": "insert",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: tree requires a power-of-two count in 1..=64"
+        },
+        {
+          "case": "corrupt",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: opening: Boolean(ReductionProof(ClaimMismatch))"
+        },
+        {
+          "case": "header",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unsupported aggregate proof encoding"
+        },
+        {
+          "case": "truncate",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: UnexpectedEnd { additional: 1 }"
+        },
+        {
+          "case": "trailing",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trailing aggregate proof data"
+        },
+        {
+          "case": "identity",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier identity mismatch"
+        },
+        {
+          "case": "key-digest",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier digest mismatch"
+        },
+        {
+          "case": "key-bytes",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: trusted verifier digest mismatch"
+        },
+        {
+          "case": "protocol",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: unknown field `identity`, expected one of `protocol`, `settings`, `child_parameters`, `child_identity`, `components`, `identities`, `verifier_digest`, `keccak_backend`, `statement_format`"
+        },
+        {
+          "case": "unknown-field",
+          "exit_code": 1,
+          "passed": true,
+          "stderr": "Error: decode JSON run/packed-merge4-negative/statement.json\n\nCaused by:\n    unknown field `amount`, expected `root` or `nullifier_hash` at line 1 column 348"
+        }
+      ]
+    }
+  }
+}

@@ -132,7 +132,11 @@ pub fn coordinate_widths(
     Ok(widths)
 }
 
-pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<(Vec<Arc<FanoutShard>>, CopyPruner)> {
+pub fn partition(
+    widths: &[u8],
+    fanout: &[OldF],
+    removed_ids: &[bool],
+) -> Result<(Vec<Arc<FanoutShard>>, CopyPruner)> {
     ensure!(fanout.len().is_multiple_of(3), "incomplete fanout row");
     let mut copies = CopyPruner::new(widths.len());
     let mut shards: Vec<_> = [1, 16, 64]
@@ -167,9 +171,13 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<(Vec<Arc<FanoutShard>
             "invalid fanout witness ID order"
         );
         if count != 0 && id != previous {
-            if !copies.remove_group(previous, count) {
-                append_group(&mut shards, widths[previous], previous, start, count)?;
-            }
+            record_group(
+                &mut shards,
+                &mut copies,
+                widths,
+                removed_ids,
+                (previous, start, count),
+            )?;
             count = 0;
         }
         if count == 0 {
@@ -178,8 +186,14 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<(Vec<Arc<FanoutShard>
         count += 1;
         previous = id;
     }
-    if count != 0 && !copies.remove_group(previous, count) {
-        append_group(&mut shards, widths[previous], previous, start, count)?;
+    if count != 0 {
+        record_group(
+            &mut shards,
+            &mut copies,
+            widths,
+            removed_ids,
+            (previous, start, count),
+        )?;
     }
     Ok((
         shards
@@ -198,6 +212,21 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<(Vec<Arc<FanoutShard>
             .collect(),
         copies,
     ))
+}
+
+fn record_group(
+    shards: &mut [FanoutShard],
+    copies: &mut CopyPruner,
+    widths: &[u8],
+    removed_ids: &[bool],
+    (id, start, count): (usize, usize, usize),
+) -> Result<()> {
+    if removed_ids.get(id) == Some(&true) {
+        ensure!(id != 0 && count == 2, "packing removed a live witness");
+    } else if !copies.remove_group(id, count) {
+        append_group(shards, widths[id], id, start, count)?;
+    }
+    Ok(())
 }
 
 fn append_group(
