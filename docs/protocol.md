@@ -106,7 +106,9 @@ rehashes the complete ordered list and verifies one proof with independently
 trusted data; it needs no child or intermediate proofs. Swapping statements or
 changing a root, nullifier hash or count changes the authenticated statement.
 
-The first aggregation is implemented. Recursive merging is not yet implemented.
+The first aggregation is implemented. The complete aggregate-verifier circuit
+and a two-verifier outer proof pass small component tests. Reusable merging of
+depth-32 IMT aggregates remains unimplemented.
 Cyclic merging must authenticate the first-aggregation and merge authorities,
 constrain its branch choice, and decrease counts toward actual child proofs.
 Native verification followed by an unconstrained acceptance bit is insufficient.
@@ -116,15 +118,15 @@ See the [implementation and acceptance plan](aggregation-tree.md).
 
 The active statement is exactly 64 bytes: root followed by nullifier hash.
 JSON carries two 32-byte arrays and rejects extra or missing fields. Child v6
-uses the `IMTVCA06` header. Tree-pair v2, flat Flock v7 and flat checkpoint v8
-bind the new relation and trusted configuration. Old root/amount proofs and keys
-are incompatible and must be regenerated. Historical measurements retain their
+uses the `IMTVCA06` header. Flock tree-pair v2, checkpoint tree-pair v3, flat
+Flock v7 and flat checkpoint v9 bind the relation and trusted configuration.
+Old root/amount proofs and keys are incompatible and must be regenerated. Historical measurements retain their
 original protocol identifiers and are not measurements of this relation.
 
 Aggregate files use the `IMTPRF01` header and fixed-width little-endian bincode
 2.0.1 serialization. This removes variable-integer overhead from field elements;
 it does not change transcript messages. Decoding caps input at 16 MiB and
-rejects trailing data. Verifier snapshots use v3; regenerate older aggregate
+rejects trailing data. Verifier snapshots use v4; regenerate older aggregate
 proofs and verifier data after updating. Child encoding is unchanged.
 
 ## Validation

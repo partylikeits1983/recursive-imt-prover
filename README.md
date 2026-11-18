@@ -18,7 +18,7 @@ real funds. No on-chain verifier.
 |---|---|---|
 | IMT child | Prove private membership in a depth-32 Keccak IMT | Implemented with experimental masking |
 | First aggregation | Verify two child proofs and produce a standard aggregate | Working first level via `--tree-pair`; common recursive format pending |
-| Recursive merge | Verify two aggregates and produce another aggregate of the same format | Not implemented |
+| Recursive merge | Verify two aggregates and produce another aggregate of the same format | Two-proof component test passes; reusable merge pending |
 
 ```text
 8 IMT children → 4 first aggregates → 2 merges → 1 final merge
@@ -37,8 +37,8 @@ statements are valid. Spending, spent-nullifier tracking and accepted-root histo
 scope.
 
 The planned tree supports balanced batches of 2, 4, 8, 16, 32 or 64 children.
-Only the first aggregation currently works. Completion requires an eight-child
-run through two merge levels using the exact same merge key, followed by fresh
+Only the first aggregation is available for IMT proofs. Completion requires an
+eight-child run through two merge levels using the exact same merge key, followed by fresh
 process verification and tamper tests. See the [implementation plan](docs/aggregation-tree.md).
 
 Aggregates are intentionally non-ZK. Their inputs are child proofs and public
@@ -113,7 +113,8 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Depth-32 root/nullifier-hash measurements on an Apple M2 Pro with four threads.
+Last repeated depth-32 root/nullifier-hash measurements, before the checkpoint
+transcript update, on an Apple M2 Pro with four threads.
 One cold and two warm samples; aggregation is the warm median. Fresh verification
 includes process startup and authenticated verifier-key loading.
 

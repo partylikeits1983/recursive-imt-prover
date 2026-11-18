@@ -1,7 +1,12 @@
 //! Complete released Poly64/Poly192 WHIR MultiStark relations.
+mod coordinate;
 mod mixed;
 mod relation;
 use alloc::vec::Vec;
+pub use coordinate::{
+    AuthenticatedCoordinateOpenings, BinaryPolyCoordinateWhirVerifier, CoordinatePcsParameters,
+    CoordinateWhirInput, CoordinateWhirTargets,
+};
 use core::hash::Hash;
 
 pub use mixed::{

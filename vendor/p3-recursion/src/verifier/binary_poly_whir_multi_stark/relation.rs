@@ -2,13 +2,14 @@
 
 use alloc::sync::Arc;
 
-use p3_bus::{BusPlan, BusPlanInput};
+use p3_bus::{BusPlan, BusPlanInput, BusProof};
 use p3_circuit::ops::binary_encoding::PrimeBinaryEncoding;
 use p3_circuit::ops::binary_host::BinaryCircuitHost;
 use p3_multi_stark::rounds::AirDegrees;
 use p3_multi_stark::transcript::{MultiStarkInstanceShape, MultiStarkShape};
 use p3_multi_stark::zerocheck::transcript::ZerocheckShape;
 use p3_sumcheck::OpeningProtocol;
+use p3_sumcheck::generic_degree::GenericDegreeProof;
 
 use super::super::BinaryPolyLogupStarOutput;
 use super::super::binary_field_policy::{
@@ -89,6 +90,12 @@ pub(super) struct NativeReduction {
     pub(super) indexed: Option<NativePolyIndexedInput>,
     pub(super) main_points: Vec<Point<Poly192>>,
     pub(super) preprocessed_points: Option<Vec<Point<Poly192>>>,
+}
+
+pub(super) struct NativeAirReduction {
+    pub bus: Option<super::super::NativeBinaryPolyProductGkrInput>,
+    pub sumcheck: NativeBinaryPolyGenericSumcheckInput,
+    pub point: Point<Poly192>,
 }
 
 impl PolyMultiStarkRelationShape {
@@ -680,29 +687,11 @@ impl PolyMultiStarkRelation {
         C: MultiStarkConfig<Val = Poly64, Challenge = Poly192>,
         Ch: FieldChallenger<Poly64> + GrindingChallenger<Witness = Poly64> + Clone,
     {
-        for values in public {
-            ch.observe_slice(values);
-        }
-        let bus_reduction = if let (Some(verifier), Some(proof)) = (&self.bus, &proof.bus) {
-            Some(verifier.import_native(proof, ch)?)
-        } else {
-            None
-        };
-        ch.observe_slice(&self.input.zerocheck_seed);
-        let _alpha = ch.sample_algebra_element::<Poly192>();
-        let _beta = ch.sample_algebra_element::<Poly192>();
-        if let Some((_, values)) = &bus_reduction {
-            let lambda = ch.sample_algebra_element::<Poly192>();
-            let expected =
-                lambda * ((values[0] + Poly192::ONE) + lambda * (values[1] + Poly192::ONE));
-            if proof.sumcheck.claimed_sum != expected {
-                return Err(invalid("binary Poly MultiStark bus initial sum mismatch"));
-            }
-        }
-        let _ = self.tau.sample_native(ch)?;
-        let (sumcheck, point, _) = self
-            .sumcheck
-            .import_native_with_reduction(&proof.sumcheck, ch)?;
+        let NativeAirReduction {
+            bus,
+            sumcheck,
+            point,
+        } = self.reduce_native_parts(public, proof.bus.as_ref(), &proof.sumcheck, ch)?;
         let indexed = if let (Some(verifier), Some(proof)) = (&self.indexed, &proof.indexed) {
             Some(verifier.import_native(&point, proof, ch)?)
         } else {
@@ -726,11 +715,51 @@ impl PolyMultiStarkRelation {
                 .collect()
         });
         Ok(NativeReduction {
-            bus: bus_reduction.map(|(input, _)| input),
+            bus,
             sumcheck,
             indexed: indexed.map(|(input, _)| input),
             main_points,
             preprocessed_points,
+        })
+    }
+
+    pub(super) fn reduce_native_parts<Ch>(
+        &self,
+        public: &[Vec<Poly64>],
+        bus: Option<&BusProof<Poly192>>,
+        sumcheck: &GenericDegreeProof<Poly64, Poly192>,
+        ch: &mut Ch,
+    ) -> Result<NativeAirReduction, VerificationError>
+    where
+        Ch: FieldChallenger<Poly64> + GrindingChallenger<Witness = Poly64> + Clone,
+    {
+        self.check_public(public)?;
+        for values in public {
+            ch.observe_slice(values);
+        }
+        let bus = match (&self.bus, bus) {
+            (Some(verifier), Some(proof)) => Some(verifier.import_native(proof, ch)?),
+            (None, None) => None,
+            _ => return Err(invalid("binary Poly MultiStark bus shape mismatch")),
+        };
+        ch.observe_slice(&self.input.zerocheck_seed);
+        let _ = ch.sample_algebra_element::<Poly192>();
+        let _ = ch.sample_algebra_element::<Poly192>();
+        let expected = if let Some((_, values)) = &bus {
+            let lambda = ch.sample_algebra_element::<Poly192>();
+            lambda * ((values[0] + Poly192::ONE) + lambda * (values[1] + Poly192::ONE))
+        } else {
+            Poly192::ZERO
+        };
+        if sumcheck.claimed_sum != expected {
+            return Err(invalid("binary Poly MultiStark initial sum mismatch"));
+        }
+        let _ = self.tau.sample_native(ch)?;
+        let (sumcheck, point, _) = self.sumcheck.import_native_with_reduction(sumcheck, ch)?;
+        Ok(NativeAirReduction {
+            bus: bus.map(|(input, _)| input),
+            sumcheck,
+            point,
         })
     }
 }

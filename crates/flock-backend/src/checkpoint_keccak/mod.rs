@@ -8,7 +8,7 @@
 //! The reference prover recomputes round checkpoints instead of committing every
 //! nonlinear wire. It reuses Plonky3's cubic sumcheck and Keccak transcript.
 mod closing;
-mod committed;
+pub(crate) mod committed;
 mod linear;
 pub mod linked;
 mod ports;

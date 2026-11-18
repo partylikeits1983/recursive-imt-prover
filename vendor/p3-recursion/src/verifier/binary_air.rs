@@ -26,6 +26,8 @@ use super::{InputResourceUsage, VerificationError, VerifierLimits};
 use crate::pcs::binary::{RecursiveBinaryChallengeField, RecursiveBinaryTowerField};
 
 mod native_poly;
+mod periodic;
+use periodic::PeriodicColumn;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
@@ -78,7 +80,7 @@ struct AirProgram {
     next_columns: Vec<usize>,
     preprocessed_width: usize,
     preprocessed_next_columns: Vec<usize>,
-    periods: Vec<Vec<u128>>,
+    periods: Vec<PeriodicColumn>,
     /// Bytes the native transcript binds for the periodic values, as the AIR states them.
     periodic_statement: Vec<u8>,
     log_height: usize,
@@ -401,9 +403,11 @@ impl AirProgram {
             })?;
         }
         w.write_vec("binary AIR periods", &self.periods, |w, period| {
-            w.write_vec("binary AIR period values", period, |w, &raw| {
-                w.write_bytes(&raw.to_le_bytes()[..base_bits / 8])
-            })
+            w.write_count("binary AIR period values", period.len())?;
+            for i in 0..period.len() {
+                w.write_bytes(&period.value(i).to_le_bytes()[..base_bits / 8])?;
+            }
+            Ok(())
         })?;
         w.write_vec("binary AIR nodes", &self.nodes, |w, node| {
             let (tag, operands): (u8, &[usize]) = match node {
@@ -538,12 +542,14 @@ impl AirProgram {
             if !period.len().is_power_of_two() || period.len().ilog2() as usize > log_height {
                 return Err(invalid("binary AIR periodic column has invalid length"));
             }
-            usage.add_metadata_entries(limits, period.len())?;
         }
-        let periods: Vec<Vec<u128>> = periods
+        let periods: Vec<_> = periods
             .iter()
-            .map(|period| period.iter().copied().map(base_raw).collect())
+            .map(|period| PeriodicColumn::new(period.iter().copied().map(base_raw).collect()))
             .collect();
+        for period in &periods {
+            usage.add_metadata_entries(limits, period.storage_len())?;
+        }
         let periodic_statement = air.periodic_statement();
         let pins = air.public_boundary_io();
         let pin_nodes =
@@ -788,20 +794,7 @@ impl AirProgram {
         let transition = P::add(b, &one, &last);
         let mut periodic_values = Vec::with_capacity(self.periods.len());
         for period in &self.periods {
-            let coordinates = period.len().ilog2() as usize;
-            let evaluations = period
-                .iter()
-                .map(|&raw| {
-                    let value = P::constant(b, raw)?;
-                    b.check_construction_limits()?;
-                    Ok::<_, VerificationError>(value)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            periodic_values.push(evaluate_table::<P, EF>(
-                b,
-                &evaluations,
-                &point[point.len() - coordinates..],
-            )?);
+            periodic_values.push(period.evaluate::<P, EF>(b, point)?);
         }
         b.check_construction_limits()?;
         let fusion = P::FUSES_AIR_SUMS.then(|| self.fusion());
@@ -992,7 +985,7 @@ struct Compiler<'a, F> {
 impl<F: Field> Compiler<'_, F> {
     fn push(&mut self, node: Node, degree: usize) -> usize {
         let bus_valid = match node {
-            Node::Next(_) | Node::PreprocessedNext(_) | Node::Periodic(_) => false,
+            Node::Next(_) | Node::PreprocessedNext(_) => false,
             Node::Add(x, y) | Node::Mul(x, y) => self.bus_valid[x] && self.bus_valid[y],
             _ => true,
         };

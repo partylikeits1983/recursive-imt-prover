@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub(super) type Commitment = <Pcs as MultilinearPcs<E, Challenger>>::Commitment;
-pub(super) type Opening = <Pcs as MultilinearPcs<E, Challenger>>::Proof;
+pub(crate) type Opening = <Pcs as MultilinearPcs<E, Challenger>>::Proof;
 const DOMAIN: &[u8] = b"imt-committed-checkpoint-keccak-v1";
 
 /// A claim that the committed output states are Keccak-f of the input states,
@@ -315,7 +315,7 @@ pub(super) fn recursive_values(
     Ok(values)
 }
 
-pub(super) fn recursive_opening(proof: &Opening) -> Result<Vec<u8>> {
+pub(crate) fn recursive_opening(proof: &Opening) -> Result<Vec<u8>> {
     let BooleanWhirOpening::Deferred(opening) = &proof.opening else {
         anyhow::bail!("recursive Keccak requires deferred WHIR");
     };

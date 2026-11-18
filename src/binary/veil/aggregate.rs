@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v7";
-pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v8";
+pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v9";
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -228,7 +228,7 @@ impl StatementFormat {
             (Self::Ordered, HashBackend::Checkpoint) => CHECKPOINT_PROTOCOL,
             (Self::TreePair, HashBackend::Flock) => "experimental-binary-masked-flock-tree-pair-v2",
             (Self::TreePair, HashBackend::Checkpoint) => {
-                "experimental-binary-masked-checkpoint-tree-pair-v2"
+                "experimental-binary-masked-checkpoint-tree-pair-v3"
             }
         }
     }

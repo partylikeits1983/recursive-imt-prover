@@ -252,14 +252,14 @@ impl<AB: AirBuilder + BusInteractionBuilder> Air<AB> for PeriodicBusAir {
 }
 
 #[test]
-fn unsupported_bus_accesses_and_retained_metadata_are_bounded() {
+fn periodic_bus_payloads_preserve_metadata_limits() {
     assert!(
         BinaryAirConstraintPlan::<BinaryField128>::with_bus_limits(
             &PeriodicBusAir,
             2,
             &VerifierLimits::default()
         )
-        .is_err()
+        .is_ok()
     );
     let limits = VerifierLimits {
         max_metadata_string_bytes: 5,

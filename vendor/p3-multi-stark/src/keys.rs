@@ -141,6 +141,12 @@ pub struct VerifyingKey<C: MultiStarkConfig> {
     pub(crate) air_profiles: Vec<AirProfile>,
 }
 
+impl<C: MultiStarkConfig> VerifyingKey<C> {
+    pub fn preprocessed_commitment(&self) -> Option<&Commitment<C>> {
+        self.preprocessed.as_ref()
+    }
+}
+
 /// Commit all AIR preprocessed traces once, returning matched prover and verifier keys.
 ///
 /// When the AIR declares no preprocessed trace, both keys carry no preprocessed data.

@@ -105,3 +105,7 @@ payloads. AIRs using the deferred bus API can skip those expressions while
 retaining every activation constraint. Product-bus evaluation still uses the
 complete recorded symbolic declarations. No transcript, degree, opening or
 security equation changes.
+
+`src/keys.rs`: expose the existing preprocessing commitment through a read-only
+getter so the recursive verifier can pin it as a circuit constant. The key
+encoding and native verification equations are unchanged.

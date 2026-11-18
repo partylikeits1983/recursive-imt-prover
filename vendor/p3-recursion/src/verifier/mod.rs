@@ -36,10 +36,12 @@ pub use binary_poly_product::{
 mod binary_poly_whir_multi_stark;
 mod binary_whir_multi_stark;
 pub use binary_poly_whir_multi_stark::{
+    AuthenticatedCoordinateOpenings, BinaryPolyCoordinateWhirVerifier,
     BinaryPolyMixedWhirMultiStarkInputShape, BinaryPolyMixedWhirMultiStarkPreprocessing,
     BinaryPolyMixedWhirMultiStarkProofTargets, BinaryPolyMixedWhirMultiStarkVerifier,
     BinaryPolyWhirMultiStarkInputShape, BinaryPolyWhirMultiStarkPreprocessing,
     BinaryPolyWhirMultiStarkProofTargets, BinaryPolyWhirMultiStarkVerifier,
+    CoordinatePcsParameters, CoordinateWhirInput, CoordinateWhirTargets,
     NativeBinaryPolyMixedWhirMultiStarkInput, NativeBinaryPolyWhirMultiStarkInput,
 };
 mod binary_boolean_whir_multi_stark;

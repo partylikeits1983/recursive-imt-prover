@@ -54,6 +54,18 @@ Changes:
   other columns use exactly their declared low coordinates. Native backend tests
   cover mixed widths, partial/reordered batches and forged openings.
 
+- `src/verifier/binary_poly_whir_multi_stark/coordinate.rs`: compose the existing
+  product-bus and zerocheck verifier with coordinate-aware main and preprocessing
+  PCS openings. The terminal AIR and bus equations authenticate the returned
+  readings. Preprocessing commitments come from trusted configuration. Native
+  witness import shares the existing transcript reduction and checks its shape.
+- `src/verifier/binary_air.rs` and `binary_air/periodic.rs`: permit trusted periodic
+  expressions in current-row bus payloads. Recognize exact row-address and
+  wrapping-successor tables and evaluate their multilinear extensions with a
+  carry recurrence. Other tables retain dense evaluation; identity encoding is
+  unchanged. Differential tests cover Boolean/extension points, a million-row
+  table and a corrupted table that must retain dense evaluation.
+
 The repository's `src/binary/veil/whir/recursive/` component tests import actual
 prefixed native proofs, constrain their verification, and reject mutations.
 They also exercise the framed transcript and functional sumcheck. The complete

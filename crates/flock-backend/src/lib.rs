@@ -25,12 +25,13 @@ mod witness;
 
 pub use config::{WHIR_CAP_HEIGHT, WHIR_FOLD, WHIR_LOG_INV_RATE};
 pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
+pub use verifier::{RecursiveAggregate, RecursiveArithmetic};
 #[cfg(test)]
 mod tests;
 
 use air::{Chip, convert};
 use anyhow::{Result, ensure};
-use checkpoint_keccak::linked::{BoundaryWitness, LinkedBatch, arithmetic_seed};
+use checkpoint_keccak::linked::{BoundaryWitness, LinkedBatch};
 use config::{Config, challenger};
 use encoding::TableEncoding;
 use fanout::FanoutShard;
@@ -298,7 +299,7 @@ impl Prepared {
                 b"imt-flock-backend-v12/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
             HashBackend::Checkpoint => {
-                b"imt-checkpoint-backend-v5/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-checkpoint-backend-v6/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
         identity.update((domain.len() as u64).to_le_bytes());
@@ -394,7 +395,10 @@ impl Prepared {
         );
         let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
         let checkpoint = if backend == HashBackend::Checkpoint {
-            Some(LinkedBatch::new(log_calls, config.main_log2_candidates)?)
+            Some(LinkedBatch::for_recursion(
+                log_calls,
+                config.main_log2_candidates,
+            )?)
         } else {
             None
         };
@@ -552,7 +556,12 @@ impl Prepared {
             .transpose()?;
         let seed = pending.as_ref().map_or_else(
             || Ok(self.seed.clone()),
-            |pending| arithmetic_seed(&self.seed, &pending.statement),
+            |pending| {
+                self.checkpoint
+                    .as_ref()
+                    .unwrap()
+                    .arithmetic_seed(&self.seed, &pending.statement)
+            },
         )?;
         let proof = prove(&self.config, instances, 0, &mut challenger(&seed))?;
         let bytes = if let Some(pending) = pending {
@@ -572,7 +581,7 @@ impl Prepared {
                 &pending.statement,
                 &self.seed,
                 self.hash_index,
-                scheme.log_batch,
+                scheme,
             )?;
             let statement = pending.statement.clone();
             let keccak = scheme.prove(pending, &ports)?;

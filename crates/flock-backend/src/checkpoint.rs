@@ -9,7 +9,7 @@ use crate::{
     F, Proof,
     checkpoint_keccak::{
         Statement,
-        linked::{LinkedBatch, LinkedProof, PortOpening, arithmetic_seed},
+        linked::{LinkedBatch, LinkedProof, PortOpening},
     },
     config::{Config, challenger},
 };
@@ -28,17 +28,17 @@ pub(crate) fn arithmetic_opening<'a, A: VerifierAir<F, Poly192>>(
     statement: &Statement,
     authority: &[u8],
     hash_index: usize,
-    log_batch: usize,
+    scheme: &LinkedBatch,
 ) -> Result<PortOpening> {
     ensure!(
-        statement.log_batch as usize == log_batch,
+        statement.log_batch as usize == scheme.log_batch,
         "incorrect boundary batch size"
     );
-    let seed = arithmetic_seed(authority, statement)?;
+    let seed = scheme.arithmetic_seed(authority, statement)?;
     let opening =
         verify_with_trace_openings(config, instances, arithmetic, 0, &mut challenger(&seed))?;
     ensure!(
-        opening.point.num_variables() >= log_batch,
+        opening.point.num_variables() >= scheme.log_batch,
         "invalid port opening arity"
     );
     let values = opening
@@ -47,7 +47,8 @@ pub(crate) fn arithmetic_opening<'a, A: VerifierAir<F, Poly192>>(
         .ok_or_else(|| anyhow::anyhow!("missing authenticated Keccak ports"))?
         .clone();
     Ok(PortOpening {
-        instance: opening.point.as_slice()[opening.point.num_variables() - log_batch..].to_vec(),
+        instance: opening.point.as_slice()[opening.point.num_variables() - scheme.log_batch..]
+            .to_vec(),
         values,
     })
 }
@@ -69,7 +70,7 @@ pub(crate) fn verify<'a, A: VerifierAir<F, Poly192>>(
         &proof.statement,
         authority,
         hash_index,
-        scheme.log_batch,
+        scheme,
     )?;
     scheme.verify(&proof.statement, &proof.keccak, authority, &ports)
 }

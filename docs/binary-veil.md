@@ -317,7 +317,7 @@ the benchmark executable source digest:
 
 ### Link to the aggregate's native ports
 
-Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v8` replaces
+Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v9` replaces
 the Flock Boolean wire table with an ordinary native port table and a committed
 Keccak GKR subargument. The one aggregate encoding contains both subarguments;
 neither is sufficient on its own. The complete child verifier and its public
@@ -352,7 +352,20 @@ authority bindings and key digests. Separate tests generate invalid port-link
 proofs without a native rejection gate and require the cryptographic verifier
 to reject them. The old Flock path also verifies through the new key format.
 
-Verifier snapshot `imt-binary-trusted-verifier-v3` authenticates the selected
+Verifier snapshot `imt-binary-trusted-verifier-v4` authenticates the selected
 backend along with the constraints, preprocessing, coordinate layout and
 authority. Earlier snapshots and previous aggregate formats are deliberately
 rejected. Trusted key/digest provisioning remains unchanged. Recursive merging through 64 children and joint child statistical-ZK analysis remain open.
+
+### Fixed-width checkpoint transcript regression
+
+Checkpoint backend v6 and trusted-key v4 use the fixed-width transcript accepted
+by the recursive verifier. A fresh depth-32 two-child run passed independent
+verification and 17 negative checks. Its single cold aggregation took 21.7 s;
+fresh verification took 137 ms. This is a format regression check, not a new
+warm benchmark. [Raw run and checks](../benchmarks/binary/masked-aggregate/fixed-transcript-d32-n2.json).
+
+The complete aggregate verifier also produced an actual outer proof for two small
+checkpoint fixtures: 14.0 s proving, 99 ms verification and 1.25 MB. This does not
+measure merging IMT aggregates or establish same-key recursion.
+[Component scope and raw sample](../benchmarks/binary/checkpoint-keccak/recursive-aggregate.json).

@@ -1,10 +1,10 @@
-use anyhow::{Result, ensure};
-use imt_flock_backend::checkpoint_keccak::{
+use crate::checkpoint_keccak::{
     Statement,
     linked::{LinkedBatch, LinkedProof, PORTS, PortOpening},
     recursive::{PortTargets, PreparedLinkedVerifier},
 };
-use p3_binary_field::Poly64 as F;
+use anyhow::{Result, ensure};
+use old_binary_field::Poly64 as F;
 use p3_circuit::Circuit;
 
 use super::{BoundaryPcs, builder};
@@ -25,7 +25,7 @@ impl PreparedLinkedCheckpoint {
         let pcs = BoundaryPcs::new(log_batch, 2, native.recursive_pcs_seed())?;
         let reduction = PreparedLinkedVerifier::new(log_batch)?;
         let mut b = builder()?;
-        let cap = pcs.allocate_cap(&mut b);
+        let cap = pcs.allocate_cap(&mut b, true);
         let mut field = || {
             let coefficients = b.alloc_public_input_array::<3>("arithmetic port reading");
             b.native_poly192_from_coefficients(coefficients)

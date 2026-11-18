@@ -17,7 +17,9 @@ use super::{
 };
 
 mod bridge;
+pub(crate) mod closed;
 mod committed;
+pub use closed::{PreparedCheckpoint, PreparedLinkedCheckpoint};
 mod linked;
 mod weights;
 pub(crate) use bridge::{Bridge, deferred_seed};

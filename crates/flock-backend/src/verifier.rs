@@ -1,6 +1,11 @@
 //! Authenticated verifier-only snapshots. No proving tables or child proofs are stored.
+mod aggregate;
 mod air;
+pub use aggregate::RecursiveAggregate;
+mod recursive;
+mod recursive_air;
 mod replay;
+pub use recursive::RecursiveArithmetic;
 
 use anyhow::{Result, ensure};
 use old_binary_field::Poly64 as OldF;
@@ -23,7 +28,7 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
-const FORMAT: &str = "imt-binary-trusted-verifier-v3";
+const FORMAT: &str = "imt-binary-trusted-verifier-v4";
 
 #[derive(Serialize, Deserialize)]
 struct VerifierData<K> {
@@ -189,7 +194,7 @@ impl Verifier {
                 data.airs[data.hash_index].width == 232,
                 "invalid native Keccak port count"
             );
-            let scheme = LinkedBatch::new(
+            let scheme = LinkedBatch::for_recursion(
                 data.airs[data.hash_index].log_height,
                 config.main_log2_candidates,
             )?;

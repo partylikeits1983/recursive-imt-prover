@@ -110,8 +110,8 @@ including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
 Tests check retained occurrences, direct pairs, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
-swap across partitions. Checkpoint uses backend identity v5; Flock uses v12.
-Both export verifier snapshot v3 and fixed-width aggregate proof encoding
+swap across partitions. Checkpoint uses backend identity v6; Flock uses v12.
+Both export verifier snapshot v4 and fixed-width aggregate proof encoding
 (`IMTPRF01`), rejecting older artifacts. Child proof formats are unchanged.
 
 Arithmetic partitions omit preprocessing columns that are identically zero.
@@ -189,9 +189,24 @@ the verifier uses its authenticated port readings and row point. A degree-two
 sumcheck links a fresh random combination of all ports to four ordinary boundary
 PCS openings, shared with the permutation argument. Raw and byte-swapped limbs
 are included. The link cannot be replaced by a native verifier Boolean or by two
-unrelated valid proofs. `Verifier` replays the same linked checks from a v3 key.
+unrelated valid proofs. `Verifier` replays the same linked checks from a v4 key.
 
 The conditional ledger charges the link over the product of both PCS candidate
 sets and combines it with the arithmetic and Keccak budgets. The complete
 construction still needs an independent soundness/Fiat–Shamir review; it makes no
 additional child privacy claim.
+
+## Recursive aggregate verifier
+
+`RecursiveAggregate` compiles the complete checkpoint verifier under one trusted
+source key. It constrains product-bus and AIR reductions, coordinate-aware main
+and preprocessing WHIR openings, the arithmetic transcript seed, and the linked
+Keccak argument with four authenticated boundary openings. Only the source
+statement is public; proof messages are private circuit inputs. The outer proof
+need not hide those messages.
+
+The shared boundary PCS wrappers live beside the backend's Keccak verifier;
+`src/binary/checkpoint.rs` re-exports the component interfaces. Checkpoint v6 uses
+the fixed-width recursive transcript, so earlier checkpoint artifacts cannot be
+reused. Source keys remain circuit constants: this is not yet the cyclic,
+same-key merge design. See the [remaining work](../../docs/aggregation-tree.md).

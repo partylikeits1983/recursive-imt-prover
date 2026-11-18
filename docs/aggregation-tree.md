@@ -111,7 +111,8 @@ an equivalent-security benchmark for this project's 128-bit target.
 The checkpoint Keccak reduction now has a native Poly64 circuit replaying all
 24 cubic sumchecks over Poly192. Its separate fixed-width transcript binds the
 complete initial claim and avoids reproducing Postcard's variable-length integer
-encoding in the circuit. Existing first-aggregation formats are unchanged.
+encoding in the circuit. The checkpoint first aggregation now uses this
+fixed-width transcript; older checkpoint proofs and verifier keys must be regenerated.
 The transposed linear layer factors by lane and bit; cyclic rotations use two
 carry states instead of materializing a dense weight vector.
 
@@ -132,12 +133,22 @@ The linked adapter now also constrains the 232 arithmetic port readings against
 four authenticated boundary openings, including byte-swapped words. Its arithmetic
 transcript seed binds the authority and boundary commitment before row challenges.
 The coordinate-opening adapter reconstructs logical columns from authenticated
-bit coordinates using trusted widths. The complete arithmetic verifier and stable
-merge authority remain to be composed; these components are not merge proofs.
+bit coordinates using trusted widths. `RecursiveAggregate` now composes the full
+product-bus, AIR, main/preprocessing PCS and linked Keccak verifier under a fixed
+trusted authority. A small real aggregate passes this circuit with 3,875,402
+witnesses; modified public inputs and post-import proof messages are rejected.
+Two such verifiers now produce an actual outer proof, accepted by a separately
+restored trusted key. One component run took 14.0 s to prove and 99 ms to verify,
+with a 1.25 MB proof. Each source fixture contains one Keccak permutation plus
+arithmetic constraints; these are not depth-32 IMT aggregates or a cyclic merge.
+[Raw component measurement](../benchmarks/binary/checkpoint-keccak/recursive-aggregate.json).
+Common geometry and the cyclic merge authority remain unfinished.
 
 Run these component checks with:
 
 ```bash
+RAYON_NUM_THREADS=4 cargo test --locked --release --workspace \
+  verifier::recursive -- --include-ignored --nocapture --test-threads=1
 RAYON_NUM_THREADS=4 cargo test --locked --release -p imt-flock-backend \
   checkpoint_keccak::recursive -- --include-ignored --nocapture
 cargo test --locked --release --test recursive_trace
@@ -153,9 +164,9 @@ RAYON_NUM_THREADS=4 cargo test --locked --release --test linked_checkpoint \
    with a 21.018 s warm median;
    [measurements](binary-veil.md#compact-aggregate-proofs).
 2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
-   native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. Compose
-   the tested coordinate-opening and Keccak port-link adapters with the complete
-   arithmetic verifier. Test the combined relation against actual native proofs.
+   native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. The
+   combined verifier now passes small real aggregates, tamper tests and an actual
+   two-verifier outer proof. Measure and prove it on depth-32 first aggregates.
    A reduction without its authenticated PCS boundaries is not an aggregate.
 3. **Fix the common aggregate layout.** First aggregation and merge must share
    a bounded proof shape, public layout, hash/PCS parameters and AIR layout.
