@@ -49,7 +49,14 @@ impl RoundProver<E> for DenseChi {
 #[test]
 fn compact_chi_rounds_match_dense_sumcheck() {
     let mut ch = challenger(b"checkpoint-chi-differential");
-    for log in [0, 1, 3] {
+    for (log, first) in [
+        (0, None),
+        (1, None),
+        (2, None),
+        (3, None),
+        (3, Some(E::ZERO)),
+        (3, Some(E::ONE)),
+    ] {
         let states = inputs(1 << log);
         let eq = Point::new(
             (0..log)
@@ -98,9 +105,10 @@ fn compact_chi_rounds_match_dense_sumcheck() {
                 dense.round_poly(),
                 "log={log}, round={round}"
             );
-            let challenge = match round % 5 {
-                3 => E::ZERO,
-                4 => E::ONE,
+            let challenge = match round {
+                0 => first.unwrap_or_else(|| ch.sample_algebra_element()),
+                r if r % 5 == 3 => E::ZERO,
+                r if r % 5 == 4 => E::ONE,
                 _ => ch.sample_algebra_element(),
             };
             compact.fold(challenge);

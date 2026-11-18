@@ -110,7 +110,7 @@ fn main() -> Result<()> {
         "conditional_algebraic_bits": scheme.conditional_algebraic_bits,
         "pcs_authenticated": true, "aggregate_integrated": false,
         "zero_knowledge": false, "end_to_end_security_bits": null, "acceptance_pass": false,
-        "verification_scope": "Both boundary tables authenticated by one PCS commitment. Verifier receives the commitment and proof, no original states. Aggregate port/bus linkage is not implemented.",
+        "verification_scope": "Both boundary tables authenticated by one PCS commitment. Verifier receives the commitment and proof, no original states. This standalone command does not exercise aggregate port linkage.",
         "threads_requested": env::var("RAYON_NUM_THREADS").ok(),
         "samples": measurements, "fresh_process": fresh,
     });

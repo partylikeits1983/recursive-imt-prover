@@ -94,9 +94,13 @@ are warm medians; fresh verification includes authenticated verifier-key loading
 
 | Backend / children | Aggregation | Proof size | Fresh verification |
 |---|---:|---:|---:|
+| Checkpoint tree pair / 2 | 19.2 s | 1.81 MB | 148 ms |
 | Flock / 2 | 27.8 s | 1.42 MB | 133 ms |
 | Checkpoint / 2 | 22.5 s | 1.82 MB | 144 ms |
 | Checkpoint / 8 | 121.3 s | 2.55 MB | 175 ms |
+
+The tree-pair row includes the latest Keccak prover optimization; other rows are
+retained baselines. [Before/after measurements](docs/binary-veil.md#packed-keccak-rounds).
 
 Batches through eight have verified end to end. Scaling to 16–64 children remains
 a research target.

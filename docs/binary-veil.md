@@ -82,6 +82,41 @@ See [the backend implementation](../crates/flock-backend/README.md).
 - Reuse only PCS-authenticated evaluations with unchanged opening requests.
 - Specialize affine bus rounds and skip discarded AIR bus payload construction,
   preserving every constraint and activation check.
+- Keep Keccak states packed through the first two instance rounds; use upstream
+  packed Poly192 arithmetic and accumulate products before field reduction.
+
+## Packed Keccak rounds
+
+The checkpoint prover delays expanding Boolean states into Poly192 tables until
+two instance challenges are bound. Four-bit subset-sum tables evaluate the early
+rounds exactly; the first field table has half as many elements. Later rounds use
+Plonky3's packed multiplication and unreduced accumulators. Proof equations,
+messages, verifier keys and security parameters are unchanged.
+
+Same-session measurements on the M2 Pro with four threads, one cold and two warm
+samples per version, excluding compilation:
+
+| Operation | Before warm median (range) | After warm median (range) |
+|---|---:|---:|
+| 65,536 committed Keccak permutations | 10.437 s (10.199–10.675) | 5.726 s (5.461–5.992) |
+| Depth-32 two-child tree aggregation | 26.181 s (25.566–26.796) | 19.244 s (18.473–20.015) |
+| Complete two-child batch critical path | 35.452 s (34.894–36.010) | 27.933 s (26.991–28.875) |
+
+Cold aggregation changed from 22.135 to 18.610 s. Filesystem caches and thermal
+state were not reset; use the raw ranges rather than treating these as universal
+speedups. The component's peak physical footprint fell from 1.662 to 1.032 GB;
+the aggregate still peaks at about 6.4 GB. Child proving remains 3.78–4.25 s in
+the new batch, with a 1.81 MB aggregate and 147.86 ms fresh verification.
+
+The component produced byte-identical proofs at 4,096 and 65,536 permutations.
+The dense-reference test compares every sumcheck round, including zero and one
+challenges. The old aggregate verifier accepts the new proof with the same key;
+fresh-process tamper tests still reject changed statements, proofs and authority.
+This is a prover optimization, not a security or privacy change. Recursive merging
+and the sub-ten-second aggregate target remain unfinished.
+
+Raw reports: [component comparison](../benchmarks/binary/checkpoint-keccak/packed-rounds-65536.json)
+and [complete aggregation comparison](../benchmarks/binary/masked-aggregate/tree-pair-packed-rounds-d32-n2.json).
 
 ## Specialized AIR evaluation
 
