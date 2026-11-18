@@ -323,7 +323,7 @@ fn append_group(
     Ok(())
 }
 
-fn product_width(a: u8, b: u8) -> u8 {
+pub(super) fn product_width(a: u8, b: u8) -> u8 {
     if a == 0 || b == 0 {
         0
     } else {

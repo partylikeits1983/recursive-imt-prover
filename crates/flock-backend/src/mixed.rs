@@ -1,67 +1,11 @@
 // Adapted from Plonky3 708900d7a730d6ce4d5421d43e2193f2301920fa, MIT OR Apache-2.0.
-// Local changes: trusted per-column coordinate widths; weighted claims only on
-// unchanged leading Boolean columns; known evaluations only for unchanged batches.
-//! Tables that hold both bit columns and field-element columns, committed as one bit witness.
-//!
-//! ```text
-//!     row j   [ b_0 ... b_{n-1} | v_0 ... v_{m-1} ]
-//!               bit region        dense region
-//! ```
-//!
-//! # Committing the dense region
-//!
-//! A dense cell is a run of `F_2` coordinates, as its bytes already lay it out.
-//!
-//! Each dense column becomes one bit column per coordinate:
-//!
-//! ```text
-//!     v(j)  =  sum_k c_k(j) * e_k        e_k the element with only coordinate k set
-//! ```
-//!
-//! Each dense column has a trusted coordinate width between 1 and 64. Coordinates
-//! above that width are zero. The prover rejects values outside that subspace;
-//! the verifier reconstructs only the declared low coordinates.
-//!
-//! The bit region commits one bit per cell, as the Boolean trace commitment does.
-//!
-//! # Opening the dense region
-//!
-//! The multilinear extension is linear, so the identity above holds at every point:
-//!
-//! ```text
-//!     v(r)  =  sum_k c_k(r) * e_k
-//! ```
-//!
-//! Dense cells and basis elements lie in the source field `F`.
-//!
-//! Row points and coordinate evaluations lie in its extension `EF`.
-//!
-//! Recombination embeds each basis element into `EF`.
-//!
-//! A claim on a dense column is answered by the claims on its coordinate columns.
-//!
-//! The verifier recombines them itself, so the recombination draws nothing.
-//!
-//! Each batch is widened to its whole committed table, which makes it complete.
-//!
-//! So the coordinate columns share one column-batching reduction per aligned block.
-//!
-//! # Soundness
-//!
-//! The coordinate map is injective on the declared field-element subspace.
-//! A shorter encoding restricts possible witnesses; it does not drop AIR equations.
-//! Widths are fixed by the trusted circuit, never chosen by the prover.
-//!
-//! So every dense column has exactly one committed preimage.
-//!
-//! The recombination is deterministic, so it adds no term to the error.
-//!
-//! Every draw is made by the Boolean trace commitment underneath, which charges it.
-//!
-//! That includes the column point of each batch, charged once per block and view.
+//! Commit mixed Poly64 tables as Boolean coordinate columns. Each width is fixed
+//! by the verifier key. The prover rejects values outside that subspace. At an
+//! opening point, the verifier reconstructs each field value using its coordinate
+//! basis. Weighted claims retain their original indices on leading Boolean columns.
 
-use std::vec;
-use std::vec::Vec;
+#[cfg(test)]
+mod tests;
 
 use crate::encoding::{TableEncoding, committed_shapes};
 
@@ -73,7 +17,7 @@ use p3_field::{Algebra, ExtensionField, Field};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::point::Point;
-use p3_sumcheck::layout::Table;
+use p3_sumcheck::layout::{ColumnView, Table};
 use p3_sumcheck::{
     OpeningBatch, OpeningEvals, OpeningProtocol, PrescribedOpeningSecurity, PrescribedPointPcs,
     TableShape, TableSpec, WeightedColumnClaim,
@@ -332,11 +276,16 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
                     let view = table.column(column);
                     let out = &mut row[encoding.columns[column].clone()];
                     let mut cells = [F::ZERO; WORD_BITS];
-                    let count = rows.len();
-                    for (cell, r) in cells.iter_mut().zip(rows.clone()) {
-                        *cell = view.value(r);
-                    }
-                    if !expand_bounded_block(&cells[..count], out) {
+                    let values = match view {
+                        ColumnView::Dense(values) => &values[rows.clone()],
+                        _ => {
+                            for (cell, r) in cells.iter_mut().zip(rows.clone()) {
+                                *cell = view.value(r);
+                            }
+                            &cells[..rows.len()]
+                        }
+                    };
+                    if !expand_bounded_block(values, out) {
                         return Some(column);
                     }
                 }
@@ -359,96 +308,43 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
     }
 }
 
-/// A bounded column encodes only its low coordinates. Never silently truncate:
-/// values outside the trusted subspace are rejected before committing anything.
+// Transpose one block into coordinate columns. Reject a nonzero bit above the trusted width.
 fn expand_bounded_block<A: Coordinates>(values: &[A], out: &mut [u64]) -> bool {
-    if out.len() == A::COORDINATES {
-        expand_coordinate_block(values, out);
-        return true;
-    }
-    for (lane, value) in values.iter().enumerate() {
-        for (byte_index, &byte) in coordinate_bytes(core::slice::from_ref(value))
-            .iter()
-            .enumerate()
-        {
-            let mut rest = byte;
-            while rest != 0 {
-                let coordinate = byte_index * 8 + rest.trailing_zeros() as usize;
-                if coordinate >= out.len() {
-                    return false;
-                }
-                out[coordinate] |= 1 << lane;
-                rest &= rest - 1;
-            }
-        }
-    }
-    true
-}
-
-/// Expand at most 64 source rows, one coordinate word per output column.
-///
-/// Dense 64-by-64 tiles use the field's bit transpose.
-/// Sparse tiles retain set-bit iteration, avoiding fixed transpose work for zeros and small integer values.
-fn expand_coordinate_block<A: Coordinates>(values: &[A], out: &mut [u64]) {
-    debug_assert!(values.len() <= WORD_BITS);
-    debug_assert_eq!(out.len(), A::COORDINATES);
-    // Partial row blocks cannot use the 64-by-64 transpose.
-    if values.len() < WORD_BITS {
-        for (lane, value) in values.iter().enumerate() {
-            for (byte_index, &byte) in coordinate_bytes(core::slice::from_ref(value))
-                .iter()
-                .enumerate()
-            {
-                let mut rest = byte;
-                while rest != 0 {
-                    let bit = rest.trailing_zeros() as usize;
-                    out[byte_index * 8 + bit] |= 1 << lane;
-                    rest &= rest - 1;
-                }
-            }
-        }
-        return;
-    }
+    debug_assert!(values.len() <= WORD_BITS && out.len() <= A::COORDINATES);
     let bytes = coordinate_bytes(values);
     let stride = A::COORDINATES / 8;
-    for (tile, output) in out.chunks_mut(WORD_BITS).enumerate() {
-        let byte_start = tile * 8;
-        let byte_count = output.len() / 8;
-        // A coordinate tail cannot fill a transpose tile either.
-        if output.len() < WORD_BITS {
-            for lane in 0..values.len() {
-                let start = lane * stride + byte_start;
-                for (byte_index, &byte) in bytes[start..start + byte_count].iter().enumerate() {
-                    let mut rest = byte;
-                    while rest != 0 {
-                        let bit = rest.trailing_zeros() as usize;
-                        output[byte_index * 8 + bit] |= 1 << lane;
-                        rest &= rest - 1;
-                    }
-                }
-            }
-            continue;
-        }
+    if out.is_empty() {
+        return bytes.iter().all(|&byte| byte == 0);
+    }
+    for start in (0..stride).step_by(8) {
+        let end = (start + 8).min(stride);
+        let offset = 8 * start;
+        let width = out.len().saturating_sub(offset).min(WORD_BITS);
         let mut rows = [PackedGf2x64::new(0); WORD_BITS];
+        let mut occupied = 0;
         let mut set_bits = 0;
-        for (lane, row) in rows.iter_mut().enumerate() {
-            let mut word = [0; 8];
-            word[..byte_count].copy_from_slice(
-                &bytes[lane * stride + byte_start..lane * stride + byte_start + byte_count],
-            );
-            let word = u64::from_le_bytes(word);
+        for (row, value) in rows.iter_mut().zip(bytes.chunks_exact(stride)) {
+            let mut repr = [0; 8];
+            repr[..end - start].copy_from_slice(&value[start..end]);
+            let word = u64::from_le_bytes(repr);
+            occupied |= word;
             set_bits += word.count_ones();
             *row = PackedGf2x64::new(word);
         }
-        // A transpose performs six fixed word passes.
-        // Below four set coordinates per source word, enumerating the set bits avoids that fixed work.
+        if width < WORD_BITS && occupied >> width != 0 {
+            return false;
+        }
+        if occupied == 0 {
+            continue;
+        }
+        let output = &mut out[offset..offset + width];
         if set_bits > 256 {
             PackedGf2x64::transpose(&mut rows);
-            for (output, row) in output.iter_mut().zip(rows) {
-                *output = row.to_bits();
+            for (slot, row) in output.iter_mut().zip(rows) {
+                *slot = row.to_bits();
             }
         } else {
-            for (lane, row) in rows.iter().enumerate() {
+            for (lane, row) in rows[..values.len()].iter().enumerate() {
                 let mut word = row.to_bits();
                 while word != 0 {
                     output[word.trailing_zeros() as usize] |= 1 << lane;
@@ -457,6 +353,7 @@ fn expand_coordinate_block<A: Coordinates>(values: &[A], out: &mut [u64]) {
             }
         }
     }
+    true
 }
 
 impl<EF: Field, D: Clone> Clone for MixedTraceData<EF, D> {

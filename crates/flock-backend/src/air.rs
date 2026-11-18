@@ -29,6 +29,15 @@ pub enum Chip {
     Keccak { preprocessing: RowMajorMatrix<F> },
 }
 
+pub(super) enum WitnessSource<'a> {
+    Fanout(&'a FanoutShard),
+    Gates(&'a GateShard),
+    Packed(&'a PackedShard),
+    Public,
+    Keccak,
+    Bridge,
+}
+
 pub struct ImportedAir {
     copies: CopySelectors,
     instances: usize,
@@ -57,6 +66,15 @@ enum Source {
     Packed(Arc<PackedShard>),
 }
 
+impl ImportedAir {
+    fn main_width(&self) -> usize {
+        self.gates.as_ref().map_or_else(
+            || self.source.width() + usize::from(self.successor),
+            |gates| gates.source_columns.len(),
+        )
+    }
+}
+
 impl Source {
     fn width(&self) -> usize {
         match self {
@@ -83,6 +101,19 @@ impl Source {
 }
 
 impl Chip {
+    pub fn witness_source(&self) -> WitnessSource<'_> {
+        let Self::Native(air) = self else {
+            return WitnessSource::Keccak;
+        };
+        match (&air.shard, &air.gates, &air.source) {
+            (Some(shard), _, _) => WitnessSource::Fanout(shard),
+            (_, Some(shard), _) => WitnessSource::Gates(shard),
+            (_, _, Source::Packed(shard)) => WitnessSource::Packed(shard),
+            _ if air.public_table => WitnessSource::Public,
+            _ => WitnessSource::Bridge,
+        }
+    }
+
     pub fn packed(shard: Arc<PackedShard>) -> Self {
         let main =
             |i| SymbolicExpression::from(SymbolicVariable::new(BaseEntry::Main { offset: 0 }, i));
@@ -165,7 +196,7 @@ impl Chip {
     pub fn instance_width(&self) -> usize {
         match self {
             Self::Native(a) if a.public_table => 1,
-            Self::Native(a) => a.source.width() + usize::from(a.successor),
+            Self::Native(a) => a.main_width(),
             Self::Keccak { .. } => 232,
         }
     }
@@ -371,18 +402,30 @@ impl Chip {
             })
             .collect();
         ensure!(next > 0, "empty arithmetic preprocessing");
+        let projection = (shard.source_columns.len() != air.source.width())
+            .then_some(shard.source_columns.as_slice());
         air.constraints = air
             .constraints
             .iter()
-            .map(|c| specialize(c, &zero_columns))
-            .filter(|c| {
-                !recursive
-                    || !matches!(c, SymbolicExpr::Leaf(BaseLeaf::Constant(v)) if v.to_repr() == 0)
-            })
+            .map(|c| specialize(c, &zero_columns, projection))
+            .filter(|c| !recursive || !is_zero(c))
             .collect();
-        air.interactions.retain(|i| {
-            !matches!(&i.activation, OldActivation::Boolean(v)
-            if is_fixed_zero(v, &zero_columns))
+        air.interactions.retain_mut(|interaction| {
+            if let OldActivation::Boolean(v) = &mut interaction.activation {
+                let activation = specialize(v, &zero_columns, projection);
+                if is_zero(&activation) {
+                    return false;
+                }
+                if projection.is_some() {
+                    *v = activation;
+                }
+            }
+            if projection.is_some() {
+                for field in &mut interaction.fields {
+                    *field = specialize(field, &[], projection);
+                }
+            }
+            true
         });
         air.gates = Some(shard);
         Ok(Self::Native(air))
@@ -778,7 +821,7 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
     air: &ImportedAir,
     instance: usize,
 ) -> AB::Expr {
-    let main_offset = instance * (air.source.width() + usize::from(air.successor));
+    let main_offset = instance * air.main_width();
     let public_offset = instance * air.source.num_public_values();
     match e {
         SymbolicExpr::Leaf(leaf) => match leaf {
@@ -837,8 +880,13 @@ pub(crate) fn successor_values<EF: ExtensionField<F>>(point: &[EF]) -> Vec<EF> {
     vec![current, next]
 }
 
-// Replace the preprocessing columns fixed to zero by the trusted gate layout.
-fn specialize(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> SymbolicExpression<OldF> {
+// Substitute trusted zeros and translate retained native wire indices into the packed row.
+fn specialize(
+    e: &SymbolicExpression<OldF>,
+    zero_columns: &[bool],
+    main_columns: Option<&[usize]>,
+) -> SymbolicExpression<OldF> {
+    let sub = |child: &SymbolicExpression<OldF>| specialize(child, zero_columns, main_columns);
     match e {
         SymbolicExpr::Leaf(BaseLeaf::Variable(v))
             if v.entry == (BaseEntry::Preprocessed { offset: 0 })
@@ -846,17 +894,29 @@ fn specialize(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> SymbolicEx
         {
             OldF::from_repr(0).into()
         }
-        SymbolicExpr::Add { x, y, .. } => specialize(x, zero_columns) + specialize(y, zero_columns),
-        SymbolicExpr::Sub { x, y, .. } => specialize(x, zero_columns) - specialize(y, zero_columns),
-        SymbolicExpr::Mul { x, y, .. } => specialize(x, zero_columns) * specialize(y, zero_columns),
-        SymbolicExpr::Neg { x, .. } => -specialize(x, zero_columns),
+        SymbolicExpr::Leaf(BaseLeaf::Variable(v))
+            if v.entry == (BaseEntry::Main { offset: 0 })
+                && let Some(columns) = main_columns =>
+        {
+            columns.iter().position(|&c| c == v.index).map_or_else(
+                || OldF::from_repr(0).into(),
+                |i| SymbolicVariable::new(v.entry, i).into(),
+            )
+        }
+        SymbolicExpr::Add { x, y, .. } => sub(x) + sub(y),
+        SymbolicExpr::Sub { x, y, .. } => sub(x) - sub(y),
+        SymbolicExpr::Mul { x, y, .. } => sub(x) * sub(y),
+        SymbolicExpr::Neg { x, .. } => -sub(x),
         _ => e.clone(),
     }
 }
 
 fn is_fixed_zero(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> bool {
-    matches!(specialize(e, zero_columns), SymbolicExpr::Leaf(BaseLeaf::Constant(v))
-        if v == OldF::from_repr(0))
+    is_zero(&specialize(e, zero_columns, None))
+}
+
+fn is_zero(e: &SymbolicExpression<OldF>) -> bool {
+    matches!(e, SymbolicExpr::Leaf(BaseLeaf::Constant(v)) if v.to_repr() == 0)
 }
 
 // Only eliminate columns whose imported equation is exactly main[i] = public[i].

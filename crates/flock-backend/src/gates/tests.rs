@@ -1,7 +1,7 @@
 use old_binary_field::{Poly64 as F, TowerLevel};
 use p3_binary_field::TowerLevel as NewTowerLevel;
 
-use super::{GateLayout, partition};
+use super::{GateLayout, narrow_inputs, partition};
 
 const LAYOUT: [GateLayout; 3] = [
     GateLayout::new([64, 64, 64, 0, 64], 4, [64; 14]),
@@ -90,6 +90,7 @@ fn fixed_gate_columns_must_be_zero_before_they_are_omitted() {
     let mut source = rows(5);
     let widths = [0, 64, 64, 64];
     let shards = partition(&widths, &source, 14, 5, &[], Some(&layout)).unwrap();
+    assert!(omitted.iter().all(|&i| shards[0].column_bytes[i] == 0));
     let pp = shards[0].compact_preprocessing();
     assert_eq!(pp.width, 11);
     let live: Vec<_> = source[..14]
@@ -126,4 +127,67 @@ fn wide_coefficients_use_the_general_gate_table() {
     assert_eq!(groups[0].source_rows, [0]);
     assert_eq!(groups[1].source_rows, [1]);
     assert_eq!(groups[1].preprocessing().values[5].to_repr(), 2);
+}
+
+#[test]
+fn fixed_main_projection_omits_only_absent_wire_ids() {
+    let mut columns = [64; 14];
+    columns[1] = 0;
+    columns[3] = 0;
+    let layout = [GateLayout::new([64, 0, 16, 0, 64], 4, columns)];
+    let mut source = rows(5);
+    for row in source.as_chunks_mut::<14>().0 {
+        row[1] = F::from_repr(0);
+    }
+    let widths = [0, 64, 16, 64];
+    let shards = partition(&widths, &source, 14, 5, &[], Some(&layout)).unwrap();
+    assert_eq!(shards[0].source_columns, [0, 2, 4]);
+    assert_eq!(shards[0].coordinate_widths, [64, 16, 64]);
+    for column in [1, 3] {
+        source[column] = F::from_repr(2);
+        assert!(partition(&widths, &source, 14, 5, &[], Some(&layout)).is_err());
+        source[column] = F::from_repr(0);
+    }
+}
+
+fn select(condition: u64, left: u64, right: u64, out: u64) -> [F; 14] {
+    [condition, left, right, 0, out, 0, 0, 1, 0, 0, 0, 0, 0, 0].map(F::from_repr)
+}
+
+#[test]
+fn conditional_swap_requires_both_branches_and_a_boolean_selector() {
+    let widths = [0, 1, 64, 64, 8, 16, 1];
+    let first = select(1, 2, 3, 4);
+    let second = select(1, 3, 2, 5);
+    for rows in [[first, second], [second, first]] {
+        let mut narrowed = widths;
+        narrow_inputs(&mut narrowed, rows.as_flattened(), 14).unwrap();
+        assert_eq!(narrowed, [0, 1, 16, 16, 8, 16, 1]);
+    }
+    for other in [first, select(6, 3, 2, 5), select(1, 3, 6, 5)] {
+        let mut narrowed = widths;
+        narrow_inputs(&mut narrowed, [first, other].as_flattened(), 14).unwrap();
+        assert_eq!(narrowed, widths);
+    }
+    let mut wide_selector = widths;
+    wide_selector[1] = 64;
+    let original = wide_selector;
+    narrow_inputs(&mut wide_selector, [first, second].as_flattened(), 14).unwrap();
+    assert_eq!(wide_selector, original);
+    assert!(narrow_inputs(&mut wide_selector, &select(1, 2, 99, 4), 14).is_err());
+}
+
+#[test]
+fn constant_gate_bounds_follow_polynomial_addition() {
+    let base = [0, 8, 64, 16];
+    for (coefficient, expected) in [(0, 16), (1, 16), (1 << 16, 24), (u64::MAX, 64)] {
+        let mut widths = base;
+        let row = [1, 0, 2, 0, 3, coefficient, 0, 0, 0, 0, 0, 0, 1, 0].map(F::from_repr);
+        narrow_inputs(&mut widths, &row, 14).unwrap();
+        assert_eq!(widths[2], expected);
+    }
+    let mut wide = [0, 64, 64, 16];
+    let xor = [1, 0, 2, 0, 3, 1, 0, 0, 0, 0, 0, 0, 1, 0].map(F::from_repr);
+    narrow_inputs(&mut wide, &xor, 14).unwrap();
+    assert_eq!(wide, [0, 64, 64, 16]);
 }

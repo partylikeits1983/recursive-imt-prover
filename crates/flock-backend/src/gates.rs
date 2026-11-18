@@ -5,7 +5,7 @@ use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 #[cfg(test)]
 mod tests;
@@ -19,6 +19,7 @@ pub struct GateLayout {
 
 pub struct GateShard {
     pub coordinate_widths: Vec<usize>,
+    pub source_columns: Vec<usize>,
     pub source_rows: Vec<u32>,
     pub log_height: usize,
     pub preprocessing_widths: Vec<usize>,
@@ -40,22 +41,47 @@ impl GateLayout {
 
 // Five wire IDs, one field coefficient, then eight native operation selectors.
 const SMALL_OUTPUT: [usize; 14] = [ID, ID, ID, 0, ID, 1, 1, 1, 1, 1, 1, 0, 1, 1];
-const MUL_OR_MUL_ADD: [usize; 14] = [ID, ID, ID, 0, ID, 0, 0, 0, 1, 0, 1, 0, 0, 0];
+const SELECT_OR_PRODUCT: [usize; 14] = [ID, ID, ID, 0, ID, 0, 0, 1, 1, 0, 1, 0, 0, 0];
+const PRODUCT: [usize; 14] = [ID, ID, 0, 0, ID, 0, 0, 0, 1, 0, 0, 0, 0, 0];
 const fn constant_gates(coefficient_bits: usize) -> [usize; 14] {
     [ID, 0, ID, 0, ID, coefficient_bits, 1, 0, 0, 0, 0, 0, 1, 1]
 }
 const FIVE_WIRE_GATES: [usize; 14] = [ID, ID, ID, ID, ID, 0, 0, 0, 0, 0, 0, 1, 0, 0];
 
 pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
-    GateLayout::new([16, 64, 64, 0, 16], 20, SMALL_OUTPUT),
-    GateLayout::new([64, 64, 64, 0, 64], 21, MUL_OR_MUL_ADD),
-    GateLayout::new([64, 64, 64, 0, 64], 19, MUL_OR_MUL_ADD),
+    GateLayout::new([16, 16, 16, 0, 16], 20, SMALL_OUTPUT),
+    GateLayout::new([64, 64, 64, 0, 64], 21, SELECT_OR_PRODUCT),
+    GateLayout::new([64, 64, 0, 0, 64], 19, PRODUCT),
     GateLayout::new([64, 0, 64, 0, 64], 20, constant_gates(17)),
     GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(64)),
     GateLayout::new([64, 64, 64, 64, 64], 18, FIVE_WIRE_GATES),
 ];
 
 impl GateShard {
+    pub fn fill_witness(&self, output: &mut [F], read: impl Fn(u32) -> F) {
+        let stride: usize = self.column_bytes.iter().sum();
+        let height = 1 << self.log_height;
+        for (&column, values) in self
+            .source_columns
+            .iter()
+            .zip(output.chunks_exact_mut(height))
+        {
+            let offset = self.column_bytes[..column].iter().sum::<usize>();
+            let bytes = self.column_bytes[column];
+            if bytes == 0 {
+                continue;
+            }
+            for (value, row) in values
+                .iter_mut()
+                .zip(self.preprocessing_bytes.chunks_exact(stride))
+            {
+                let mut id = [0; 8];
+                id[..bytes].copy_from_slice(&row[offset..offset + bytes]);
+                *value = read(u64::from_le_bytes(id) as u32);
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn preprocessing(&self) -> RowMajorMatrix<F> {
         self.selected_preprocessing(&(0..self.column_bytes.len()).collect::<Vec<_>>())
@@ -98,6 +124,49 @@ impl GateShard {
     }
 }
 
+/// Infer input bounds from the full, trusted native gate table. In a Boolean
+/// conditional swap both branches occur among the two outputs.
+pub fn narrow_inputs(widths: &mut [u8], preprocessing: &[OldF], pp_width: usize) -> Result<()> {
+    let (rows, tail) = preprocessing.as_chunks::<14>();
+    ensure!(
+        pp_width == 14 && tail.is_empty(),
+        "unexpected native gate schema"
+    );
+    let mut selects = HashMap::new();
+    for row in rows.iter().rev() {
+        let select = row[7].to_repr() == 1;
+        let constant_product = row[12].to_repr() == 1 || row[13].to_repr() == 1;
+        if !select && !constant_product {
+            continue;
+        }
+        let [a, b, c, _, out] = core::array::from_fn(|i| row[i].to_repr() as usize);
+        ensure!(
+            [a, b, c, out].iter().all(|&id| id < widths.len()),
+            "gate witness ID out of range"
+        );
+        if select {
+            if widths[a] <= 1 && widths[out] < widths[b].max(widths[c]) {
+                if let Some(&other) = selects.get(&(a, c, b)) {
+                    let bound = widths[out].max(other);
+                    widths[b] = widths[b].min(bound);
+                    widths[c] = widths[c].min(bound);
+                }
+                let bound = selects.entry((a, b, c)).or_insert(widths[out]);
+                *bound = (*bound).min(widths[out]);
+            }
+        } else {
+            let coefficient = (64 - row[5].to_repr().leading_zeros()) as u8;
+            let product = crate::fanout::product_width(widths[a], coefficient);
+            // In polynomial coordinates addend = out XOR (coefficient * a).
+            widths[c] = widths[c].min(widths[out].max(product));
+            if coefficient == 1 {
+                widths[a] = widths[a].min(widths[out].max(widths[c]));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn partition(
     widths: &[u8],
     preprocessing: &[OldF],
@@ -114,6 +183,13 @@ pub fn partition(
         preprocessing.len().is_multiple_of(pp_width),
         "incomplete gate preprocessing row"
     );
+    if let Some(layout) = fixed {
+        ensure!(
+            main_width == 5 && pp_width == 14,
+            "unsupported fixed gate schema"
+        );
+        return partition_fixed(widths, preprocessing, removed_rows, layout);
+    }
     let mut occupied = vec![0u64; pp_width];
     for row in preprocessing.chunks_exact(pp_width) {
         for (bits, value) in occupied.iter_mut().zip(row) {
@@ -124,13 +200,6 @@ pub fn partition(
         .iter()
         .map(|v| (64 - v.leading_zeros() as usize).div_ceil(8).max(1))
         .collect();
-    if let Some(layout) = fixed {
-        ensure!(
-            main_width == 5 && pp_width == 14,
-            "unsupported fixed gate schema"
-        );
-        return partition_fixed(widths, preprocessing, removed_rows, column_bytes, layout);
-    }
     // Two bits per main column select 0, 1, 16 or 64 coordinates. Stable key order
     // fixes the AIR order, independently of the prover's values.
     let mut groups: Vec<Option<GateShard>> = (0..1 << (2 * main_width)).map(|_| None).collect();
@@ -157,6 +226,7 @@ pub fn partition(
             key |= class << (2 * column);
         }
         let shard = groups[key].get_or_insert_with(|| GateShard {
+            source_columns: (0..main_width).collect(),
             coordinate_widths: (0..main_width)
                 .map(|c| [0, 1, 16, 64][(key >> (2 * c)) & 3])
                 .collect(),
@@ -188,6 +258,7 @@ pub fn partition(
         if count > half && half >= 32 && (count - half).next_power_of_two().max(16) <= half / 2 {
             let row_bytes: usize = shard.column_bytes.iter().sum();
             let tail = GateShard {
+                source_columns: shard.source_columns.clone(),
                 coordinate_widths: shard.coordinate_widths.clone(),
                 source_rows: shard.source_rows.split_off(half),
                 log_height: 0,
@@ -208,7 +279,6 @@ fn partition_fixed(
     widths: &[u8],
     preprocessing: &[OldF],
     removed_rows: &[bool],
-    column_bytes: Arc<[usize]>,
     layout: &[GateLayout],
 ) -> Result<Vec<Arc<GateShard>>> {
     ensure!(
@@ -222,13 +292,20 @@ fn partition_fixed(
     );
     let mut shards: Vec<_> = layout
         .iter()
-        .map(|g| GateShard {
-            coordinate_widths: g.main.to_vec(),
-            source_rows: vec![],
-            log_height: g.log_height,
-            preprocessing_widths: g.preprocessing.to_vec(),
-            column_bytes: column_bytes.clone(),
-            preprocessing_bytes: vec![],
+        .map(|g| {
+            // An absent wire has both a zero coordinate width and a trusted zero wire ID.
+            let source_columns: Vec<_> = (0..5)
+                .filter(|&column| g.main[column] != 0 || g.preprocessing[column] != 0)
+                .collect();
+            GateShard {
+                coordinate_widths: source_columns.iter().map(|&i| g.main[i]).collect(),
+                source_columns,
+                source_rows: vec![],
+                log_height: g.log_height,
+                preprocessing_widths: g.preprocessing.to_vec(),
+                column_bytes: g.preprocessing.map(|bits| bits.div_ceil(8)).into(),
+                preprocessing_bytes: vec![],
+            }
         })
         .collect();
     let mut order: Vec<_> = (0..layout.len()).collect();
@@ -273,7 +350,7 @@ fn partition_fixed(
         })?;
         let shard = &mut shards[group];
         shard.source_rows.push(u32::try_from(index)?);
-        for (value, &bytes) in row.iter().zip(column_bytes.iter()) {
+        for (value, &bytes) in row.iter().zip(shard.column_bytes.iter()) {
             shard
                 .preprocessing_bytes
                 .extend_from_slice(&value.to_repr().to_le_bytes()[..bytes]);

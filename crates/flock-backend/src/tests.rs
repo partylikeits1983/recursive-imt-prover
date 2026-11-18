@@ -3,7 +3,7 @@ use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::{AirLayout, BaseAir, check_all_constraints};
 use p3_binary_field::{Poly192, TowerLevel};
 use p3_bus::{BusDebugInstance, BusDebugReport, BusSymbolicBuilder};
-use p3_circuit::CircuitBuilder;
+use p3_circuit::{CircuitBuilder, WitnessId};
 use p3_circuit_prover::{
     direct::DirectCircuitLimits,
     native_bus::{KeccakCommitment, NativeBusCircuit},
@@ -465,6 +465,17 @@ fn check_split_fanout(commit_public_ids: bool) {
                 values[r * width + c] = convert(original[1].column(c).value(source_row as usize));
             }
         }
+        let mut direct = vec![F::ZERO; values.len()];
+        shard.fill_witness(&mut direct, |id| match id.checked_sub(1) {
+            Some(i) => convert(*witness.get_value(WitnessId(i)).unwrap()),
+            None => F::ZERO,
+        });
+        assert_eq!(
+            RowMajorMatrix::new(direct, 1 << shard.log_height)
+                .transpose()
+                .values,
+            values
+        );
         airs.push(Chip::import_gates(bus.airs()[1].clone(), shard, false).unwrap());
         rows.push(RowMajorMatrix::new(values, width));
         publics.push(vec![]);

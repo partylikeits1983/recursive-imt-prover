@@ -29,7 +29,7 @@ pub struct PackedShard {
 
 pub struct PackedRow {
     pub sources: Vec<u32>,
-    ids: [u32; WIDTH],
+    pub ids: [u32; WIDTH],
     coefficients: [u64; TERMS],
 }
 

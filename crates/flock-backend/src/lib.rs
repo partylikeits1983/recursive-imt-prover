@@ -31,13 +31,11 @@ pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
 #[cfg(test)]
 mod tests;
 
-use air::{Chip, convert};
+use air::{Chip, WitnessSource, convert};
 use anyhow::{Result, ensure};
 use checkpoint_keccak::linked::{BoundaryWitness, LinkedBatch};
 use config::{Config, challenger};
 use encoding::TableEncoding;
-use fanout::FanoutShard;
-use gates::GateShard;
 use old_air::BaseAir as OldBaseAir;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::BaseAir;
@@ -55,10 +53,10 @@ use p3_multi_stark::{
     VerifierInstances, VerifyingKey, prove, security_report, setup, verify,
 };
 use p3_sumcheck::TableShape;
-use packing::{PackedShard, Packing};
+use packing::Packing;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 type F = Poly64;
 type Proof = MultiStarkProof<Config>;
@@ -75,26 +73,17 @@ pub struct Prepared {
     checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
     instances: usize,
-    bus: NativeBusCircuit<OldF>,
+    keccak_wires: Vec<witness::KeccakWires>,
     airs: Vec<Chip>,
     hash: BooleanCircuit,
     hash_index: usize,
     calls: usize,
-    sources: Vec<TableSource>,
-    source_hash_index: usize,
     log_heights: Vec<usize>,
     config: Config,
     pk: ProvingKey<Config>,
     vk: VerifyingKey<Config>,
     seed: Vec<u8>,
     pub geometry: Geometry,
-}
-
-struct TableSource {
-    index: usize,
-    shard: Option<Arc<FanoutShard>>,
-    gates: Option<Arc<GateShard>>,
-    packed: Option<Arc<PackedShard>>,
 }
 
 #[derive(Serialize)]
@@ -206,9 +195,12 @@ impl Prepared {
                 && bus.airs()[0].main_next_row_columns() == [0],
             "unexpected native fanout layout"
         );
-        let widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
+        let mut widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
         let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
         let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
+        if recursive {
+            gates::narrow_inputs(&mut widths, &gates_pp.values, gates_pp.width)?;
+        }
         let packing = Packing::new(
             &widths,
             &gates_pp.values,
@@ -250,6 +242,12 @@ impl Prepared {
             .map(|s| (s.coordinate_widths.clone(), s.source_rows.len()))
             .collect();
         eprintln!("Gate live rows by coordinate widths: {gate_rows_by_width:?}");
+        let keccak_wires = witness::KeccakWires::from_bridge(
+            &bridge.values,
+            bridge.width,
+            calls,
+            circuit.witness_count,
+        )?;
         drop(bridge);
         let fanout_copy_layout: Vec<_> = shards
             .iter()
@@ -307,7 +305,6 @@ impl Prepared {
         }
         let source_hash_index = hash_index;
         let mut airs = Vec::new();
-        let mut sources = Vec::new();
         let mut log_heights = Vec::new();
         for shard in shards {
             let mut air =
@@ -317,12 +314,6 @@ impl Prepared {
             }
             airs.push(air);
             log_heights.push(shard.log_height);
-            sources.push(TableSource {
-                index: 0,
-                shard: Some(shard),
-                gates: None,
-                packed: None,
-            });
         }
         for shard in gates {
             airs.push(Chip::import_gates(
@@ -331,22 +322,10 @@ impl Prepared {
                 recursive,
             )?);
             log_heights.push(shard.log_height);
-            sources.push(TableSource {
-                index: 1,
-                shard: None,
-                gates: Some(shard),
-                packed: None,
-            });
         }
         if let Some(shard) = packing.shard {
             airs.push(Chip::packed(shard.clone()));
             log_heights.push(shard.log_height);
-            sources.push(TableSource {
-                index: 1,
-                shard: None,
-                gates: None,
-                packed: Some(shard),
-            });
         }
         let hash_index = source_hash_index + airs.len() - 2;
         for (i, air) in bus.airs().iter().enumerate().skip(2) {
@@ -357,6 +336,10 @@ impl Prepared {
             } else {
                 Chip::import(air.clone(), bus.log_heights()[i])?
             };
+            ensure!(
+                imported.is_public_table() || i == source_hash_index || i == source_hash_index + 1,
+                "unexpected native witness table"
+            );
             if recursive && i == source_hash_index + 1 {
                 imported.pad_keccak_bridge(log_calls)?;
             }
@@ -368,12 +351,6 @@ impl Prepared {
                     bus.log_heights()[i]
                 },
             );
-            sources.push(TableSource {
-                index: i,
-                shard: None,
-                gates: None,
-                packed: None,
-            });
         }
         for air in &mut airs {
             if recursive && air.is_public_table() {
@@ -456,27 +433,21 @@ impl Prepared {
             .iter()
             .enumerate()
             .map(|(i, shape)| {
-                if airs[i].is_public_table() {
-                    return TableEncoding::new(vec![0]);
-                }
-                if let Some(gates) = &sources[i].gates {
-                    return TableEncoding::new(gates.coordinate_widths.repeat(instances));
-                }
-                if sources[i].packed.is_some() {
-                    let mut widths = vec![1; packing::TERMS];
-                    widths.extend([64, 64]);
-                    return TableEncoding::new(widths.repeat(instances));
-                }
-                let width = if let Some(shard) = &sources[i].shard {
-                    shard.coordinate_width
-                } else if i == hash_index {
-                    if backend == HashBackend::Flock { 1 } else { 16 }
-                } else if i == hash_index + 1 {
-                    16
-                } else {
-                    64
+                let widths = match airs[i].witness_source() {
+                    WitnessSource::Gates(shard) => shard.coordinate_widths.repeat(instances),
+                    WitnessSource::Fanout(shard) => vec![shard.coordinate_width; shape.width()],
+                    WitnessSource::Packed(_) => {
+                        let mut widths = vec![1; packing::TERMS];
+                        widths.extend([64, 64]);
+                        widths.repeat(instances)
+                    }
+                    WitnessSource::Public => vec![0],
+                    WitnessSource::Keccak if backend == HashBackend::Flock => {
+                        vec![1; shape.width()]
+                    }
+                    WitnessSource::Bridge | WitnessSource::Keccak => vec![16; shape.width()],
                 };
-                TableEncoding::new(vec![width; shape.width()])
+                TableEncoding::new(widths)
             })
             .collect::<Result<Vec<_>>>()?;
         let main_coordinate_widths: Vec<_> =
@@ -589,13 +560,11 @@ impl Prepared {
             checkpoint,
             circuit,
             instances,
-            bus,
+            keccak_wires,
             airs,
             hash,
             hash_index,
             calls,
-            sources,
-            source_hash_index,
             log_heights,
             config,
             pk,

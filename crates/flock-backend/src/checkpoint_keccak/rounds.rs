@@ -18,7 +18,7 @@ pub(super) struct ChiSumcheck {
 
 struct Weights {
     values: Vec<E>,
-    nibbles: Vec<[E; 16]>,
+    bytes: Vec<[E; 256]>,
 }
 
 enum Stage {
@@ -44,15 +44,15 @@ enum Columns {
 
 impl Weights {
     fn new(values: Vec<E>) -> Self {
-        let nibbles = values.as_chunks::<4>().0.iter().map(subset_sums).collect();
-        Self { values, nibbles }
+        let bytes = values.as_chunks::<8>().0.iter().map(subset_sums).collect();
+        Self { values, bytes }
     }
 
     fn lane_sum(&self, lane: usize, mut mask: u64) -> E {
         let mut value = E::ZERO;
-        for table in &self.nibbles[16 * lane..16 * (lane + 1)] {
-            value += table[(mask & 15) as usize];
-            mask >>= 4;
+        for table in &self.bytes[8 * lane..8 * (lane + 1)] {
+            value += table[(mask & 255) as usize];
+            mask >>= 8;
         }
         value
     }
@@ -127,19 +127,20 @@ impl Columns {
         };
         let mut sums = [PackedE::ZERO.mul_unreduced(PackedE::ZERO); 3];
         for j in (0..BITS).step_by(PACKING_WIDTH) {
-            let a: [PackedE; 3] = core::array::from_fn(|k| load(low, shift(j, k)));
-            let d: [PackedE; 3] = core::array::from_fn(|k| load(high, shift(j, k)) + a[k]);
+            let [a, b, c] = core::array::from_fn(|k| load(low, shift(j, k)));
+            let [x, y, z] = core::array::from_fn(|k| load(high, shift(j, k)));
             let w = load(&weights.values, j);
-            sums[0] += w.mul_unreduced(a[0] + a[2] + a[1] * a[2]);
-            sums[1] += w.mul_unreduced(d[0] + d[2] + a[1] * d[2] + d[1] * a[2]);
-            sums[2] += (w * d[1]).mul_unreduced(d[2]);
+            sums[0] += w.mul_unreduced(a + c + b * c);
+            sums[1] += w.mul_unreduced(x + z + y * z);
+            sums[2] += (w * (b + y)).mul_unreduced(c + z);
         }
-        sums.map(|sum| {
+        let [low, high, quadratic] = sums.map(|sum| {
             let reduced = sum.reduce();
             (0..PACKING_WIDTH)
                 .map(|lane| <PackedE as PackedFieldExtension<F, E>>::extract(&reduced, lane))
-                .sum()
-        })
+                .sum::<E>()
+        });
+        [low, low + high + quadratic, quadratic]
     }
 
     fn at(&self, instance: usize, position: usize) -> E {
@@ -179,7 +180,7 @@ impl Columns {
             *first = Some(challenge);
             return;
         };
-        let lookup = subset_sums(&[
+        let lookup: [E; 16] = subset_sums(&[
             (E::ONE + r) * (E::ONE + challenge),
             (E::ONE + r) * challenge,
             r * (E::ONE + challenge),
@@ -260,9 +261,10 @@ impl ChiSumcheck {
     }
 }
 
-fn subset_sums(values: &[E; 4]) -> [E; 16] {
-    let mut table = [E::ZERO; 16];
-    for mask in 1usize..16 {
+fn subset_sums<const N: usize, const M: usize>(values: &[E; N]) -> [E; M] {
+    assert_eq!(M, 1 << N);
+    let mut table = [E::ZERO; M];
+    for mask in 1usize..M {
         table[mask] = table[mask & (mask - 1)] + values[mask.trailing_zeros() as usize];
     }
     table
