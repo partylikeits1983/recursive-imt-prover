@@ -69,6 +69,10 @@ has separate witness values, wiring checks and public inputs. The trusted key
 fixes the tree depth and batch size; one key accepting arbitrary N is not yet
 implemented.
 
+Next is a [binary aggregation tree](docs/aggregation-tree.md) with specialized
+first aggregation and a reusable 2-to-1 merge. Fixed-size Keccak statement binding
+is implemented; aggregate-of-aggregate verification and cyclic recursion are not.
+
 Two experimental backends implement the outer proof:
 
 - **Flock (default):** Plonky3 native product bus with Flock Keccak circuits.

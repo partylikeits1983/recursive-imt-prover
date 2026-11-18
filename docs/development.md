@@ -9,6 +9,7 @@ See [security limits](binary-security.md) and [measurements](binary-veil.md).
 | Location | Purpose |
 |---|---|
 | `src/binary/tree.rs`, `relation.rs` | Keccak IMT and membership statement |
+| `src/binary/aggregation_tree.rs` | Fixed-size statement and Keccak merge gadgets |
 | `src/binary/veil/` | Masked child, recursive verifier and aggregation |
 | `crates/flock-backend/` | Native product-bus prover and linked Keccak backends |
 | `src/binary/engine.rs`, `security.rs` | Non-ZK baseline and conditional security budgets |
@@ -23,13 +24,13 @@ See [security limits](binary-security.md) and [measurements](binary-veil.md).
    Keccak separately. Keep parameters fixed and report cold/warm ranges, setup,
    proof size, memory and independent verification. Current results exceed
    the latency target.
-2. Extend the measured eight-child template to 16–64 under the existing resource
-   guards. Measure main trace, PCS and Keccak memory before adding another
-   recursion layer.
-3. Complete the joint privacy and security analysis: simulation, abort
-   probabilities, adaptive Fiat–Shamir composition and lifetime error budgets.
-   Keep binary fields, Keccak and Johnson bounds. Conditional algebraic budgets
-   are not an end-to-end security proof.
+2. Build the [binary aggregation tree](aggregation-tree.md), with specialized
+   first aggregation and a reusable 2-to-1 merge. Measure a two-aggregate verifier
+   before attempting cyclic recursion. Preserve the ordered public statements
+   through their fixed-size commitment and constrain the trusted verifier identities.
+3. Scale to 16–64 with bounded memory and parallelism. Keep binary fields, Keccak,
+   Johnson bounds and the 128-bit classical target. Formal ZK analysis is deferred;
+   conditional algebraic budgets remain distinct from an end-to-end security claim.
 
 Avoid repeating two rejected experiments: indexed Logup* required large
 transmitted pushforwards; a shared AIR expression DAG gave about 2% improvement
