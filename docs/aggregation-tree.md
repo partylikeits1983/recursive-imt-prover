@@ -103,10 +103,10 @@ incompatible layouts. This component test does not replace the full tree run.
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It constructed the merge circuit once and checked the same
 key at all five levels. The key also matched the eight-child run byte for
-byte. A fresh process verified the 1,426,018-byte proof against the ordered
+byte. A fresh process verified the 1,401,340-byte proof against the ordered
 statements using only the trusted verifier files. The test rejected corrupted
 proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/compact-sixty-four.json).
+[Raw measurements and validation](../benchmarks/binary/tree-merge/fixed-gates-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.

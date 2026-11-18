@@ -76,31 +76,27 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-The previous 64-child benchmark (revision `5667011`) ran on an Apple M2 Pro
-with eight Rayon workers and one active proving node. Each median and range
-covers all proofs of that type within one run.
+One release run on an Apple M2 Pro with 16 GiB of memory, eight Rayon workers and
+one active proving node. Each range includes every proof of that type in the run.
 
 | Operation | Median | Range |
 |---|---:|---:|
-| Child proving (64 proofs) | 2.28 s | 2.23–5.05 s |
-| First aggregation (32 proofs) | 22.47 s | 20.31–25.55 s |
-| Recursive merge (31 proofs) | 23.50 s | 22.16–27.46 s |
+| Child proving (64 proofs) | 2.78 s | 2.30–3.29 s |
+| First aggregation (32 proofs) | 18.24 s | 17.22–19.85 s |
+| Recursive merge (31 proofs) | 19.17 s | 18.27–22.01 s |
 
-The 63 aggregation operations took **24 min 20 s**. Including setup, child
-generation and final verification, elapsed time was **27 min 53 s** with
-negative tests excluded. The final proof was **1,426,018 bytes**, excluding
-public statements and the trusted verifier key. Fresh-process verification
-took **122 ms**, including startup and key loading. Peak physical footprint
-was 20.2 GB, including compressed or swapped memory.
-[Raw timings and acceptance checks](benchmarks/binary/tree-merge/compact-sixty-four.json).
+Aggregation took **19 min 46 s**. Including setup, all 64 children
+and final verification, the run took **23 min 37 s**, excluding negative tests. The
+final proof occupied **1,401,340 bytes**. Fresh verification took **117 ms**
+including startup and key loading. Peak process-tree physical footprint was
+17.3 GB, including compressed or swapped memory.
+[Raw per-proof measurements and acceptance checks](benchmarks/binary/tree-merge/fixed-gates-sixty-four.json).
 
-The proof meets the 1.5 MB size target. The targets of 1 MB, 10 seconds per
-merge and 60 seconds for the full aggregation remain open.
-
-The new fixed gate tables halve the preprocessing codeword to 67,108,864
-cells. Benchmarks above use the previous layout. A separate sibling concurrency
-test on this machine found that two active proving nodes took longer than one.
-[Fixed layout](docs/aggregation-tree.md#fixed-layout) ·
+On the same machine and worker count, the previous layout took 24 min 20 s
+for aggregation. The new layout reduced that time by 18.8% in one run per
+version. The proof meets the 1.5 MB target. The goals of 1 MB, 10 seconds per
+merge and 60 seconds for all 63 aggregation operations remain open.
+[Previous 64-child measurements](benchmarks/binary/tree-merge/compact-sixty-four.json) ·
 [Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json).
 
 ## Running locally
