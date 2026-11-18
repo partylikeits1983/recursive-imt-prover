@@ -15,8 +15,8 @@ The first aggregation combines children directly, avoiding an extra proof wrappe
 per child. Final native verification does not require a fourth circuit.
 
 ```text
-8 child proofs → 4 first aggregates → 2 merges → 1 final merge
-                                       same merge circuit
+64 child proofs → 32 first aggregates → 16 → 8 → 4 → 2 → 1
+                                       same merge circuit/key
 ```
 
 Reusing the exact key requires cyclic recursion: the merge circuit verifies its
@@ -119,11 +119,12 @@ The first aggregation uses the circuit-compatible fixed-width transcript;
 older checkpoint proofs and verifier keys must be regenerated.
 
 `PreparedMerge` embeds two instances of that verifier and constrains their
-ordered parent digest/count. The four-child run uses 15.8 million witnesses per
-template and 419 million initial codeword cells. Warm merge time is 36.4 s median,
-with a 1.429 MB proof and 135 ms fresh verification. Setup takes another 20.9 s.
+ordered parent digest/count. The four-child run uses 16.4 million witnesses per
+template and 419 million initial codeword cells. With eight threads, warm merge
+time is 28.9 s median, with a 1.370 MB proof and 124 ms fresh verification.
+Setup takes another 17.8 s.
 This measures only the merge stage, excluding child and first-aggregate proving.
-Peak physical footprint is 14.6 GB; the sub-10-second target remains unmet.
+Peak physical footprint is 14.9 GB; the sub-10-second target remains unmet.
 [Raw measurements and optimization](binary-veil.md#four-child-tree-merge).
 
 Real-proof tests reject changes to public inputs and imported proof messages.
@@ -149,8 +150,8 @@ RAYON_NUM_THREADS=4 cargo test --locked --release --test linked_checkpoint \
 
 1. **Retain the child and first aggregation.** Depth is 32. Both are implemented;
    first aggregation constrains two complete masked-child verifiers. Checkpoint
-   is the initial tree backend. The two-child aggregate is 1.39 MB,
-   with a 21.642 s warm median;
+   is the initial tree backend. The two-child aggregate is 1.42 MB,
+   with a 20.568 s warm median on four threads;
    [measurements](binary-veil.md#four-child-tree-merge).
 2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
    native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. The
@@ -166,9 +167,10 @@ RAYON_NUM_THREADS=4 cargo test --locked --release --test linked_checkpoint \
    authority; larger inputs must use the merge authority. Carry and authenticate
    the merge verifier data through recursion, and check it against trusted data
    in final verification. Counts strictly decrease toward the base case.
-5. **Complete the three-circuit acceptance run.** Generate eight real children,
-   four first aggregates, two merges and one final merge. Use the exact same
-   merge circuit/key at both higher levels. Serialize the final proof, ordered
+5. **Complete the three-circuit acceptance run.** Generate 64 real children,
+   32 first aggregates, then 16, 8, 4, 2 and 1 merge proofs. Build the merge circuit
+   once and reuse the exact same verifier key at all five merge levels. The
+   integration test must assert this reuse. Serialize the final proof, ordered
    statement and trusted verifier data; verify in a fresh process without any
    child or intermediate proofs. Reject altered roots, nullifier hashes, ordering, counts,
    proof data, branch selectors and foreign authorities. Record times and memory.
@@ -179,8 +181,8 @@ Stop implementation work once this three-circuit acceptance run and its negative
 tests pass. Keep the existing security parameters and resource guards throughout;
 native wrapping has previously exceeded the codeword budget.
 
-Compare total work and critical-path latency. Eight children require four first
-aggregates and three recursive merges across three dependent levels. A tree is
+Compare total work and critical-path latency. The test requires 32 first
+aggregates and 31 recursive merges across six dependent levels. A tree is
 faster only if smaller circuits and parallelism outweigh those extra proofs and
 any wrappers. Record peak memory.
 Charge soundness error for every child, wrapper and merge, retaining the 128-bit

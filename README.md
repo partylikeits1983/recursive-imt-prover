@@ -21,7 +21,7 @@ real funds. No on-chain verifier.
 | Recursive merge | Verify two aggregates and produce another aggregate | Four-child run works with a fixed source key; same-key reuse pending |
 
 ```text
-8 IMT children → 4 first aggregates → 2 merges → 1 final merge
+64 IMT children → 32 first aggregates → 16 → 8 → 4 → 2 → 1
                                        same merge circuit/key
 ```
 
@@ -39,8 +39,9 @@ scope.
 The planned tree supports balanced batches of 2, 4, 8, 16, 32 or 64 children.
 A four-child run now produces and independently verifies a real merge proof.
 Its source verifier key is fixed in the circuit; a further level would require a
-new key. Completion requires an eight-child run through two merge levels using
-the exact same merge key, followed by fresh-process verification and tamper tests.
+new key. Completion requires a 64-child integration test using the exact same
+merge circuit/key at all five higher levels, followed by fresh-process verification
+and tamper tests. A tree with different merge keys per level does not meet this test.
 See the [implementation plan](docs/aggregation-tree.md).
 
 Aggregates are intentionally non-ZK. Their inputs are child proofs and public
@@ -115,25 +116,26 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Depth-32 root/nullifier-hash measurements on an Apple M2 Pro with four threads.
+Depth-32 root/nullifier-hash measurements on an Apple M2 Pro.
 Each row uses one cold and two warm samples; aggregation is the warm median.
 Fresh verification includes process startup and authenticated verifier-key loading.
 
-| Backend / children | Aggregation | Aggregate size | Fresh verification |
-|---|---:|---:|---:|
-| Checkpoint tree pair / 2 | 21.6 s | 1.39 MB | 140 ms |
-| Checkpoint merge / 4 | 36.4 s | 1.43 MB | 135 ms |
+| Backend / children | Threads | Aggregation | Aggregate size | Fresh verification |
+|---|---:|---:|---:|---:|
+| Checkpoint tree pair / 2 | 4 | 20.6 s | 1.42 MB | 150 ms |
+| Checkpoint merge / 4 | 8 | 28.9 s | 1.37 MB | 124 ms |
 
-Children took 3.3–4.0 s warm and 4.2–4.6 s cold, producing approximately 1.13 MB
-proofs. Aggregation excludes setup: 6.7 s for the pair and 20.9 s for the merge.
+Children took 3.1–3.3 s warm and 3.3–3.9 s cold, producing approximately 1.13 MB
+proofs. Aggregation excludes setup: 6.4 s for the pair and 17.8 s for the merge.
 The merge consumes two already-created first aggregates; its timing excludes
-child and first-aggregate proving. Warm merges ranged from 35.3–37.4 s.
+child and first-aggregate proving. Warm merges ranged from 28.8–28.9 s.
 
 Packing linear constraints reduced the merge's initial codeword cells from
-688 million to 419 million. Releasing trace storage earlier preserves proof bytes
-and verifier keys. Peak physical footprint was 14.6 GB (6.64 GB maximum RSS),
-including compressed/swapped memory. Timings vary on this shared machine;
-the detailed results retain earlier runs for comparison.
+688 million to 419 million. Fused extension multiplication removes a redundant
+addition. Peak physical footprint was 14.9 GB (6.87 GB maximum RSS), including
+compressed/swapped memory. A separate comparison using identical source proofs
+measured 34.8 s with four threads and 26.4 s with eight, producing identical proof
+bytes. Timings vary on this shared machine.
 
 Both aggregate sizes meet the 1.5 MB target. The 1 MB and sub-10-second targets
 remain unmet; a tree speed advantage has not been demonstrated. Compilation is
@@ -142,7 +144,8 @@ excluded; filesystem caches were not reset.
 
 ## Running locally
 
-Requires Rust 1.98.1. The default is four threads; use fresh output directories.
+Requires Rust 1.98.1. The default is four threads; use `--threads 8` for the merge
+measurement above. Use fresh output directories.
 
 ```sh
 cargo test --locked --release --workspace
@@ -158,7 +161,7 @@ cargo run --locked --release --bin masked-demo -- --verify --out run/pair32
 
 # Create a second pair with the same authority, then merge both aggregates.
 cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --keccak-backend checkpoint --out run/pair32-b
-cargo run --locked --release --bin merge-demo -- --left run/pair32 --right run/pair32-b --samples 3 --out run/merge4
+cargo run --locked --release --bin merge-demo -- --left run/pair32 --right run/pair32-b --samples 3 --threads 8 --out run/merge4
 
 # Requires only the final proof, ordered statements and trusted final key files.
 cargo run --locked --release --bin merge-demo -- --verify --out run/merge4

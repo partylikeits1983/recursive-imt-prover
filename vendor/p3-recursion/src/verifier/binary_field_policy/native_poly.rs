@@ -181,7 +181,8 @@ impl BinaryRelationPolicy<Poly64> for NativePoly64Relation {
         a: &NativePoly192Target,
         c: &NativePoly192Target,
     ) -> NativePoly192Target {
-        b.native_poly192_mul(a, c)
+        let zero = b.native_poly192_from_coefficients([ExprId::ZERO; 3]);
+        Self::mul_add(b, a, c, &zero)
     }
     /// The product of `native_poly192_mul`, reduced by `y³ = y + 1` and
     /// `y⁴ = y² + y`, with every sum folded into a multiply-add: each
@@ -336,7 +337,7 @@ impl BinaryProtocolPolicy<Poly64> for NativePoly64Relation {
         for (a, c) in a.iter().zip(c) {
             let sum = b.native_poly192_add(a, c);
             let equal = b.native_poly192_add(&one, &sum);
-            weight = b.native_poly192_mul(&weight, &equal);
+            weight = Self::mul(b, &weight, &equal);
         }
         Ok(weight)
     }
@@ -519,7 +520,7 @@ mod tests {
     }
 
     /// The fused multiply-add never adds more expression nodes than the product
-    /// and sum it replaces, and saves four of the thirteen for public operands.
+    /// and sum it replaces, and saves three of the twelve for public operands.
     #[test]
     fn native_poly_mul_add_never_costs_more_than_the_product_and_sum() {
         let added = |operands: [Operand; 3], fused: bool| {
@@ -542,7 +543,7 @@ mod tests {
         }
         let public = [Operand::Public; 3];
         assert_eq!(added(public, true), 9);
-        assert_eq!(added(public, false), 13);
+        assert_eq!(added(public, false), 12);
     }
 
     /// Binds `P::mul_add_add(a, c, d, e)` when `fused`, else `P::mul(a, c) + d + e`, to three
@@ -608,7 +609,7 @@ mod tests {
     }
 
     /// The multiply-add with two addends never adds more expression nodes than the product and
-    /// sums it replaces, and takes ten of their sixteen for public operands: one more than the
+    /// sums it replaces, and takes ten of their fifteen for public operands: one more than the
     /// multiply-add with one addend.
     #[test]
     fn native_poly_mul_add_add_takes_one_operation_more_than_the_multiply_add() {
@@ -633,7 +634,7 @@ mod tests {
         }
         let public = [Operand::Public; 4];
         assert_eq!(added(public, true), 10);
-        assert_eq!(added(public, false), 16);
+        assert_eq!(added(public, false), 15);
     }
 
     #[test]

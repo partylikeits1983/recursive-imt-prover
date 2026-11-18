@@ -85,6 +85,8 @@ See [the backend implementation](../crates/flock-backend/README.md).
   twice are eliminated; their prefix sums reconstruct them exactly.
 - Regenerate product-bus leaves in bounded chunks and defer column folds.
 - Release original trace tables before opening their committed bit coordinates.
+- Use the fused Poly192 multiply-add for products with a zero addend, saving one
+  arithmetic operation per general multiplication.
 - Reuse only PCS-authenticated evaluations with unchanged opening requests.
 - Specialize affine bus rounds and skip discarded AIR bus payload construction,
   preserving every constraint and activation check.
@@ -100,55 +102,61 @@ ordered `(root, nullifier_hash)` statements. The merge circuit fixes the source
 authority and verifies both complete proofs. The output uses a new verifier key;
 reuse of one key at every higher level remains unfinished.
 
-Apple M2 Pro, four threads, Rust 1.98.1, release with thin LTO. Each stage has one
+Apple M2 Pro, Rust 1.98.1, release with thin LTO. Each stage has one
 cold and two warm samples. Aggregation times exclude setup and compilation;
 merge times also exclude creating the children and first aggregates. Filesystem
 caches were not reset, and memory pressure was not controlled on this shared host.
 
 | Measurement | First aggregation / 2 children | Merge / 4 children |
 |---|---:|---:|
-| Setup | 6.731 s | 20.860 s |
-| Cold aggregation | 22.109 s | 39.643 s |
-| Warm median (range) | 21.642 s (21.559–21.726) | 36.378 s (35.320–37.436) |
-| Proof bytes | 1,391,160–1,392,472 | 1,429,334 |
-| Fresh verification / full process wall | 119.6 ms / 140.4 ms | 125.6 ms / 134.7 ms |
-| Witnesses per verifier template | 7,304,377 | 15,763,977 |
+| Threads | 4 | 8 |
+| Setup | 6.402 s | 17.791 s |
+| Cold aggregation | 20.517 s | 32.328 s |
+| Warm median (range) | 20.568 s (20.425–20.711) | 28.860 s (28.820–28.900) |
+| Proof bytes | 1,422,998–1,423,350 | 1,369,673 |
+| Fresh verification / full process wall | 128.0 ms / 150.5 ms | 112.6 ms / 124.3 ms |
+| Witnesses per verifier template | 7,290,188 | 16,437,934 |
 | Initial codeword cells | 218,103,808 | 419,430,400 |
-| Peak physical footprint / maximum RSS | 7.93 GB / 4.43 GB | 14.57 GB / 6.64 GB |
+| Peak physical footprint / maximum RSS | 7.98 GB / 5.18 GB | 14.89 GB / 6.87 GB |
 
-Warm child proving took 3.308–4.026 s; the first sample's children took
-4.213–4.594 s. Child proofs were 1,128,290–1,130,926 bytes. The first stage's warm
-critical-path median, including child proving and verification, was 29.874 s.
-The merge reuses the baseline's two first aggregates; the first-stage benchmark
-generates fresh children under the same verifier key.
+Warm child proving took 3.117–3.328 s; the first sample's children took
+3.350–3.932 s. Child proofs were 1,128,694–1,129,864 bytes. The first stage's warm
+critical-path median, including child proving and verification, was 28.027 s.
+The merge consumes two newly generated first aggregates and authenticates four
+distinct statements in their original order.
 
-The latest change drops original mixed trace tables before the Boolean PCS
-opening. The saved final proof, statement, verifier key and trusted metadata are
-byte-identical to the preceding checkpoint. No circuit or protocol changes.
+Fused multiplication reduces a general Poly192 product from ten arithmetic
+operations to nine. Against the previous source authority, it removes 31,722
+witness values per verifier and reduces the merge proof from 1,429,334 to
+1,373,517 bytes. Four threads measured a 34.784 s warm median; eight measured
+26.395 s. Those runs produced byte-identical proofs and verifier files. The table
+above uses newly generated source aggregates: their first-stage proofs grew from
+about 1.39 to 1.42 MB, while the final merge proof is 1.37 MB. Verifier keys change;
+the relation and security parameters do not.
 
 The backend packs up to 16 constant-weighted bit additions into one linear AIR
 row. It retains Boolean constraints and all live copy-bus endpoints. An omitted
 intermediate must have exactly two original uses and is reconstructed by its
-prefix sum. In the current merge, this removes 9,434,146 auxiliary values from
+prefix sum. In the current merge, this removes 10,068,514 auxiliary values from
 committed tables across the two instances. The witness runner still computes
 them. This is an exact algebraic substitution; security parameters are unchanged.
 
 With the earlier source authority held fixed, packing reduced initial codeword
 cells from 687,865,856 to 419,430,400 (39.0%). That run measured a 33.046 s warm
 median (32.308–33.784), a 1,382,186-byte proof and 15.44 GB physical footprint,
-versus the previous 59.445 s median and 23.40 GB footprint. The table above uses
-packed first aggregates and releases trace storage earlier. Source authorities,
-code fingerprints and all samples are retained; these runs are not a controlled
-timing comparison. A tree speed advantage over flat aggregation is still unproven.
+versus the previous 59.445 s median and 23.40 GB footprint. Source authorities,
+code fingerprints, thread counts and samples are retained; these runs are not a
+controlled timing comparison. A tree speed advantage remains unproven.
 
 The final verifier succeeds with only the final proof, ordered statements and
 trusted verifier files. Sixteen mutations are rejected, including changed roots,
 nullifier hashes, ordering, counts, proof encoding and authority. The source
 aggregate also passes the complete verifier circuit directly; changed public
-inputs fail. The newly packed first aggregate passes 17 fresh-process mutation
-checks. Conditional algebraic accounting reports 146.211 bits for the current
+inputs fail. The new first aggregate passes 17 fresh-process mutation
+checks. Conditional algebraic accounting reports 146.208 bits for the current
 merge; end-to-end security and joint child statistical ZK remain unestablished.
-[Current samples, resource measurements and checks](../benchmarks/binary/tree-merge/release-traces.json).
+[Current samples, resource measurements and checks](../benchmarks/binary/tree-merge/fused-multiplication.json).
+[Trace-storage measurements](../benchmarks/binary/tree-merge/release-traces.json).
 [Packing measurements](../benchmarks/binary/tree-merge/packed-linear.json).
 [Earlier merge measurements](../benchmarks/binary/tree-merge/depth32-four.json).
 
