@@ -1,0 +1,63 @@
+{
+  "protocol": "experimental-committed-keccak-recursive-component-v2",
+  "scope": "A native binary circuit verifies 24 Keccak GKR rounds, the input closing sumcheck and both committed boundaries through deferred ring switching and additive WHIR. Arithmetic port linkage and aggregate verification are not included.",
+  "aggregate_integrated": false,
+  "acceptance_pass": false,
+  "inner_reduction_pcs_authenticated": true,
+  "end_to_end_security_bits": null,
+  "base_commit": "3f3e8b978e302f71e5816478b352837cb30716f3",
+  "source_sha256": "2316c6681bdbea5f55e74cdaafb63f5324de078404c6f490e1cebf06ad98f140",
+  "source_fingerprint_rule": "SHA-256 over sorted paths: Cargo.toml, Cargo.lock, build.rs, rust-toolchain.toml, .cargo/config.toml, crates/flock-backend/Cargo.toml, tests/checkpoint_recursion.rs, vendor/*/Cargo.toml, and all .rs files under src, crates/flock-backend/src and vendor/*/src. Each path and file separated by NUL bytes.",
+  "hardware": {
+    "cpu": "Apple M2 Pro",
+    "ram_bytes": 17179869184,
+    "physical_cores": 12,
+    "logical_cores": 12
+  },
+  "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "threads": 4,
+  "profile": {
+    "name": "release",
+    "lto": "thin",
+    "codegen_units": 16
+  },
+  "command": "RAYON_NUM_THREADS=4 cargo test --locked --release --test checkpoint_recursion -- --include-ignored --nocapture --test-threads=1",
+  "field": "Poly64/Poly192",
+  "hash": "Keccak-256",
+  "pcs": "additive-WHIR",
+  "soundness_assumption": "JohnsonBound",
+  "pcs_query_target_bits": 152,
+  "pcs_pow_bits_ceiling": 16,
+  "batch_log": 3,
+  "keccak_permutations": 8,
+  "rounds": 24,
+  "circuit_witnesses": 616467,
+  "outer_circuit_keccak_calls": 885,
+  "samples": [
+    {
+      "phase": "first-outer-proof-in-process",
+      "witness_ms": 22.805208,
+      "prove_ms": 1211.1984579999998,
+      "verify_ms": 57.058833,
+      "proof_bytes": 1254352
+    }
+  ],
+  "compile_excluded": true,
+  "filesystem_caches_reset": false,
+  "fresh_process_verification": false,
+  "validation_circuit_builds": [
+    {
+      "batch_log": 0,
+      "build_ms": 145.0,
+      "witnesses": 546598
+    },
+    {
+      "batch_log": 3,
+      "build_ms": 173.0,
+      "witnesses": 616467
+    }
+  ],
+  "test_command_peak_rss_bytes": 942915584,
+  "memory_scope": "Maximum RSS for the complete test command, including preparation, native proof, outer proof and rejection fixtures; not a physical-footprint measurement.",
+  "verification": "Actual outer proof accepted by prepared and separately restored authenticated verifiers. Corrupted proof and altered statement rejected. Circuit witnesses reject changed caps, output, GKR messages, closing, both ring tensors and PCS data after import. Native import rejects old transcript, wrong context, batch size and commitment."
+}

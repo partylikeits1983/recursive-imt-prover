@@ -48,6 +48,7 @@ cargo test --locked --release --workspace
 Use `--all-features` for changes affecting the archived prime implementation.
 Vendored prover patches have targeted checks in their `LOCAL_CHANGES.md` files.
 GitHub CI runs formatting, default-feature Clippy and library tests in one job.
+The full depth-32 child proof is release-only; debug CI skips it.
 Benchmarks and release regressions run locally.
 
 Keep generated proofs and private fixtures under ignored `run/`. Commit only

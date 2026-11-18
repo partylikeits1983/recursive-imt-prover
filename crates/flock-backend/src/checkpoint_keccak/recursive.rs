@@ -8,14 +8,21 @@ use p3_recursion::{
     BinaryTower128Challenger,
     pcs::binary::{BinaryPolyGenericSumcheckProofTargets, BinaryPolyGenericSumcheckVerifier},
 };
+use p3_sumcheck::generic_degree::GenericDegreeProof;
 use sha3::{Digest, Keccak256};
 
 use super::{
-    BITS, Claim, F, POSITION_LOG, Proof, RC, RECURSIVE_DOMAIN, ROUNDS, State, Transcript,
+    BITS, Claim, E, F, POSITION_LOG, Proof, RC, RECURSIVE_DOMAIN, ROUNDS, State, Transcript,
     algebraic_error_degree, linear, prove_using, verify_using,
 };
 
+mod bridge;
+mod committed;
 mod weights;
+pub(super) use bridge::{Bridge, deferred_seed};
+pub use committed::{
+    BoundaryReduction, CommittedInput, CommittedTargets, PreparedCommittedVerifier,
+};
 use weights::Weights;
 
 #[derive(Clone)]
@@ -90,17 +97,12 @@ impl PreparedVerifier {
         );
         let mut values = Vec::new();
         for layer in &proof.layers {
-            let p = &layer.sumcheck;
-            ensure!(
-                p.round_polys.len() == self.log_batch + POSITION_LOG
-                    && p.round_polys.iter().all(|p| p.len() == 3)
-                    && p.pow_witnesses.is_empty(),
-                "incorrect Keccak GKR sumcheck shape"
-            );
-            for value in core::iter::once(&p.claimed_sum)
-                .chain(p.round_polys.iter().flatten())
-                .chain(&layer.values)
-            {
+            values.extend(sumcheck_values(
+                &layer.sumcheck,
+                self.log_batch + POSITION_LOG,
+                3,
+            )?);
+            for value in &layer.values {
                 values.extend(value.coefficients().map(|c| CF::new(c.to_bits())));
             }
         }
@@ -188,6 +190,23 @@ impl PreparedVerifier {
             challenger: ch,
         })
     }
+}
+
+pub(super) fn sumcheck_values(
+    proof: &GenericDegreeProof<F, E>,
+    rounds: usize,
+    degree: usize,
+) -> Result<Vec<CF>> {
+    ensure!(
+        proof.round_polys.len() == rounds
+            && proof.round_polys.iter().all(|p| p.len() == degree)
+            && proof.pow_witnesses.is_empty(),
+        "incorrect Keccak sumcheck shape"
+    );
+    Ok(core::iter::once(&proof.claimed_sum)
+        .chain(proof.round_polys.iter().flatten())
+        .flat_map(|v| v.coefficients().map(|c| CF::new(c.to_bits())))
+        .collect())
 }
 
 fn equality_weights(

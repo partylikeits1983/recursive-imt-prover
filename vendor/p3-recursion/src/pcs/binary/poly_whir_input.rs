@@ -379,6 +379,39 @@ impl BinaryPolyWhirVerifier {
             + GrindingChallenger<Witness = Poly64>
             + CanObserve<MerkleCap<Poly64, [u8; 32]>>,
     {
+        self.import_native_with_weight(
+            config,
+            mmcs,
+            commitment,
+            points,
+            proof,
+            target_challenger,
+            None,
+        )
+    }
+
+    pub(super) fn import_native_with_weight<C, Ch, M>(
+        &self,
+        config: &WhirConfig<Poly192, Poly64, C>,
+        mmcs: &M,
+        commitment: &MerkleCap<Poly64, [u8; 32]>,
+        points: &[Point<Poly192>],
+        proof: &PcsProof<Poly64, Poly192, M>,
+        target_challenger: &mut Ch,
+        initial_sum: Option<Poly192>,
+    ) -> Result<NativeBinaryPolyWhirInput, VerificationError>
+    where
+        M: ByteDigestMmcs<Poly64>,
+        C: FieldChallenger<Poly64> + GrindingChallenger<Witness = Poly64>,
+        Ch: Clone
+            + FieldChallenger<Poly64>
+            + CanSampleUniformBits<Poly64>
+            + GrindingChallenger<Witness = Poly64>
+            + CanObserve<MerkleCap<Poly64, [u8; 32]>>,
+    {
+        if initial_sum.is_some() && self.plan.protocol.num_openings() != 0 {
+            return Err(invalid("deferred WHIR cannot mix ordinary openings"));
+        }
         self.check_native_with_usage(
             config,
             mmcs,
@@ -412,6 +445,9 @@ impl BinaryPolyWhirVerifier {
                 .delegate_initial_fold(|ch| {
                     let alpha = layout.batching_challenge(ch);
                     layout.constraint(alpha).combine_evals(&mut claim);
+                    if let Some(sum) = initial_sum {
+                        claim += alpha.exp_u64(p.initial_ood as u64) * sum;
+                    }
                     proof.whir.initial_sumcheck.verify_rounds(
                         ch,
                         &mut claim,

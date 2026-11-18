@@ -56,6 +56,11 @@ struct Authentication<'a, T> {
     mode: BinaryOracleWord,
 }
 
+pub(super) struct InitialWeight<'a, CF: Field, T> {
+    pub sum: &'a T,
+    pub evaluate: &'a dyn Fn(&mut CircuitBuilder<CF>, &[T]) -> Result<T, VerificationError>,
+}
+
 pub(super) fn verify_using<P, H, CF>(
     p: &WhirPlan<P::Base, P::Challenge>,
     b: &mut CircuitBuilder<CF>,
@@ -75,11 +80,29 @@ where
 pub(super) fn verify_with_domains<P, H, CF>(
     p: &WhirPlan<P::Base, P::Challenge>,
     b: &mut CircuitBuilder<CF>,
+    ch: BinaryTower128Challenger,
+    cap: &[Vec<ExprId>],
+    points: &[Vec<P::ChallengeTarget>],
+    proof: &BinaryWhirProofTargets<P::ChallengeTarget, P::BaseTarget>,
+    domains: Option<&BinaryWhirHashDomains>,
+) -> Result<super::WhirVerificationOutput<P::ChallengeTarget>, VerificationError>
+where
+    CF: Field + Eq + Hash,
+    H: BinaryCircuitHost<CF>,
+    P: BinaryWhirPolicy<CF>,
+{
+    verify_relation::<P, H, CF>(p, b, ch, cap, points, proof, domains, None)
+}
+
+pub(super) fn verify_relation<P, H, CF>(
+    p: &WhirPlan<P::Base, P::Challenge>,
+    b: &mut CircuitBuilder<CF>,
     mut ch: BinaryTower128Challenger,
     cap: &[Vec<ExprId>],
     points: &[Vec<P::ChallengeTarget>],
     proof: &BinaryWhirProofTargets<P::ChallengeTarget, P::BaseTarget>,
     domains: Option<&BinaryWhirHashDomains>,
+    initial_weight: Option<InitialWeight<'_, CF, P::ChallengeTarget>>,
 ) -> Result<super::WhirVerificationOutput<P::ChallengeTarget>, VerificationError>
 where
     CF: Field + Eq + Hash,
@@ -167,7 +190,14 @@ where
         values.push(answer.clone());
         batched.push(Batched::Point(point));
     }
-    let claim = horner_using::<P, CF>(b, &values, &alpha)?;
+    let mut claim = horner_using::<P, CF>(b, &values, &alpha)?;
+    let mut weight_scale = P::constant(b, 1)?;
+    if let Some(weight) = &initial_weight {
+        for _ in 0..values.len() {
+            weight_scale = P::mul(b, &weight_scale, &alpha);
+        }
+        claim = P::mul_add(b, &weight_scale, weight.sum, &claim);
+    }
     let (mut claim, mut last_r) = fold_using::<P, H, CF>(
         b,
         &mut ch,
@@ -292,6 +322,10 @@ where
         ));
     }
     let mut weight = batched_weight_using::<P, CF>(b, p.order, batched, &all_r, &alpha)?;
+    if let Some(initial) = initial_weight {
+        let value = (initial.evaluate)(b, &oriented(&all_r, p.order))?;
+        weight = P::mul_add(b, &weight_scale, &value, &weight);
+    }
     for term in terms {
         let row = oriented(&all_r[all_r.len() - term.variables..], p.order);
         let value = match term.weight {

@@ -97,6 +97,7 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
 }
 
 #[test]
+#[cfg_attr(debug_assertions, ignore = "depth-32 child proof; run with --release")]
 fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
     let parameters = Parameters::default();
     let prepared = PreparedMembership::new(32, parameters.clone())?;

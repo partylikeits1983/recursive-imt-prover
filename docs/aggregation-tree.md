@@ -112,18 +112,24 @@ The checkpoint Keccak reduction now has a native Poly64 circuit replaying all
 24 cubic sumchecks over Poly192. Its separate fixed-width transcript binds the
 complete initial claim and avoids reproducing Postcard's variable-length integer
 encoding in the circuit. Existing first-aggregation formats are unchanged.
-Factoring the transposed linear layer by lane and bit, with two carry states for
-cyclic bit rotations, reduces the diagnostic circuit from 3,480,200 to 1,229,973
-witnesses. This is a component measurement, not a merge proving-time result.
-An actual outer proof of this reduction, with the claim vector bound by a public
-Keccak digest, took 1.62 s to prove and 85 ms to verify (1.35 MB, one cold sample,
-M2 Pro, four threads). [Raw measurement](../benchmarks/binary/checkpoint-keccak/recursive-reduction.json).
+The transposed linear layer factors by lane and bit; cyclic rotations use two
+carry states instead of materializing a dense weight vector.
 
 The native Boolean-WHIR adapter also verifies complete batches across multiple
 tables, including successor openings and aligned column blocks. Real-proof tests
 check transcript agreement and reject matching forged public/private openings.
-The GKR reduction still needs its PCS boundaries, arithmetic port links and full
-aggregate verifier composed in one circuit. Neither component is a merge proof.
+`src/binary/checkpoint.rs` now composes the GKR reduction, input closing and
+boundary PCS verification in one native circuit. Its deferred ring-switch adapter
+checks tensor readings and closes their linear functional in WHIR's first
+sumcheck, using the backend's existing protocol. Real proofs pass; modified
+commitments, tensors, openings and proof messages fail after witness import.
+An actual outer proof also verifies against a separately restored verifier key.
+For eight Keccak permutations, its circuit has 616,467 witnesses. One first-proof
+sample took 1.21 s to prove and 57 ms to verify (1.25 MB, M2 Pro, four threads).
+The full test command's peak RSS was 943 MB; this is not physical footprint.
+[Raw component measurement](../benchmarks/binary/checkpoint-keccak/recursive-committed.json).
+Arithmetic port links and the full aggregate verifier remain to be composed.
+This committed-permutation component is not a merge proof.
 
 Run these component checks with:
 
@@ -131,6 +137,8 @@ Run these component checks with:
 RAYON_NUM_THREADS=4 cargo test --locked --release -p imt-flock-backend \
   checkpoint_keccak::recursive -- --include-ignored --nocapture
 cargo test --locked --release --test recursive_trace
+RAYON_NUM_THREADS=4 cargo test --locked --release --test checkpoint_recursion \
+  -- --include-ignored --nocapture --test-threads=1
 ```
 
 1. **Retain the child and first aggregation.** Depth is 32. Both are implemented;

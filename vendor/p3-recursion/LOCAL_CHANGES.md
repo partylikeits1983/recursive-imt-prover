@@ -40,6 +40,15 @@ Changes:
   unsupported. `tests/recursive_trace.rs` in the root workspace checks real
   Poly64/Poly192 proofs, transcript continuation and forged openings.
 
+- `src/pcs/binary/{deferred_whir_poly,poly_whir_input,whir_kernel}.rs`: replay
+  the pinned backend's current-only deferred ring switch. Tensor readings are
+  constrained and their combined linear functional joins WHIR's first sumcheck;
+  its weight is evaluated at the terminal folding point. The packed WHIR engine
+  retains all query, PoW and commitment checks. The deferred transcript seed is
+  supplied by trusted configuration and bound into the compiled circuit. Existing
+  ordinary-opening paths are unchanged. Root `tests/checkpoint_recursion.rs`
+  checks real backend proofs, post-import forgeries and an actual outer proof.
+
 The repository's `src/binary/veil/whir/recursive/` component tests import actual
 prefixed native proofs, constrain their verification, and reject mutations.
 They also exercise the framed transcript and functional sumcheck. The complete

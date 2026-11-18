@@ -1,5 +1,6 @@
 //! Reduce the final arbitrary bit functional to one ordinary PCS opening.
 use anyhow::{Result, ensure};
+use p3_challenger::{FieldChallenger, GrindingChallenger};
 use p3_field::PrimeCharacteristicRing;
 use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::{point::Point, poly::Poly};
@@ -86,18 +87,24 @@ pub(super) fn evaluate_folded(values: &[E], point: &[E]) -> E {
         .sum()
 }
 
-pub(super) fn verify(proof: &Proof, claim: &Claim, ch: &mut Challenger) -> Result<Closing> {
+pub(super) fn verify<C>(proof: &Proof, claim: &Claim, ch: &mut C) -> Result<Closing>
+where
+    C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+{
     let mut closing = verify_functional(proof, &claim.weights, claim.value, ch)?;
     closing.point = full_point(claim, closing.point);
     Ok(closing)
 }
 
-pub(super) fn verify_functional(
+pub(super) fn verify_functional<C>(
     proof: &Proof,
     weights: &[E],
     value: E,
-    ch: &mut Challenger,
-) -> Result<Closing> {
+    ch: &mut C,
+) -> Result<Closing>
+where
+    C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+{
     ensure!(
         proof.claimed_sum == value,
         "incorrect Keccak input functional"

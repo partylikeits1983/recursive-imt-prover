@@ -49,6 +49,8 @@ mod boolean;
 mod boolean_whir;
 mod boolean_whir_poly;
 mod byte_mmcs;
+mod deferred_whir_poly;
+pub use deferred_whir_poly::{BinaryPolyDeferredWhirTraceVerifier, DeferredWhirTargets};
 mod fields;
 mod gadgets;
 mod generic_sumcheck;
