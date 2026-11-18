@@ -5,11 +5,14 @@ mod checkpoint;
 pub mod checkpoint_keccak;
 #[cfg(test)]
 mod checkpoint_tests;
+
 mod config;
 mod encoding;
 mod fanout;
 mod gates;
 mod keccak;
+#[cfg(test)]
+mod known_openings_tests;
 mod mixed;
 mod verifier;
 

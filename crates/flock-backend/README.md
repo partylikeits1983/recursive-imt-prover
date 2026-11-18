@@ -117,6 +117,18 @@ Product-bus leaves are regenerated in bounded chunks through the pinned
 [multi-STARK](../../vendor/p3-multi-stark/LOCAL_CHANGES.md) patches. Complete-proof
 and transcript differential tests preserve the original verifier relation.
 
+## Reusing authenticated evaluations
+
+The mixed PCS adapter forwards prover-computed evaluations only for tables whose
+columns are all Boolean and whose complete ordered opening request is unchanged
+by expansion. Dense coordinates, reordered or partial requests, and expanded
+successor requests retain the original evaluation path. Supplied values are
+authenticated by the PCS, not accepted as facts. Differential tests compare
+serialized proofs and transcript continuations, and reject incorrect hints.
+The checkpoint prover reuses its four boundary evaluations from the existing
+sumcheck computations, avoiding full-size equality-weight allocations. This
+changes neither the verifier nor its authority identity or security parameters.
+
 ## Trusted verifier snapshots
 
 `Prepared::export_verifier` exports a compact verifier-only snapshot. It contains

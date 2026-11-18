@@ -1,6 +1,6 @@
 // Adapted from Plonky3 708900d7a730d6ce4d5421d43e2193f2301920fa, MIT OR Apache-2.0.
 // Local changes: trusted per-column coordinate widths; weighted claims only on
-// unchanged leading Boolean columns.
+// unchanged leading Boolean columns; known evaluations only for unchanged batches.
 //! Tables that hold both bit columns and field-element columns, committed as one bit witness.
 //!
 //! ```text
@@ -211,6 +211,42 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
                 .map(|(shape, schedule)| TableSpec::new(shape, schedule))
                 .collect(),
         )
+    }
+
+    /// A field evaluation cannot be split into evaluations of its Boolean
+    /// coordinates. Forward supplied values only when expansion changes
+    /// neither the columns nor the complete ordered opening request.
+    fn expand_known<E>(
+        &self,
+        protocol: &OpeningProtocol,
+        committed: &OpeningProtocol,
+        known: &[Option<OpeningEvals<EF>>],
+    ) -> Result<Vec<Option<OpeningEvals<EF>>>, BooleanTraceCommitmentError<E>> {
+        if known.len() != protocol.iter_openings().count() {
+            return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
+        }
+        protocol
+            .iter_openings()
+            .zip(committed.iter_openings())
+            .zip(known)
+            .map(|(((table, original), (_, expanded)), hint)| {
+                if let Some(values) = hint
+                    && (values.current().len() != original.current().len()
+                        || values.next().len() != original.next().len())
+                {
+                    return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
+                }
+                Ok(
+                    if self.encodings[table].widths.iter().all(|&width| width == 1)
+                        && original == expanded
+                    {
+                        hint.clone()
+                    } else {
+                        None
+                    },
+                )
+            })
+            .collect()
     }
 
     /// Read each requested column back out of its table's committed readings.
@@ -520,8 +556,8 @@ where
     }
 }
 
-/// Supplied values are not forwarded: `open_at_known` keeps its default and evaluates every
-/// batch, since the values would first need mapping through `expand_protocol`.
+/// Supplied values for unchanged Boolean batches retain their original meaning.
+/// All other expanded batches are evaluated from the committed tables as before.
 impl<EF, B, F, Challenger> PrescribedPointPcs<EF, Challenger> for MixedTraceCommitment<EF, B, F>
 where
     F: TranscriptField + TowerLevel + Coordinates,
@@ -558,6 +594,21 @@ where
             .open_at(prover_data.inner, &committed, points, challenger)
     }
 
+    fn open_at_known(
+        &self,
+        prover_data: Self::ProverData,
+        protocol: &OpeningProtocol,
+        points: &[Point<EF>],
+        known: &[Option<OpeningEvals<EF>>],
+        challenger: &mut Challenger,
+    ) -> Result<Self::Proof, Self::ProverError> {
+        self.check_regions(&protocol.table_shapes())?;
+        let committed = self.expand_protocol(protocol);
+        let known = self.expand_known(protocol, &committed, known)?;
+        self.inner
+            .open_at_known(prover_data.inner, &committed, points, &known, challenger)
+    }
+
     fn verify_at(
         &self,
         commitment: &Self::Commitment,
@@ -589,7 +640,7 @@ where
         data: Self::ProverData,
         protocol: &OpeningProtocol,
         points: &[Point<EF>],
-        _known: &[Option<OpeningEvals<EF>>],
+        known: &[Option<OpeningEvals<EF>>],
         weighted: &[WeightedColumnClaim<EF>],
         challenger: &mut Challenger,
     ) -> Option<Result<Self::Proof, Self::ProverError>> {
@@ -604,14 +655,13 @@ where
         if let Err(e) = self.check_regions(&protocol.table_shapes()) {
             return Some(Err(e));
         }
-        self.inner.open_at_known_weighted(
-            data.inner,
-            &self.expand_protocol(protocol),
-            points,
-            &vec![None; protocol.iter_openings().count()],
-            weighted,
-            challenger,
-        )
+        let committed = self.expand_protocol(protocol);
+        let known = match self.expand_known(protocol, &committed, known) {
+            Ok(known) => known,
+            Err(error) => return Some(Err(error)),
+        };
+        self.inner
+            .open_at_known_weighted(data.inner, &committed, points, &known, weighted, challenger)
     }
 
     fn verify_at_weighted(

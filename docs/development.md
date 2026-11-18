@@ -74,20 +74,31 @@ These requirements do not change when inspecting other implementations.
    fixed before the arithmetic proof; authenticated native port readings close
    an additional sumcheck/PCS link. Flock remains the default while measuring
    the complete tradeoff. Both use authenticated v2 verifier snapshots.
-   The linked depth-32 N=2 measurement reduces physical footprint to 18.74 GB but
-   increases warm aggregation to 70.56 s, so it is not the selected fast path.
+   The first linked depth-32 N=2 measurement reduced physical footprint to
+   18.74 GB but increased warm aggregation to 70.56 s; that comparison preceded
+   the grouped-copy and known-opening optimizations below.
    The indexed-lookup/Logup* experiment was rejected: its pushforward vectors
    are sent in full, making a canonical witness table too large, and its many
    position openings produced a 46 MB PCS proof even on a two-permutation test.
    The current optimization groups repeated witness reads into bounded rows,
    preserving each ordinary product-bus factor and the successor checks.
-   The checkpoint backend now completes depth-32 N=8, with 41.5 GB peak physical
-   footprint, but aggregation takes 347.6 s in one cold run. A brief profile
+   The first checkpoint depth-32 N=8 run used 41.5 GB peak physical
+   footprint and took 347.6 s to aggregate. A brief profile
    caught boundary PCS evaluation materializing full equality-weight vectors.
-   Next forward prover-computed opening values for unchanged Boolean
-   columns through the mixed PCS adapter; the existing PCS still authenticates them.
-   Dense coordinate expansions require separate treatment. Keep byte-for-byte
-   proof/transcript differential tests before choosing this optimization.
+   The mixed PCS adapter now forwards prover-computed opening values for
+   unchanged Boolean batches; the existing PCS authenticates them. The checkpoint
+   prover reuses its four boundary evaluations, avoiding full-table equality
+   vectors. Differential tests preserve proof bytes and transcript challenges;
+   incorrect supplied values still fail cryptographic verification. Dense
+   coordinate expansions retain the original evaluation path. Depth-32 N=2
+   checkpoint aggregation now takes 32.52 s warm, with 10.63 GB peak footprint.
+   N=8 now takes 220.62 s cold and 219.72 s warm median; its peak footprint
+   remains about 41.5 GB. Its circuit, parameters and trusted key are unchanged.
+   A new profile caught repeated symbolic AIR evaluation during arithmetic
+   sumcheck. Investigate reusing the captured, simplified verifier AIR in the
+   prover, preserving the ordered constraints and activation checks. Larger
+   batches also need less simultaneous prover storage and circuit construction
+   memory; do not simply raise the guards.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover before adding another recursion layer.

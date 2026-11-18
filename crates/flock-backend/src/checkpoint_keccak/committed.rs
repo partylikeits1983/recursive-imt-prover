@@ -168,10 +168,17 @@ impl CommittedBatch {
         // Deliberately no native validity check: tests also feed false outputs
         // through this path and require the authenticated proof to reject them.
         let (reduction, input) = super::prove(inputs, &output, &mut ch)?;
-        let (closing, input_point) = closing::prove(inputs, &input, &mut ch);
-        let opening = self
-            .pcs
-            .open_at(data, &self.protocol, &[input_point, point], &mut ch)?;
+        let (closing, input_point, input_value) = closing::prove(inputs, &input, &mut ch);
+        let opening = self.pcs.open_at_known(
+            data,
+            &self.protocol,
+            &[input_point, point],
+            &[
+                Some(OpeningBatch::new(vec![input_value], vec![])),
+                Some(OpeningBatch::new(vec![output.value], vec![])),
+            ],
+            &mut ch,
+        )?;
         Ok((
             Statement {
                 log_batch: self.log_batch as u32,

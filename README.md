@@ -22,32 +22,34 @@ cargo run --locked --release --bin masked-demo -- --depth 16 --batch-size 2 --ou
 cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 2 --out run/masked32
 # Repeated benchmark, excluding compilation and separating cold/warm samples:
 cargo run --locked --release --bin masked-demo -- --depth 16 --batch-size 2 --samples 3 --out run/bench
+# Eight-child comparison using the linked Keccak GKR backend:
+cargo run --locked --release --bin masked-demo -- --depth 32 --batch-size 8 --keccak-backend checkpoint --out run/eight
 # Independent verification; keep verifier.key with the trusted data:
 cargo run --locked --release --bin masked-demo -- --verify --out run/masked16
 ```
 
-Depths: 16/32. Batch schema: powers of two through 64; construction and memory
-limits apply. Batches 16–64 remain a scaling target, not a measured capability.
-Reports record per-child timings, aggregation, verification, proof sizes and RSS.
-On an M2 Pro with four threads, depth-32 aggregation takes **38.1 s for N=2**
-(warm median) and **93.0 s for N=4** (one cold sample). Aggregate sizes are
-1.40/1.44 MB. Proving remains above the latency target; N=4 used 31.6 GB peak
-physical footprint, including compressed/swapped memory.
+Depths: 16/32. Batches through eight have verified end to end. Batches 16–64
+remain a scaling target; current construction and memory limits restrict them.
+Reports include per-child timings, aggregation, verification, proof sizes and RSS.
+Depth-32 measurements on an M2 Pro with four threads:
 
-Fresh verification loads a compact authenticated key: **159 ms for N=2** and
-**181 ms for N=4** in the latest runs, using about 34 MB RSS. Filesystem caches
-were not reset. Keep `verifier.key` and independently
-trusted `trusted.json`; a key/digest pair supplied by an untrusted prover is
-insufficient. [Raw measurements and limits](docs/binary-veil.md#authenticated-verifier-only-loading).
-Current keys use format v2; regenerate runs that contain older key snapshots.
+| Backend / children | Aggregation | Proof | Fresh verification |
+|---|---:|---:|---:|
+| Flock / 2 | 36.9 s warm median | 1.40 MB | 160 ms |
+| Checkpoint / 2 | 32.5 s warm median | 1.82 MB | 172 ms |
+| Checkpoint / 8 | 219.7 s warm median | 1.98 MB | 202 ms |
+
+Proving remains above the latency target. Peak physical footprint, including
+compressed/swapped memory, ranges from 10.6 GB for checkpoint N=2 to about
+41.5 GB for N=8. [Raw measurements and limits](docs/binary-veil.md#reusing-authenticated-boolean-evaluations).
+Fresh verification includes authenticated key loading; filesystem caches were
+not reset. Keep `verifier.key` and independently trusted `trusted.json` (v2).
+A key/digest pair supplied by an untrusted prover is insufficient.
 
 `demo` / `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` is a diagnostic bundle, not a single aggregate.
-`masked-demo --keccak-backend checkpoint` compares a linked Keccak GKR backend;
-it has verified **N=8 at depth 32**: 347.6 s aggregation, 1.98 MB proof,
-211 ms fresh verification (one cold run, 41.5 GB peak footprint).
-Use `--depth 32 --batch-size 8 --keccak-backend checkpoint` to reproduce.
-Both backends remain experimental. Flock is the default for smaller batches.
+Both aggregate backends remain experimental. Flock is the default; checkpoint
+uses a linked Keccak GKR argument and is the measured eight-child path.
 
 [Implementation and remaining work](docs/development.md) ·
 [Masking and aggregation report](docs/binary-veil.md) ·

@@ -21,13 +21,13 @@ struct DotProduct {
     input: Poly<E>,
 }
 
-pub(super) fn prove(inputs: &[State], claim: &Claim, ch: &mut Challenger) -> (Proof, Point<E>) {
+pub(super) fn prove(inputs: &[State], claim: &Claim, ch: &mut Challenger) -> (Proof, Point<E>, E) {
     let mut folded = fold_states(inputs, &claim.instance);
     folded.resize(POSITIONS, E::ZERO);
     let mut weights = claim.weights.clone();
     weights.resize(POSITIONS, E::ZERO);
-    let (proof, point) = prove_functional(weights, folded, claim.value, ch);
-    (proof, full_point(claim, point))
+    let (proof, point, value) = prove_functional(weights, folded, claim.value, ch);
+    (proof, full_point(claim, point), value)
 }
 
 pub(super) fn fold_states(inputs: &[State], point: &[E]) -> Vec<E> {
@@ -64,14 +64,26 @@ pub(super) fn prove_functional(
     input: Vec<E>,
     value: E,
     ch: &mut Challenger,
-) -> (Proof, Point<E>) {
+) -> (Proof, Point<E>, E) {
     assert!(weights.len().is_power_of_two() && weights.len() == input.len());
     let log = weights.len().trailing_zeros() as usize;
     let mut prover = DotProduct {
         weights: Poly::new(weights),
         input: Poly::new(input),
     };
-    prover.prove::<F, Challenger>(ch, log, 2, 0, value)
+    let (proof, point) = prover.prove::<F, Challenger>(ch, log, 2, 0, value);
+    // The sumcheck has already computed this evaluation. The PCS still
+    // authenticates it; retaining it just avoids another full-table pass.
+    (proof, point, prover.input.as_slice()[0])
+}
+
+pub(super) fn evaluate_folded(values: &[E], point: &[E]) -> E {
+    assert!(values.len() <= 1 << point.len());
+    values
+        .iter()
+        .zip(Point::new(point).equality_weights_msb())
+        .map(|(&value, weight)| value * weight)
+        .sum()
 }
 
 pub(super) fn verify(proof: &Proof, claim: &Claim, ch: &mut Challenger) -> Result<Closing> {

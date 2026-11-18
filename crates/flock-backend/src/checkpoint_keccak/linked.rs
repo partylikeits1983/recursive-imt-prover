@@ -172,19 +172,26 @@ impl LinkedBatch {
             .map(|(&a, &b)| a * b)
             .sum();
         let (reduction, input) = super::prove(&witness.inputs, &output, &mut challenger)?;
-        let (input_closing, input_point) = closing::prove(&witness.inputs, &input, &mut challenger);
+        let (input_closing, input_point, input_value) =
+            closing::prove(&witness.inputs, &input, &mut challenger);
         let (weights, value) = ports::claim(ports, &mut challenger);
-        let mut values = closing::fold_states(&witness.inputs, &ports.instance);
+        let folded_input = closing::fold_states(&witness.inputs, &ports.instance);
+        let folded_output = closing::fold_states(&witness.outputs, &ports.instance);
+        let mut values = folded_input.clone();
         values.resize(POSITIONS, E::ZERO);
-        values.extend(closing::fold_states(&witness.outputs, &ports.instance));
+        values.extend_from_slice(&folded_output);
         values.resize(2 * POSITIONS, E::ZERO);
-        let (port_closing, port_point) =
+        let (port_closing, port_point, _) =
             closing::prove_functional(weights, values, value, &mut challenger);
+        let link_input = closing::evaluate_folded(&folded_input, &port_point.as_slice()[1..]);
+        let link_output = closing::evaluate_folded(&folded_output, &port_point.as_slice()[1..]);
         let link_point = link_point(ports, &port_point);
-        let opening = self.pcs.open_at(
+        let opening = self.pcs.open_at_known(
             data,
             &self.protocol,
             &[input_point, link_point.clone(), output_point, link_point],
+            &[input_value, link_input, output.value, link_output]
+                .map(|v| Some(OpeningBatch::new(vec![v], vec![]))),
             &mut challenger,
         )?;
         Ok(LinkedProof {

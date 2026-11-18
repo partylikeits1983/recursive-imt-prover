@@ -1340,3 +1340,72 @@ The final verifier also rejects
 [all 13 tampering cases for N=8](../benchmarks/binary/masked-aggregate/checkpoint-grouped-copy-negative.json).
 Sixteen through 64 children remain unvalidated; the child privacy and composed
 128-bit security obligations are unchanged.
+
+### Reusing authenticated Boolean evaluations
+
+The mixed PCS adapter now forwards an existing evaluation only if every column
+in that table is Boolean and expansion preserves the entire ordered opening
+batch. Dense-coordinate, partial, reordered and expanded-successor batches
+retain the existing computation. In particular, a single field evaluation is
+**not** decomposed into Boolean-coordinate evaluations.
+
+The checkpoint prover already computes its four boundary evaluations during
+the Keccak reduction and native-port link. Passing these to the existing
+`open_at_known` API avoids materializing a full extension-field equality vector
+for each opening. The PCS still authenticates every supplied value. No verifier
+equation, transcript message, security parameter or authority identity changes.
+Tests compare complete PCS proof bytes and subsequent challenges with the
+uncached path, and reject false Boolean evaluations and malformed hint shapes.
+The new executable also verifies the saved preceding Flock and checkpoint
+aggregate artifacts.
+
+With four threads on the same M2 Pro, depth-32 N=2 checkpoint aggregation takes
+32.524 s cold and **32.521 s warm median** (32.520–32.522 s, two warm samples).
+The proof is 1,814,201–1,816,241 bytes. Fresh verification takes 172.09 ms,
+including 152.50 ms decoding/verification and 13.63 ms key setup; its RSS is
+28.92 MB. Prover setup takes 11.580 s. Observed lifetime peak physical footprint
+is 10.630 GB, including compressed/swapped pages. Compilation and profiling
+are excluded. This is a full aggregate of two masked child candidates, not a
+component bundle.
+
+[N=2 raw report](../benchmarks/binary/masked-aggregate/checkpoint-known-openings-d32-n2.json)
+uses source fingerprint
+`ab4e152c7982232200f60e567415ab6ae98685673dbe88c38cacf0559504a254`.
+
+The same build completes three depth-32 **N=8** samples. Cold aggregation takes
+220.621 s, **36.5% less** than the preceding 347.640 s cold sample with identical
+circuit geometry and parameters. The two warm samples take 213.466–225.974 s,
+median **219.720 s**. Their complete batch critical-path median after setup is
+246.711 s. Setup takes 78.849 s; the full three-sample process takes 832.828 s.
+The aggregate is 1,980,910–1,982,378 bytes. Fresh verification takes 201.64 ms,
+including 173.49 ms decoding/verification and 19.71 ms key setup, at 29.72 MB RSS.
+Its 38,629-byte verifier key and trusted JSON are byte-identical to the preceding
+run. The conditional outer floor remains 145.919 bits.
+
+Peak physical footprint is **41.453 GB**, essentially unchanged from 41.478 GB.
+The first sample includes a one-second profile, as did the preceding cold
+measurement; neither warm sample is profiled. The snapshot caught arithmetic
+constraint sumcheck in `RoundStateBase::round_poly` and `Chip::eval/resolve`.
+This is evidence of remaining work in that phase, not a whole-run attribution.
+No compilation ran concurrently, and no resource guard was raised.
+
+[N=8 raw report](../benchmarks/binary/masked-aggregate/checkpoint-known-openings-d32-n8.json)
+retains the cold/warm samples, per-child timings and profiling metadata.
+
+For the smaller batch, the same build's default Flock backend takes 36.869 s
+cold and 36.883 s warm median (36.205–37.561 s). Its proof is
+1,401,976–1,402,978 bytes, and fresh verification takes 159.81 ms at 34.44 MB RSS.
+Peak physical footprint is 16.650 GB. Checkpoint N=2 proves about 11.8% faster
+in these runs and uses less memory, while Flock retains the smaller proof and
+faster verification. Flock remains the default. The preceding N=4 measurement
+is retained separately; N=4 was not rerun for this optimization.
+[Flock N=2 raw report](../benchmarks/binary/masked-aggregate/flock-known-openings-d32-n2.json).
+
+All 48 library tests and the depth-16 Flock membership integration test pass,
+as do formatting and workspace Clippy. Fresh-process checks accept the valid
+aggregate and reject all 13 statement, proof, authority, key and backend
+tampering cases for both
+[checkpoint N=8](../benchmarks/binary/masked-aggregate/checkpoint-known-openings-negative.json)
+and [Flock N=2](../benchmarks/binary/masked-aggregate/flock-known-openings-negative.json).
+Sixteen-to-64-child scaling, the statistical-ZK argument and composed 128-bit
+security remain unfinished.
