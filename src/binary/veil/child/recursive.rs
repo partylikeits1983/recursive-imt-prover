@@ -1,5 +1,5 @@
 //! Complete masked-child verification relation. Every input other than the
-//! root/amount is serialized child-proof data, never an original IMT witness.
+//! root/nullifier-hash is serialized child-proof data, never an original IMT witness.
 use anyhow::{Result, ensure};
 use p3_circuit::{
     Circuit, CircuitBuilder, CircuitConstructionLimits, ExprId, ops::NativePoly192Target,
@@ -8,7 +8,7 @@ use p3_field::PrimeCharacteristicRing;
 
 use super::{MaskedMembershipProof, PROTOCOL, PreparedMembership};
 use crate::binary::{
-    relation::ClientPublic,
+    relation::{ClientPublic, PUBLIC_BYTES},
     veil::{
         E, F,
         air_algebra::recursive::public_evaluation,
@@ -50,13 +50,17 @@ impl PreparedMaskedVerifier {
             max_non_primitive_slots: 1 << 29,
         })?;
         b.enable_native_keccak_f1600()?;
-        let public = b.alloc_public_input_array::<40>("root-and-amount-bytes");
+        let public = b.alloc_public_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
         self.verify_in(&mut b, public)?;
         Ok(b.build()?)
     }
 
-    /// Append the complete verifier for one caller-owned root/amount statement.
-    pub fn verify_in(&self, b: &mut CircuitBuilder<F>, public: [ExprId; 40]) -> Result<()> {
+    /// Append the complete verifier for one caller-owned root/nullifier-hash statement.
+    pub fn verify_in(
+        &self,
+        b: &mut CircuitBuilder<F>,
+        public: [ExprId; PUBLIC_BYTES],
+    ) -> Result<()> {
         let inner = self.inner.allocate(b)?;
         let oracle_root = b.alloc_private_input_array::<32>("masked-oracle-root");
         let oracle = self.oracle.allocate(b)?;
@@ -75,7 +79,7 @@ impl PreparedMaskedVerifier {
     fn replay_circuit(
         &self,
         b: &mut CircuitBuilder<F>,
-        public: [ExprId; 40],
+        public: [ExprId; PUBLIC_BYTES],
         masked: &[NativePoly192Target],
         mask_root: &[ExprId; 32],
         oracle_root: &[ExprId; 32],

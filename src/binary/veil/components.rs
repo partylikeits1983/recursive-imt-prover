@@ -27,7 +27,7 @@ use crate::{
 const MAGIC: &[u8; 8] = b"IMTCMP01";
 const MAX_PART_BYTES: usize = 8 << 20;
 
-pub const PROTOCOL: &str = "experimental-masked-component-batch-v1";
+pub const PROTOCOL: &str = "experimental-masked-component-batch-v2";
 
 pub struct PreparedComponentBatch {
     verifier: PreparedMaskedVerifier,

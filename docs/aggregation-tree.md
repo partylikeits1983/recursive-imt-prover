@@ -34,11 +34,11 @@ Every node carries a 32-byte digest and a one-byte count. Cyclic verifier data
 will be additional fixed-size public metadata, authenticated separately:
 
 ```text
-leaf.digest = Keccak256("IMT-AGG-LEAF-V1" || root[32] || amount_u64_le)
+leaf.digest = Keccak256("IMT-AGG-LEAF-V2" || root[32] || nullifier_hash[32])
 leaf.count = 1
 
 parent.digest = Keccak256(
-    "IMT-AGG-NODE-V1" || left.digest[32] || left.count_u8 ||
+    "IMT-AGG-NODE-V2" || left.digest[32] || left.count_u8 ||
                        right.digest[32] || right.count_u8
 )
 parent.count = left.count + right.count
@@ -49,10 +49,10 @@ each at most 32. The circuit constrains counts and byte encodings; doubling is a
 coordinate shift, not binary-field addition. This first version supports balanced
 trees containing 1, 2, 4, 8, 16, 32 or 64 statements, without dummy children.
 
-Final verification receives the complete ordered `(root, amount)` vector,
+Final verification receives the complete ordered `(root, nullifier_hash)` vector,
 recomputes its tree statement and verifies the proof against that statement.
 Roots can differ and repeated statements are permitted. Changing order, count,
-root or amount changes the expected statement. The public list remains available;
+root or nullifier hash changes the expected statement. The public list remains available;
 only the statement consumed inside recursion has fixed length.
 
 The gadget tests generate proofs of the hash relation at multiple levels using
@@ -110,7 +110,8 @@ an equivalent-security benchmark for this project's 128-bit target.
 
 1. **Retain the child and first aggregation.** Depth is 32. Both are implemented;
    first aggregation constrains two complete masked-child verifiers. Checkpoint
-   is the initial tree backend. Its latest warm two-child median is 19.244 s.
+   is the initial tree backend. The root/nullifier-hash relation's warm two-child
+   median is 18.926 s; [measurements](binary-veil.md#nullifier-statement).
 2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
    native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. Add the
    missing coordinate-opening adapter and the Keccak GKR/port-link checks. Test
@@ -129,7 +130,7 @@ an equivalent-security benchmark for this project's 128-bit target.
    four first aggregates, two merges and one final merge. Use the exact same
    merge circuit/key at both higher levels. Serialize the final proof, ordered
    statement and trusted verifier data; verify in a fresh process without any
-   child or intermediate proofs. Reject altered roots, amounts, ordering, counts,
+   child or intermediate proofs. Reject altered roots, nullifier hashes, ordering, counts,
    proof data, branch selectors and foreign authorities. Record times and memory.
 
 Completion requires all five steps, not just the first tree level or statement

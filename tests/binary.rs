@@ -10,9 +10,9 @@ use p3_recursion::artifact::{CanonicalBinaryStatement, ExpectedVerifierArtifact}
 use recursive_imt_prover::binary::cli::fixtures;
 use recursive_imt_prover::binary::engine::{PreparedAggregate, PreparedChild, Settings};
 use recursive_imt_prover::binary::relation::{
-    ClientPublic, ClientWitness, F, membership_circuit, membership_circuit_over,
+    ClientPublic, ClientWitness, F, PUBLIC_BYTES, membership_circuit, membership_circuit_over,
 };
-use recursive_imt_prover::binary::tree::{Imt, commitment, keccak, parent};
+use recursive_imt_prover::binary::tree::{Imt, commitment, keccak, nullifier_hash, parent};
 
 const TEST_DEPTH: usize = 32;
 
@@ -46,8 +46,17 @@ fn keccak_is_not_sha3_and_tree_is_append_only() {
         "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
     );
     let mut tree = Imt::new(TEST_DEPTH).unwrap();
-    let note = commitment(&[1; 32], 0x0102030405060708, &[2; 32]);
-    assert_ne!(note, commitment(&[1; 32], 0x0807060504030201, &[2; 32]));
+    let note = commitment(&[1; 32], &[2; 32]);
+    assert_ne!(note, commitment(&[2; 32], &[1; 32]));
+    assert_eq!(
+        note,
+        keccak(&[b"IMT-KECCAK-LEAF2".as_slice(), &[1; 32], &[2; 32]].concat())
+    );
+    assert_eq!(
+        nullifier_hash(&[2; 32]),
+        keccak(&[b"IMT-KECCAK-NULL1".as_slice(), &[2; 32]].concat())
+    );
+    assert_ne!(nullifier_hash(&[2; 32]), keccak(&[2; 32]));
     let index = tree.append(note).unwrap();
     tree.append([9; 32]).unwrap();
     let mut digest = note;
@@ -83,7 +92,7 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     let mut wrong_poly = poly_public.clone();
     wrong_poly[0] += BinaryField128::from_repr(1);
     assert!(!accepts(&poly, &wrong_poly, &poly_private));
-    // Secret, nonce, direction and sibling are independent constrained inputs.
+    // Secret, nullifier, direction and sibling are independent constrained inputs.
     for position in [0, 32, 64, 65, private.len() - 1] {
         let mut wrong = private.clone();
         wrong[position] += F::from_repr(1);
@@ -92,7 +101,7 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
             "private position {position}"
         );
     }
-    for position in [0, 31, 32, 39] {
+    for position in [0, 31, 32, 63] {
         let mut wrong = fields.clone();
         wrong[position] += F::from_repr(1);
         assert!(
@@ -112,19 +121,20 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     outside = witness.clone();
     outside.merkle_path.pop();
     assert!(outside.fields(TEST_DEPTH).is_err());
-    for amount in [0, u64::MAX] {
+    for nullifier in [[0; 32], [255; 32]] {
         let mut tree = Imt::new(TEST_DEPTH).unwrap();
         let index = tree
-            .append(commitment(&witness.secret, amount, &witness.nonce))
+            .append(commitment(&witness.secret_num, &nullifier))
             .unwrap();
         let mut updated = witness.clone();
+        updated.nullifier = nullifier;
         updated.leaf_index = index;
         updated.merkle_path = tree.path(index).unwrap();
         assert!(accepts(
             &circuit,
             &ClientPublic {
                 root: tree.root(),
-                amount
+                nullifier_hash: nullifier_hash(&nullifier),
             }
             .fields(),
             &witness_fields(&updated)
@@ -166,7 +176,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
                 identity,
                 ExpectedVerifierArtifact::from_trusted_bytes(identity),
                 &input.proof,
-                CanonicalBinaryStatement::new(&bytes, 40),
+                CanonicalBinaryStatement::new(&bytes, PUBLIC_BYTES),
             )
             .unwrap();
         private.extend(
@@ -186,7 +196,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     let (public, proof, _) = aggregate.prove(&children).unwrap();
     aggregate.verify(&proof, &public).unwrap();
     let mut wrong = public.clone();
-    wrong.children[0].amount ^= 1;
+    wrong.children[0].nullifier_hash[0] ^= 1;
     assert!(aggregate.verify(&proof, &wrong).is_err());
     wrong = public.clone();
     wrong.children[1].root[0] ^= 1;
@@ -211,7 +221,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     bad[0].proof[middle] ^= 1;
     assert!(aggregate.prove(&bad).is_err());
     bad = children.clone();
-    bad[0].public.amount ^= 1;
+    bad[0].public.nullifier_hash[0] ^= 1;
     assert!(aggregate.prove(&bad).is_err());
     let foreign = PreparedChild::new(&Settings {
         log_inv_rate: 2,

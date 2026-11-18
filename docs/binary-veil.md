@@ -8,17 +8,18 @@ is deferred while the recursive aggregation tree is built.
 ## Complete masked child and compact trace openings
 
 `child.rs`, `membership_air.rs` and `air_algebra.rs` define the fixed relation.
-Each of the 33 hashes occupies 25 rows; the trace is padded to 1,024 rows.
+Each of the 34 hashes occupies 25 rows; the trace is padded to 1,024 rows.
 Trusted preprocessing pins round flags, domains, padding and the final output.
 Constraints link successive hashes, enforce Boolean path directions, and bind
-all public root bytes and the exact little-endian amount.
+all public root and nullifier-hash bytes. Four private Poly64 carry columns
+connect the nullifier in the leaf preimage to its separate hash preimage.
 
 The native AIR proof is private intermediate state and is never serialized.
 The compiler masks witness-dependent round messages, current and repeat-last
 successor evaluations, and endpoint multiplication values. Trusted public and
 preprocessed openings are derived independently. The child relation has no buses.
 
-The v5 trace oracle stacks 128 columns at a time into coefficient vectors of
+The v6 child retains an oracle stacking 128 columns at a time into coefficient vectors of
 length 262,144. It uses Plonky3's additive NTT and WHIR:
 
 - The final aligned coefficient block holds the trace. Earlier coefficients are
@@ -53,7 +54,7 @@ Fiat-Shamir composition are separate. See [security limitations](binary-security
 ## End-to-end aggregate
 
 `masked-demo` produces independent child proofs and drops their IMT witnesses.
-The aggregator receives only child proofs and public roots/amounts. Flock or the
+The aggregator receives only child proofs and public roots/nullifier hashes. Flock or the
 checkpoint backend constrains the complete child verifier inside one non-ZK
 proof. Final verification needs that aggregate, its public statement and trusted
 verifier data, without the child proofs.
@@ -85,7 +86,47 @@ See [the backend implementation](../crates/flock-backend/README.md).
 - Keep Keccak states packed through the first two instance rounds; use upstream
   packed Poly192 arithmetic and accumulate products before field reduction.
 
+## Nullifier statement
+
+The current depth-32 relation authenticates `(root, nullifier_hash)`. Its extra
+Keccak permutation and four private carry columns fit the same 1,024-row trace
+and 128-column stacking. Parameters remain unchanged.
+
+Checkpoint first aggregation on the M2 Pro, four threads, Rust 1.98.1, release
+with thin LTO; one cold and two warm samples, excluding compilation:
+
+| Operation | Measurement |
+|---|---:|
+| Child proving, all six children | 3.319–4.330 s |
+| Child decoding and verification | 416–464 ms |
+| Child proof size | 1.128–1.130 MB |
+| Aggregate setup | 6.409 s |
+| Cold first aggregation | 18.068 s |
+| Warm aggregation median (range) | 18.926 s (17.958–19.894) |
+| Warm complete batch critical path median (range) | 27.190 s (25.596–28.783) |
+| Aggregate proof size | 1.775–1.777 MB |
+| Fresh verification, including process and key loading | 138.2 ms |
+| Peak RSS / physical footprint | 4.286 / 6.522 GB |
+
+Aggregation includes child import, circuit-witness generation, proving and an
+internal verification. Setup is measured separately. Filesystem caches and
+thermal state were not reset. The aggregate uses 51,386 Keccak permutations and
+has a 146.253-bit conditional algebraic ledger, not an end-to-end security proof.
+Plonky3's associated packing type now selects SIMD or scalar arithmetic, so the
+optimized prover also compiles on generic x86 targets.
+
+Single cold validation runs also passed for the Flock first aggregate
+(31.622 s) and flat checkpoint aggregate (18.058 s), including fresh verification.
+These are not warm medians. Each first-aggregation backend rejected all tested
+statement, proof, encoding and authority mutations in separate verifier processes.
+
+Raw reports: [current relation](../benchmarks/binary/masked-aggregate/nullifier-d32-n2.json).
+
 ## Packed Keccak rounds
+
+The measurements below predate the nullifier relation and authenticate public
+root/amount statements. They remain historical baselines, with their original
+protocol versions and source fingerprints.
 
 The checkpoint prover delays expanding Boolean states into Poly192 tables until
 two instance challenges are bound. Four-bit subset-sum tables evaluate the early
@@ -235,11 +276,11 @@ the benchmark executable source digest:
 
 ### Link to the aggregate's native ports
 
-Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v7` replaces
+Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v8` replaces
 the Flock Boolean wire table with an ordinary native port table and a committed
 Keccak GKR subargument. The one aggregate encoding contains both subarguments;
 neither is sufficient on its own. The complete child verifier and its public
-root/amount wiring remain in the arithmetic relation. No child witness or child
+root/nullifier-hash wiring remain in the arithmetic relation. No child witness or child
 proof is needed by final verification.
 
 The boundary commitment and fixed authority identity seed the arithmetic

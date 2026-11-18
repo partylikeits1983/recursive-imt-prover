@@ -1,6 +1,10 @@
 use imt_flock_backend::{HashBackend, Prepared, Verifier, verifier_key_digest};
 use p3_field::PrimeCharacteristicRing;
-use recursive_imt_prover::binary::{cli::fixtures, relation::membership_circuit, veil::F};
+use recursive_imt_prover::binary::{
+    cli::fixtures,
+    relation::{PUBLIC_BYTES, membership_circuit},
+    veil::F,
+};
 
 #[test]
 fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
@@ -38,11 +42,11 @@ fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
     assert!(prepared.verify(&proof, &wrong).is_err());
     assert!(cached.verify(&proof, &wrong).is_err());
     wrong = public.clone();
-    wrong[40] += F::ONE;
+    wrong[PUBLIC_BYTES] += F::ONE;
     assert!(prepared.verify(&proof, &wrong).is_err());
     assert!(cached.verify(&proof, &wrong).is_err());
     let mut swapped = public.clone();
-    let (first, second) = swapped.split_at_mut(40);
+    let (first, second) = swapped.split_at_mut(PUBLIC_BYTES);
     first.swap_with_slice(second);
     assert!(cached.verify(&proof, &swapped).is_err());
     assert!(cached.verify(&proof, &[]).is_err());

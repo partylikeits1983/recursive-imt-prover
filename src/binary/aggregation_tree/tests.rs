@@ -16,7 +16,7 @@ fn public(count: usize) -> AggregatePublic {
         children: (0..count)
             .map(|i| ClientPublic {
                 root: [i as u8; 32],
-                amount: u64::MAX - i as u64,
+                nullifier_hash: [255 - i as u8; 32],
             })
             .collect(),
     }
@@ -27,7 +27,7 @@ fn circuit(leaf: bool) -> Result<Circuit<F>> {
     b.enable_native_keccak_f1600()?;
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("statement");
     let node = if leaf {
-        let public = b.alloc_private_input_array::<PUBLIC_BYTES>("root-and-amount");
+        let public = b.alloc_private_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
         TreeTarget::leaf(&mut b, public)?
     } else {
         let left = TreeTarget {
@@ -71,12 +71,12 @@ fn accepts(circuit: &Circuit<F>, public: &[F], private: &[F]) -> Result<bool> {
 }
 
 #[test]
-fn ordered_statement_binds_amount_root_and_count() -> Result<()> {
+fn ordered_statement_binds_nullifier_hash_root_and_count() -> Result<()> {
     let public = public(8);
     let expected = TreeStatement::from_public(&public)?;
     for i in 0..8 {
         let mut changed = public.clone();
-        changed.children[i].amount ^= 1;
+        changed.children[i].nullifier_hash[31] ^= 1;
         assert_ne!(TreeStatement::from_public(&changed)?, expected);
         changed = public.clone();
         changed.children[i].root[31] ^= 1;
@@ -102,21 +102,21 @@ fn ordered_statement_binds_amount_root_and_count() -> Result<()> {
 }
 
 #[test]
-fn leaf_constraints_bind_canonical_root_and_amount_bytes() -> Result<()> {
+fn leaf_constraints_bind_canonical_root_and_nullifier_hash_bytes() -> Result<()> {
     let circuit = circuit(true)?;
     let public = &public(1).children[0];
-    for amount in [0, 0x0102030405060708, u64::MAX] {
+    for nullifier_hash in [[0; 32], core::array::from_fn(|i| i as u8), [255; 32]] {
         let public = ClientPublic {
-            amount,
+            nullifier_hash,
             ..public.clone()
         };
         let leaf = TreeStatement::leaf(&public);
-        let mut encoding = b"IMT-AGG-LEAF-V1".to_vec();
+        let mut encoding = b"IMT-AGG-LEAF-V2".to_vec();
         encoding.extend(public.root);
-        encoding.extend(amount.to_le_bytes());
+        encoding.extend(nullifier_hash);
         assert_eq!(leaf.digest, keccak(&encoding));
         assert!(accepts(&circuit, &leaf.fields(), &public.fields())?);
-        for (index, delta) in [(0, 1), (32, 1), (39, 1), (32, 256)] {
+        for (index, delta) in [(0, 1), (32, 1), (63, 1), (32, 256)] {
             let mut private = public.fields();
             private[index] += F::new(delta);
             assert!(!accepts(&circuit, &leaf.fields(), &private)?);

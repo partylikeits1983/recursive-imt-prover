@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::engine::{Geometry, PreparedAggregate, PreparedChild, ProofMetrics, Settings};
 use super::relation::{AggregatePublic, ClientPublic, ClientWitness};
 use super::security::BatchAssessment;
-use super::tree::{Imt, commitment};
+use super::tree::{Imt, commitment, nullifier_hash};
 use crate::benchmark::{environment, ms, peak_rss, statistics};
 use crate::files::{read_bounded, read_json, write_json};
 
@@ -178,7 +178,7 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
         write_json(
             &args.out.join("trusted.json"),
             &Trusted {
-                protocol: "binary-poly64-keccak-imt-nonzk-v2".into(),
+                protocol: "binary-poly64-keccak-imt-nonzk-v3".into(),
                 settings: settings.clone(),
                 child_identity: child.inner.identity(),
                 aggregate_identity: aggregate.inner.identity(),
@@ -297,25 +297,24 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
         tree.append(rng.random())?;
     }
     let mut notes = Vec::new();
-    for i in 0..count {
-        let secret = rng.random();
-        let nonce = rng.random();
-        let amount = 100 * (i as u64 + 1);
-        let leaf_index = tree.append(commitment(&secret, amount, &nonce))?;
-        notes.push((secret, nonce, amount, leaf_index));
+    for _ in 0..count {
+        let secret_num = rng.random();
+        let nullifier = rng.random();
+        let leaf_index = tree.append(commitment(&secret_num, &nullifier))?;
+        notes.push((secret_num, nullifier, leaf_index));
     }
     // Each proof uses a different later root, never its insertion root.
     let mut inputs = Vec::new();
-    for (secret, nonce, amount, leaf_index) in notes {
+    for (secret_num, nullifier, leaf_index) in notes {
         tree.append(rng.random())?;
         inputs.push((
             ClientPublic {
                 root: tree.root(),
-                amount,
+                nullifier_hash: nullifier_hash(&nullifier),
             },
             ClientWitness {
-                secret,
-                nonce,
+                secret_num,
+                nullifier,
                 leaf_index,
                 merkle_path: tree.path(leaf_index)?,
             },
@@ -327,7 +326,7 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
 fn verify_files(directory: &Path) -> Result<()> {
     let trusted: Trusted = read_json(&directory.join("trusted.json"))?;
     ensure!(
-        trusted.protocol == "binary-poly64-keccak-imt-nonzk-v2",
+        trusted.protocol == "binary-poly64-keccak-imt-nonzk-v3",
         "unsupported trusted protocol"
     );
     let public: AggregatePublic = read_json(&directory.join("statement.json"))?;

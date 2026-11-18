@@ -6,16 +6,16 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     IMT_DEPTH,
-    tree::{Hash, LEAF_DOMAIN, NODE_DOMAIN},
+    tree::{Hash, LEAF_DOMAIN, NODE_DOMAIN, NULLIFIER_DOMAIN},
 };
 
 pub type F = Poly64;
-pub const PUBLIC_BYTES: usize = 40;
+pub const PUBLIC_BYTES: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct ClientWitness {
-    pub secret: Hash,
-    pub nonce: Hash,
+    pub secret_num: Hash,
+    pub nullifier: Hash,
     pub leaf_index: u32,
     pub merkle_path: Vec<Hash>,
 }
@@ -24,7 +24,7 @@ pub struct ClientWitness {
 #[serde(deny_unknown_fields)]
 pub struct ClientPublic {
     pub root: Hash,
-    pub amount: u64,
+    pub nullifier_hash: Hash,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ impl ClientPublic {
     pub fn fields(&self) -> Vec<F> {
         self.root
             .iter()
-            .chain(self.amount.to_le_bytes().iter())
+            .chain(&self.nullifier_hash)
             .map(|&b| F::from_repr(u64::from(b)))
             .collect()
     }
@@ -49,9 +49,9 @@ impl ClientWitness {
         ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
         ensure!(self.merkle_path.len() == depth, "incorrect path length");
         let mut fields: Vec<_> = self
-            .secret
+            .secret_num
             .iter()
-            .chain(&self.nonce)
+            .chain(&self.nullifier)
             .map(|&b| F::from_repr(u64::from(b)))
             .collect();
         for (level, sibling) in self.merkle_path.iter().enumerate() {
@@ -73,9 +73,9 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
     let mut builder = CircuitBuilder::<F>::new();
     builder.enable_native_keccak_f1600()?;
     let root = builder.alloc_public_input_array::<32>("root");
-    let amount = builder.alloc_public_input_array::<8>("amount_le");
-    let secret = builder.alloc_private_input_array::<32>("secret");
-    let nonce = builder.alloc_private_input_array::<32>("nonce");
+    let nullifier_hash = builder.alloc_public_input_array::<32>("nullifier-hash");
+    let secret = builder.alloc_private_input_array::<32>("secret-num");
+    let nullifier = builder.alloc_private_input_array::<32>("nullifier");
     let mut message: Vec<_> = LEAF_DOMAIN
         .iter()
         .map(|&byte| {
@@ -84,11 +84,22 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
         })
         .collect();
     message.extend(secret);
-    message.extend(amount);
-    message.extend(nonce);
+    message.extend(nullifier);
     // The native sponge constrains every byte to eight Boolean coordinates,
-    // including amount bytes, and enforces Keccak padding and permutation calls.
+    // and enforces Keccak padding and permutation calls.
     let mut digest = builder.native_keccak256_bytes(&message)?;
+    let mut message: Vec<_> = NULLIFIER_DOMAIN
+        .iter()
+        .map(|&byte| {
+            builder
+                .define_const(F::from_raw_coordinates(u128::from(byte)).expect("byte fits carrier"))
+        })
+        .collect();
+    message.extend(nullifier);
+    let computed = builder.native_keccak256_bytes(&message)?;
+    for (actual, expected) in computed.into_iter().zip(nullifier_hash) {
+        builder.connect(actual, expected);
+    }
     for _ in 0..depth {
         let direction = builder.alloc_private_input("index_bit");
         builder.assert_bool(direction);

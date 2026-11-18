@@ -332,7 +332,7 @@ impl PreparedChild {
     pub fn new(settings: &Settings) -> Result<Self> {
         settings.validate()?;
         let circuit = membership_circuit(settings.depth)?;
-        let inner = PreparedCircuit::new(circuit, settings, b"binary-poly64-keccak-imt-child-v2")?;
+        let inner = PreparedCircuit::new(circuit, settings, b"binary-poly64-keccak-imt-child-v3")?;
         Ok(Self {
             inner,
             depth: settings.depth,
@@ -366,7 +366,7 @@ impl PreparedAggregate {
     }
 
     /// Aggregate proofs from a caller-provisioned fixed circuit whose public
-    /// statement is exactly one ordered root/amount pair. The retained authority
+    /// statement is exactly one ordered root/nullifier-hash pair. The retained authority
     /// supplies every verifier constraint; proof data cannot choose a circuit.
     pub fn from_circuit(child: &PreparedCircuit, settings: &Settings) -> Result<Self> {
         settings.validate()?;
@@ -414,7 +414,7 @@ impl PreparedAggregate {
         }
         let circuit = builder.build()?;
         let domain = format!(
-            "binary-poly64-keccak-imt-aggregate-v2/{:02}",
+            "binary-poly64-keccak-imt-aggregate-v3/{:02}",
             settings.batch_size
         );
         let inner = PreparedCircuit::new(circuit, settings, domain.as_bytes())?;

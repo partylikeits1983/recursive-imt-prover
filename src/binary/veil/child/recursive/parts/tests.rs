@@ -6,17 +6,18 @@ use super::{PUBLIC_COUNTS, connect_parts};
 use crate::binary::{
     cli::fixtures,
     engine::{PreparedCircuit, Settings},
+    relation::PUBLIC_BYTES,
     veil::{F, child::recursive::PreparedMaskedVerifier, parameters::Parameters},
 };
 
 #[test]
 fn every_bridge_between_verifier_parts_is_constrained() -> Result<()> {
     let mut b = CircuitBuilder::<F>::new();
-    let root = b.alloc_public_input_array::<40>("statement");
+    let root = b.alloc_public_input_array::<PUBLIC_BYTES>("statement");
     let parts = PUBLIC_COUNTS.map(|n| b.alloc_private_inputs(n, "part-statement"));
     connect_parts(&mut b, &root, &parts)?;
     let circuit = b.build()?;
-    let public = vec![F::ZERO; 40];
+    let public = vec![F::ZERO; PUBLIC_BYTES];
     let private = vec![F::ZERO; PUBLIC_COUNTS.iter().sum()];
     let mut r = circuit.runner();
     r.set_public_inputs(&public)?;

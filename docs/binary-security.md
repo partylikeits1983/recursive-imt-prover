@@ -8,15 +8,19 @@ analysis is deferred, not an implementation gate. No production or real-funds us
 
 ## Relation and trust
 
-The fixed leaf preimage is `"IMT-KECCAK-LEAF1" || secret[32] || amount_u64_le ||
-nonce[32]`. Nodes hash `"IMT-KECCAK-NODE1" || left[32] || right[32]`. Tags are
-exactly 16 ASCII bytes; hashing is Keccak-256, not SHA3-256. The circuit constrains
-bytes, padding, permutations, all 32 private direction bits and the final root.
+The leaf preimage is `"IMT-KECCAK-LEAF2" || secret_num[32] || nullifier[32]`.
+The public nullifier hash is `Keccak256("IMT-KECCAK-NULL1" || nullifier[32])`.
+Nodes hash `"IMT-KECCAK-NODE1" || left[32] || right[32]`. Tags are exactly
+16 ASCII bytes; hashing is Keccak-256, not SHA3-256. The circuit constrains
+bytes, padding, permutations, all 32 private direction bits, the root and the
+nullifier hash. Four private Poly64 carry columns bind the exact same nullifier
+in the leaf and nullifier-hash preimages. See [protocol](protocol.md).
 Binary-field bytes use raw coordinates; integer field embedding would lose bits.
 
 Fixtures include pre-existing notes and later appends, so proof roots differ
 from insertion roots. Different roots and repeated statements are valid.
-Root-history checks, spending, nullifiers and replay prevention are outside scope.
+Root-history checks, spending, spent-nullifier tracking and replay prevention are
+outside scope. Reusing a nullifier gives the same public hash and is linkable.
 
 Aggregation receives only proofs and public statements. It constrains transcript,
 PCS, sumcheck, AIR and consistency verification inside the outer proof. A native

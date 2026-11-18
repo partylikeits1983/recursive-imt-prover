@@ -13,7 +13,7 @@ use sha3::{Digest, Keccak256};
 
 use super::{MaskedMembershipProof, PreparedMaskedVerifier};
 use crate::binary::{
-    relation::ClientPublic,
+    relation::{ClientPublic, PUBLIC_BYTES},
     veil::{
         E, F,
         compiler::MaskedReader,
@@ -24,15 +24,15 @@ use crate::binary::{
 };
 
 const WEIGHTS_DOMAIN: &[u8; 16] = b"IMTVEIL4WEIGHTS\0";
-pub const PUBLIC_COUNTS: [usize; 3] = [154, 79, 99];
+pub const PUBLIC_COUNTS: [usize; 3] = [PUBLIC_BYTES + 114, 79, 99];
 // (source part, offset, destination part, offset, length). Shared by the
 // recursive linker and the explicit non-succinct component baseline.
 const LINKS: [(usize, usize, usize, usize, usize); 6] = [
-    (0, 40, 2, 0, 32),
-    (0, 72, 1, 0, 32),
-    (0, 104, 2, 32, 32),
-    (0, 136, 1, 64, 15),
-    (0, 151, 2, 96, 3),
+    (0, PUBLIC_BYTES, 2, 0, 32),
+    (0, PUBLIC_BYTES + 32, 1, 0, 32),
+    (0, PUBLIC_BYTES + 64, 2, 32, 32),
+    (0, PUBLIC_BYTES + 96, 1, 64, 15),
+    (0, PUBLIC_BYTES + 111, 2, 96, 3),
     (1, 32, 2, 64, 32),
 ];
 
@@ -49,6 +49,7 @@ impl PreparedMaskedVerifier {
         let public = b.alloc_public_inputs(PUBLIC_COUNTS[part], "linked-verifier-state");
         match part {
             0 => {
+                let (statement, state) = public.split_at(PUBLIC_BYTES);
                 let masked: Vec<_> = (0..self.child.messages + 6)
                     .map(|_| field(&mut b))
                     .collect();
@@ -56,27 +57,27 @@ impl PreparedMaskedVerifier {
                 let oracle = self.oracle.allocate(&mut b)?;
                 let (relation, transcript) = self.replay_circuit(
                     &mut b,
-                    public[..40].try_into()?,
+                    statement.try_into()?,
                     &masked,
-                    public[40..72].try_into()?,
+                    state[..32].try_into()?,
                     &root,
                     &oracle,
                 )?;
-                connect(&mut b, transcript.fingerprint(), &public[72..104]);
-                let link = target(&b, &public[136..139]);
-                let claims: Vec<_> = public[139..148]
+                connect(&mut b, transcript.fingerprint(), &state[32..64]);
+                let link = target(&b, &state[96..99]);
+                let claims: Vec<_> = state[99..108]
                     .as_chunks::<3>()
                     .0
                     .iter()
                     .map(|c| b.native_poly192_from_coefficients(*c))
                     .collect();
-                let batch = target(&b, &public[148..151]);
+                let batch = target(&b, &state[108..111]);
                 let (weights, constant) = relation.weights(&mut b, &link, &claims, &batch)?;
                 let digest = weights_digest(&mut b, &weights)?;
-                connect(&mut b, &digest, &public[104..136]);
+                connect(&mut b, &digest, &state[64..96]);
                 let dot = circuit_dot(&mut b, &weights, &masked)?;
                 let check = b.native_poly192_add(&dot, &constant);
-                connect(&mut b, check.coefficients(), &public[151..154]);
+                connect(&mut b, check.coefficients(), &state[111..114]);
             }
             1 => {
                 let prepared = self.product_part()?;
@@ -252,14 +253,14 @@ impl PreparedMaskedVerifier {
 /// Bind every part before the final wrapper accepts the child statement.
 pub fn connect_parts(
     b: &mut CircuitBuilder<F>,
-    public: &[ExprId; 40],
+    public: &[ExprId; PUBLIC_BYTES],
     parts: &[Vec<ExprId>; 3],
 ) -> Result<()> {
     ensure!(
         parts.iter().zip(PUBLIC_COUNTS).all(|(p, n)| p.len() == n),
         "wrong linked statement counts"
     );
-    connect(b, public, &parts[0][..40]);
+    connect(b, public, &parts[0][..PUBLIC_BYTES]);
     for (a, i, c, j, n) in LINKS {
         connect(b, &parts[a][i..i + n], &parts[c][j..j + n]);
     }
@@ -270,10 +271,13 @@ pub fn connect_parts(
 /// independently verified component proofs; they do not replace their circuits.
 pub fn check_parts(public: &[F], parts: [&[F]; 3]) -> Result<()> {
     ensure!(
-        public.len() == 40 && parts.iter().zip(PUBLIC_COUNTS).all(|(p, n)| p.len() == n),
+        public.len() == PUBLIC_BYTES && parts.iter().zip(PUBLIC_COUNTS).all(|(p, n)| p.len() == n),
         "wrong linked statement counts"
     );
-    ensure!(public == &parts[0][..40], "component root/amount differs");
+    ensure!(
+        public == &parts[0][..PUBLIC_BYTES],
+        "component child statement differs"
+    );
     for (a, i, c, j, n) in LINKS {
         ensure!(
             parts[a][i..i + n] == parts[c][j..j + n],

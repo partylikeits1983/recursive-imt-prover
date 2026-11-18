@@ -10,8 +10,8 @@ use super::{
     tree::{Hash, keccak},
 };
 
-const LEAF_DOMAIN: &[u8] = b"IMT-AGG-LEAF-V1";
-const NODE_DOMAIN: &[u8] = b"IMT-AGG-NODE-V1";
+const LEAF_DOMAIN: &[u8] = b"IMT-AGG-LEAF-V2";
+const NODE_DOMAIN: &[u8] = b"IMT-AGG-NODE-V2";
 pub const STATEMENT_BYTES: usize = 33;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ impl TreeStatement {
     pub fn leaf(public: &ClientPublic) -> Self {
         let mut message = LEAF_DOMAIN.to_vec();
         message.extend(public.root);
-        message.extend(public.amount.to_le_bytes());
+        message.extend(public.nullifier_hash);
         Self {
             digest: keccak(&message),
             count: 1,

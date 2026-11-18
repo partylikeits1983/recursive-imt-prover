@@ -4,13 +4,11 @@ use std::{fs, path::PathBuf, process::Command, time::Instant};
 use anyhow::{Result, ensure};
 use clap::Parser;
 use mimalloc::MiMalloc;
-use rand::RngExt;
 use recursive_imt_prover::{
     benchmark::{environment, ms, peak_rss, statistics},
     binary::{
         cli::fixtures,
-        relation::{ClientPublic, ClientWitness},
-        tree::commitment,
+        relation::ClientPublic,
         veil::{
             child::{MaskedMembershipProof, PROTOCOL, PreparedMembership},
             parameters::Parameters,
@@ -29,7 +27,7 @@ static ALLOCATOR: MiMalloc = MiMalloc;
     about = "Experimental masked binary Keccak IMT child; full ZK/security analysis outstanding"
 )]
 struct Args {
-    #[arg(long, default_value_t = 16)]
+    #[arg(long, default_value_t = 32)]
     depth: usize,
     #[arg(long, default_value_t = 3)]
     samples: usize,
@@ -97,25 +95,7 @@ fn main() -> Result<()> {
     let mut samples = Vec::new();
     for sample in 0..args.samples {
         let start = Instant::now();
-        let (public, witness) = if args.depth == 0 {
-            let mut rng = rand::rng();
-            let witness = ClientWitness {
-                secret: rng.random(),
-                nonce: rng.random(),
-                leaf_index: 0,
-                merkle_path: vec![],
-            };
-            let amount = 100;
-            (
-                ClientPublic {
-                    root: commitment(&witness.secret, amount, &witness.nonce),
-                    amount,
-                },
-                witness,
-            )
-        } else {
-            fixtures(args.depth, 1)?.remove(0)
-        };
+        let (public, witness) = fixtures(args.depth, 1)?.remove(0);
         let fixture_ms = ms(start);
         let start = Instant::now();
         let trace = prepared.witness(&public, &witness)?;

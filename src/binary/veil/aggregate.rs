@@ -19,8 +19,8 @@ use crate::{
     },
 };
 
-pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v6";
-pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v7";
+pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v7";
+pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v8";
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -226,9 +226,9 @@ impl StatementFormat {
         match (self, backend) {
             (Self::Ordered, HashBackend::Flock) => PROTOCOL,
             (Self::Ordered, HashBackend::Checkpoint) => CHECKPOINT_PROTOCOL,
-            (Self::TreePair, HashBackend::Flock) => "experimental-binary-masked-flock-tree-pair-v1",
+            (Self::TreePair, HashBackend::Flock) => "experimental-binary-masked-flock-tree-pair-v2",
             (Self::TreePair, HashBackend::Checkpoint) => {
-                "experimental-binary-masked-checkpoint-tree-pair-v1"
+                "experimental-binary-masked-checkpoint-tree-pair-v2"
             }
         }
     }
@@ -265,7 +265,7 @@ fn tree_pair_circuit(verifier: &PreparedMaskedVerifier) -> Result<Circuit<F>> {
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("tree-statement");
     let side = b.alloc_public_input("side");
     b.assert_bool(side);
-    let public = b.alloc_private_input_array::<PUBLIC_BYTES>("root-and-amount");
+    let public = b.alloc_private_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
     let sibling = b.alloc_private_input_array::<32>("sibling-statement-digest");
     verifier.verify_in(&mut b, public)?;
     let leaf = TreeTarget::leaf(&mut b, public)?;

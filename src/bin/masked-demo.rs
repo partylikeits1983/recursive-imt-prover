@@ -489,7 +489,7 @@ fn negative_checks(
     for kind in 0..5 {
         let mut changed = public.clone();
         match kind {
-            0 => changed.children[0].amount ^= 1,
+            0 => changed.children[0].nullifier_hash[0] ^= 1,
             1 => changed.children[0].root[0] ^= 1,
             2 => {
                 changed.children.pop();

@@ -11,18 +11,21 @@ use p3_matrix::dense::RowMajorMatrix;
 use super::F;
 use crate::binary::{
     IMT_DEPTH,
-    relation::{ClientPublic, ClientWitness},
-    tree::{LEAF_DOMAIN, NODE_DOMAIN, commitment, parent},
+    relation::{ClientPublic, ClientWitness, PUBLIC_BYTES},
+    tree::{LEAF_DOMAIN, NODE_DOMAIN, NULLIFIER_DOMAIN, commitment, parent},
 };
 
 pub(super) const ROWS_PER_HASH: usize = 25;
 pub(super) const STATE_START: usize = 25;
 pub(super) const DIRECTION: usize = NUM_KECCAK_BINARY_COLS;
-pub(super) const WIDTH: usize = DIRECTION + 1;
+pub(super) const NULLIFIER: usize = DIRECTION + 1;
+pub(super) const WIDTH: usize = NULLIFIER + 4;
 const NODE_START: usize = 25;
 const LINK: usize = 26;
 const ROOT: usize = 27;
-const NEXT_FLAGS: usize = 28;
+const NULLIFIER_START: usize = 28;
+const NULLIFIER_END: usize = 29;
+const NEXT_FLAGS: usize = 30;
 pub(super) const PREPROCESSED_WIDTH: usize = NEXT_FLAGS + ROWS_PER_HASH;
 
 pub(super) struct MembershipAir;
@@ -44,21 +47,21 @@ impl MembershipAir {
     }
 
     pub fn height(&self) -> usize {
-        ((IMT_DEPTH + 1) * ROWS_PER_HASH).next_power_of_two()
+        ((IMT_DEPTH + 2) * ROWS_PER_HASH).next_power_of_two()
     }
 
     pub fn public_values(public: &ClientPublic) -> Vec<F> {
         public
             .root
             .iter()
-            .chain(public.amount.to_le_bytes().iter())
+            .chain(&public.nullifier_hash)
             .flat_map(|&byte| (0..8).map(move |bit| F::from_bool((byte >> bit) & 1 == 1)))
             .collect()
     }
 
     pub fn trace(
         &self,
-        public: &ClientPublic,
+        _public: &ClientPublic,
         witness: &ClientWitness,
     ) -> Result<RowMajorMatrix<F>> {
         ensure!(
@@ -66,11 +69,10 @@ impl MembershipAir {
             "incorrect Merkle path length"
         );
         let mut message = Vec::from(LEAF_DOMAIN.as_slice());
-        message.extend(witness.secret);
-        message.extend(public.amount.to_le_bytes());
-        message.extend(witness.nonce);
+        message.extend(witness.secret_num);
+        message.extend(witness.nullifier);
         let mut inputs = vec![sponge_input(&message)];
-        let mut digest = commitment(&witness.secret, public.amount, &witness.nonce);
+        let mut digest = commitment(&witness.secret_num, &witness.nullifier);
         for (level, sibling) in witness.merkle_path.iter().enumerate() {
             let (left, right) = if (witness.leaf_index >> level) & 1 == 0 {
                 (&digest, sibling)
@@ -83,6 +85,16 @@ impl MembershipAir {
             inputs.push(sponge_input(&message));
             digest = parent(left, right);
         }
+        let mut message = Vec::from(NULLIFIER_DOMAIN.as_slice());
+        message.extend(witness.nullifier);
+        inputs.push(sponge_input(&message));
+        let nullifier: Vec<_> = witness
+            .nullifier
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|bytes| F::new(u64::from_le_bytes(*bytes)))
+            .collect();
         // Do not turn this reference computation into a native-verifier Boolean.
         // The AIR binds the final hash to the supplied public root.
         let keccak = generate_binary_trace_rows::<F>(inputs, 0);
@@ -100,6 +112,7 @@ impl MembershipAir {
                 && hash < IMT_DEPTH
                 && (witness.leaf_index >> hash) & 1 == 1;
             values.push(F::from_bool(direction));
+            values.extend_from_slice(&nullifier);
         }
         Ok(RowMajorMatrix::new(values, WIDTH))
     }
@@ -110,13 +123,14 @@ impl BaseAir<F> for MembershipAir {
         WIDTH
     }
     fn num_public_values(&self) -> usize {
-        320
+        PUBLIC_BYTES * 8
     }
     fn preprocessed_width(&self) -> usize {
         PREPROCESSED_WIDTH
     }
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
-        let used = (IMT_DEPTH + 1) * ROWS_PER_HASH;
+        let path_end = (IMT_DEPTH + 1) * ROWS_PER_HASH;
+        let used = path_end + ROWS_PER_HASH;
         let mut values = vec![F::ZERO; self.height() * PREPROCESSED_WIDTH];
         for (row, prep) in values
             .as_chunks_mut::<PREPROCESSED_WIDTH>()
@@ -126,9 +140,11 @@ impl BaseAir<F> for MembershipAir {
         {
             let round = if row < used { row % ROWS_PER_HASH } else { 24 };
             prep[round] = F::ONE;
-            prep[NODE_START] = F::from_bool(row > 0 && row < used && round == 0);
+            prep[NODE_START] = F::from_bool(row > 0 && row < path_end && round == 0);
             prep[LINK] = F::from_bool(row < IMT_DEPTH * ROWS_PER_HASH && round == 24);
-            prep[ROOT] = F::from_bool(row == used - 1);
+            prep[ROOT] = F::from_bool(row == path_end - 1);
+            prep[NULLIFIER_START] = F::from_bool(row == path_end);
+            prep[NULLIFIER_END] = F::from_bool(row == used - 1);
             let next = (row + 1).min(self.height() - 1);
             let next_round = if next < used {
                 next % ROWS_PER_HASH
@@ -143,7 +159,9 @@ impl BaseAir<F> for MembershipAir {
         vec![]
     }
     fn main_next_row_columns(&self) -> Vec<usize> {
-        (0..NUM_KECCAK_BINARY_COLS).collect()
+        (0..NUM_KECCAK_BINARY_COLS)
+            .chain(NULLIFIER..WIDTH)
+            .collect()
     }
 }
 
@@ -174,19 +192,29 @@ impl<AB: AirBuilder<F = F>> Air<AB> for MembershipAir {
             builder.assert_zero(prep[LINK] * (left.into() + d * (left + right) - value));
             let expected = builder.public_values()[bit];
             builder.assert_zero(prep[ROOT] * (value.into() - expected.into()));
-        }
-        for bit in 0..64 {
             let expected = builder.public_values()[256 + bit];
-            builder
-                .when_first_row()
-                .assert_zero(local[STATE_START + 48 * 8 + bit].into() - expected.into());
+            builder.assert_zero(prep[NULLIFIER_END] * (value.into() - expected.into()));
         }
-        for (domain, length, leaf) in [(LEAF_DOMAIN, 88, true), (NODE_DOMAIN, 80, false)] {
-            let gate = if leaf {
-                builder.is_first_row()
-            } else {
-                prep[NODE_START].into()
-            };
+        for limb in 0..4 {
+            let carried = local[NULLIFIER + limb];
+            builder
+                .when_transition()
+                .assert_eq(carried, next[NULLIFIER + limb]);
+            for (offset, gate) in [
+                (48, builder.is_first_row()),
+                (16, prep[NULLIFIER_START].into()),
+            ] {
+                let packed = (0..64).fold(AB::Expr::ZERO, |sum, bit| {
+                    sum + local[STATE_START + offset * 8 + limb * 64 + bit] * F::new(1u64 << bit)
+                });
+                builder.assert_zero(gate * (packed - carried));
+            }
+        }
+        for (domain, length, gate) in [
+            (LEAF_DOMAIN, 80, builder.is_first_row()),
+            (NODE_DOMAIN, 80, prep[NODE_START].into()),
+            (NULLIFIER_DOMAIN, 48, prep[NULLIFIER_START].into()),
+        ] {
             for byte in 0..200 {
                 let fixed = if byte < domain.len() {
                     Some(domain[byte])

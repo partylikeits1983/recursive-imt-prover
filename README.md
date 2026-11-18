@@ -4,7 +4,7 @@
 
 A research proof of concept for aggregating Keccak-256 incremental Merkle tree
 (IMT) membership proofs into one proof authenticating an ordered list of public
-roots and amounts. Each child proves a private note-preimage and membership
+roots and nullifier hashes. Each child proves a private note-preimage and membership
 relation. The aggregator receives child proofs and public statements, never the
 original private witnesses.
 
@@ -30,10 +30,10 @@ This requires a common proof shape, stable circuit size and authenticated cyclic
 verifier data. Final native verification needs no fourth circuit.
 
 Every aggregate authenticates a fixed-size Keccak digest and child count. Final
-verification recomputes that digest from the complete ordered `(root, amount)`
+verification recomputes that digest from the complete ordered `(root, nullifier_hash)`
 list and checks the proof using independently trusted verifier data. It needs
 neither child proofs nor intermediate aggregates. Roots may differ; repeated
-statements are valid. Spending, nullifiers and accepted-root history are outside
+statements are valid. Spending, spent-nullifier tracking and accepted-root history are outside
 scope.
 
 The planned tree supports balanced batches of 2, 4, 8, 16, 32 or 64 children.
@@ -46,13 +46,15 @@ statements; they add no privacy guarantee beyond the child construction.
 
 ## Child relation
 
-Given a public root and amount, the child relation asserts knowledge of a secret,
-nonce and authentication path satisfying:
+Given a public root and nullifier hash, the child proves knowledge of a secret
+number, nullifier and authentication path satisfying:
 
 ```text
 leaf = Keccak256(
-    "IMT-KECCAK-LEAF1" || secret[32] || amount_u64_le || nonce[32]
+    "IMT-KECCAK-LEAF2" || secret_num[32] || nullifier[32]
 )
+
+nullifier_hash = Keccak256("IMT-KECCAK-NULL1" || nullifier[32])
 
 parent = Keccak256(
     "IMT-KECCAK-NODE1" || left[32] || right[32]
@@ -61,14 +63,15 @@ parent = Keccak256(
 MerkleRoot(leaf, path, leaf_index) == root
 ```
 
-Domain tags are fixed ASCII bytes, without a terminator. The amount is exactly
-eight bytes in little-endian order. The tree is binary and append-only; the
-masked proof path supports depth 32 only.
+Domain tags are fixed ASCII bytes, without a terminator. `secret_num` is a
+32-byte little-endian unsigned integer; the nullifier is 32 private bytes.
+The same nullifier is constrained in both hashes. The tree is binary and
+append-only; child proofs support depth 32 only.
 
 | Public inputs | Private witness |
 |---|---|
-| Merkle root | Secret (32 bytes) |
-| Amount (u64) | Nonce (32 bytes) |
+| Merkle root (32 bytes) | Secret number (32 bytes) |
+| Nullifier hash (32 bytes) | Nullifier (32 bytes) |
 | | Merkle siblings |
 | | Leaf index / path directions |
 
@@ -76,6 +79,8 @@ Children use Poly64/Poly192 binary fields, Keccak-256, additive WHIR and
 VEIL-inspired masking. The first aggregation constrains the complete child
 verifier, including transcripts, PCS openings, sumcheck, AIR and consistency
 checks. A native verifier result is not a substitute for these constraints.
+The [protocol architecture](docs/protocol.md) describes the relation, masking,
+aggregation, serialization and research contributions.
 
 Checkpoint is the initial backend for the tree implementation: a native product
 bus linked to a committed Keccak GKR argument. Flock, the current CLI default,
@@ -108,18 +113,19 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Depth-32 measurements on an Apple M2 Pro with four threads. Aggregation figures
-are warm medians; fresh verification includes authenticated verifier-key loading.
+Depth-32 root/nullifier-hash measurements on an Apple M2 Pro with four threads.
+One cold and two warm samples; aggregation is the warm median. Fresh verification
+includes process startup and authenticated verifier-key loading.
 
 | Backend / children | Aggregation | Aggregate size | Fresh verification |
 |---|---:|---:|---:|
-| Checkpoint tree pair / 2 | 19.2 s | 1.81 MB | 148 ms |
+| Checkpoint tree pair / 2 | 18.9 s | 1.78 MB | 138 ms |
 
-Children took 3.8–4.3 s each in this run; peak process physical footprint was
-about 6.4 GB. Compilation is excluded; filesystem caches were not reset.
-This measures the first tree level, not recursive merging. Flat batches through
-eight have also verified end to end.
-[Raw measurements and optimization history](docs/binary-veil.md#packed-keccak-rounds).
+Children took 3.3–4.3 s each. Warm aggregation ranged from 18.0–19.9 s; the complete
+batch critical path was 27.2 s median, excluding setup. Peak physical footprint
+was 6.5 GB. Compilation is excluded; filesystem caches were not reset.
+This measures the first tree level; recursive merging remains unimplemented.
+[Raw measurements and optimization history](docs/binary-veil.md#nullifier-statement).
 
 ## Running locally
 
@@ -151,6 +157,7 @@ aggregate-of-aggregate CLI yet.
 ## Implementation and dependencies
 
 [Development map](docs/development.md) ·
+[Protocol architecture](docs/protocol.md) ·
 [Masking and aggregation report](docs/binary-veil.md) ·
 [Security limitations](docs/binary-security.md)
 
@@ -181,3 +188,5 @@ to this implementation.
   — Dao, Kominers and Thaler. Improved bounds and their field-characteristic requirements.
 - [On Reed–Solomon Proximity Gaps Conjectures](https://eprint.iacr.org/2025/2046)
   — Crites and Stewart. Limits of capacity-based proximity assumptions.
+- [Zerocash: Decentralized Anonymous Payments from Bitcoin](https://eprint.iacr.org/2014/349)
+  — Ben-Sasson et al. Private membership and public serial numbers in anonymous payments.

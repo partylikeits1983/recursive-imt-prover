@@ -2,7 +2,8 @@
 
 The active path is a masked Keccak IMT child over Poly64/Poly192, followed by
 one non-ZK aggregate of the ordered child statements. Child IMT depth is fixed at 32.
-Batches through eight have verified independently; 16–64 remain a scaling target.
+The current statement is `(root, nullifier_hash)`; see [protocol](protocol.md).
+Historical root/amount batches through eight verified independently; 16–64 remain a scaling target.
 Statistical child ZK and end-to-end 128-bit classical security remain unproved.
 See [security limits](binary-security.md) and [measurements](binary-veil.md).
 
