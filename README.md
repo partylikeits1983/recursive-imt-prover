@@ -27,15 +27,15 @@ cargo run --locked --release --bin masked-demo -- --verify --out run/masked16
 ```
 
 Depths: 16/32. Batch schema: powers of two through 64; construction and memory
-limits apply. Large batches are a scaling target, not a measured capability.
+limits apply. Batches 16–64 remain a scaling target, not a measured capability.
 Reports record per-child timings, aggregation, verification, proof sizes and RSS.
-On an M2 Pro with four threads, depth-32 aggregation takes **55.7 s for N=2**
-(warm median) and **129.8 s for N=4** (one cold sample). Aggregate sizes are
-1.29/1.33 MB. Proving remains above the latency target; N=4 used 40.5 GB peak
+On an M2 Pro with four threads, depth-32 aggregation takes **38.1 s for N=2**
+(warm median) and **93.0 s for N=4** (one cold sample). Aggregate sizes are
+1.40/1.44 MB. Proving remains above the latency target; N=4 used 31.6 GB peak
 physical footprint, including compressed/swapped memory.
 
-Fresh verification loads a compact authenticated key: **141 ms for N=2** and
-**154 ms for N=4** in the latest runs, using about 34 MB RSS. Filesystem caches
+Fresh verification loads a compact authenticated key: **159 ms for N=2** and
+**181 ms for N=4** in the latest runs, using about 34 MB RSS. Filesystem caches
 were not reset. Keep `verifier.key` and independently
 trusted `trusted.json`; a key/digest pair supplied by an untrusted prover is
 insufficient. [Raw measurements and limits](docs/binary-veil.md#authenticated-verifier-only-loading).
@@ -44,7 +44,10 @@ Current keys use format v2; regenerate runs that contain older key snapshots.
 `demo` / `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` is a diagnostic bundle, not a single aggregate.
 `masked-demo --keccak-backend checkpoint` compares a linked Keccak GKR backend;
-it remains experimental. Flock is the default.
+it has verified **N=8 at depth 32**: 347.6 s aggregation, 1.98 MB proof,
+211 ms fresh verification (one cold run, 41.5 GB peak footprint).
+Use `--depth 32 --batch-size 8 --keccak-backend checkpoint` to reproduce.
+Both backends remain experimental. Flock is the default for smaller batches.
 
 [Implementation and remaining work](docs/development.md) ·
 [Masking and aggregation report](docs/binary-veil.md) ·

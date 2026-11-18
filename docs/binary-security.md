@@ -2,7 +2,8 @@
 
 The native baseline is **non-ZK**, including its child proofs. The separate
 experimental masked path proves Keccak membership at depths 16/32 and aggregates
-two or four such proofs into one. Its full privacy/security argument is unfinished. These are
+two or four such proofs with Flock, or eight with the checkpoint backend, into
+one. Its full privacy/security argument is unfinished. These are
 correctness/performance milestones, not completion of the private-transaction
 objective. The aggregate does not need to be ZK. No child witness, note, path,
 index or proving randomness is an argument to the aggregation API.

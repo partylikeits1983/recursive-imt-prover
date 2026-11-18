@@ -1,0 +1,1159 @@
+{
+  "acceptance_pass": false,
+  "aggregate": true,
+  "batch_size": 2,
+  "bound": "Johnson",
+  "child_parameters": {
+    "log_inv_rate": 4,
+    "max_message_len": 2097152,
+    "min_algebraic_bits": 144,
+    "query_bits": 160
+  },
+  "complete": true,
+  "component_proof_count": 1,
+  "depth": 32,
+  "end_to_end_security_bits": null,
+  "environment": {
+    "compile_time_included": false,
+    "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+    "hardware": "Apple M2 Pro",
+    "legacy_prime_enabled": false,
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "profile": "release",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "release_profile": {
+      "codegen_units": 16,
+      "lto": "thin"
+    },
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags_runtime": "",
+    "source_keccak256": "6358c4b416213c8037daf6bb442309075c773c000e756eb62f1b32c997ae4958",
+    "threads": 4
+  },
+  "experimental_statistical_zk_candidate": true,
+  "field": "Poly64/Poly192",
+  "fresh_verifier": {
+    "cached_verifier": true,
+    "decode_verify_ms": 140.012125,
+    "peak_rss_bytes": 34357248,
+    "process_wall_ms": 159.089291,
+    "setup_ms": 13.281708,
+    "verified": true
+  },
+  "full_zk_established": false,
+  "geometry": {
+    "aggregate": {
+      "algebraic_bits": 146.56159463295822,
+      "checkpoint_codeword_cells": 0,
+      "fanout_copy_layout": [
+        [
+          1,
+          1,
+          186500
+        ],
+        [
+          1,
+          2,
+          206443
+        ],
+        [
+          1,
+          4,
+          25332
+        ],
+        [
+          1,
+          8,
+          360
+        ],
+        [
+          1,
+          16,
+          286598
+        ],
+        [
+          16,
+          1,
+          3927096
+        ],
+        [
+          16,
+          2,
+          2730074
+        ],
+        [
+          16,
+          4,
+          649340
+        ],
+        [
+          16,
+          8,
+          626
+        ],
+        [
+          16,
+          16,
+          34013
+        ],
+        [
+          64,
+          1,
+          132562
+        ],
+        [
+          64,
+          2,
+          3376824
+        ],
+        [
+          64,
+          4,
+          1597968
+        ],
+        [
+          64,
+          8,
+          241667
+        ],
+        [
+          64,
+          16,
+          183638
+        ]
+      ],
+      "fanout_rows_by_width": [
+        [
+          1,
+          705233
+        ],
+        [
+          16,
+          7341149
+        ],
+        [
+          64,
+          5532659
+        ]
+      ],
+      "gate_rows_by_width": [
+        [
+          [
+            1,
+            0,
+            16,
+            0,
+            16
+          ],
+          524288
+        ],
+        [
+          [
+            1,
+            0,
+            16,
+            0,
+            16
+          ],
+          119179
+        ],
+        [
+          [
+            64,
+            64,
+            64,
+            0,
+            64
+          ],
+          2097152
+        ],
+        [
+          [
+            64,
+            64,
+            64,
+            0,
+            64
+          ],
+          95832
+        ],
+        [
+          [
+            64,
+            64,
+            64,
+            64,
+            64
+          ],
+          128962
+        ],
+        [
+          [
+            16,
+            16,
+            64,
+            0,
+            16
+          ],
+          871602
+        ],
+        [
+          [
+            1,
+            64,
+            16,
+            0,
+            16
+          ],
+          524288
+        ],
+        [
+          [
+            1,
+            64,
+            16,
+            0,
+            16
+          ],
+          90976
+        ],
+        [
+          [
+            64,
+            0,
+            64,
+            0,
+            64
+          ],
+          2097152
+        ],
+        [
+          [
+            64,
+            0,
+            64,
+            0,
+            64
+          ],
+          147526
+        ]
+      ],
+      "hash_backend": "flock",
+      "initial_codeword_cells": 335544320,
+      "keccak_permutations": 51376,
+      "log_heights": [
+        18,
+        18,
+        15,
+        9,
+        19,
+        22,
+        22,
+        20,
+        10,
+        16,
+        18,
+        22,
+        21,
+        18,
+        18,
+        19,
+        17,
+        21,
+        17,
+        17,
+        20,
+        19,
+        17,
+        21,
+        18,
+        4,
+        16,
+        17
+      ],
+      "main_codeword_cells": 268435456,
+      "main_coordinate_widths": [
+        [
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1
+        ],
+        [
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          16
+        ],
+        [
+          16
+        ],
+        [
+          16
+        ],
+        [
+          16
+        ],
+        [
+          16,
+          16
+        ],
+        [
+          64
+        ],
+        [
+          64
+        ],
+        [
+          64
+        ],
+        [
+          64
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          1,
+          0,
+          16,
+          0,
+          16
+        ],
+        [
+          1,
+          0,
+          16,
+          0,
+          16
+        ],
+        [
+          64,
+          64,
+          64,
+          0,
+          64
+        ],
+        [
+          64,
+          64,
+          64,
+          0,
+          64
+        ],
+        [
+          64,
+          64,
+          64,
+          64,
+          64
+        ],
+        [
+          16,
+          16,
+          64,
+          0,
+          16
+        ],
+        [
+          1,
+          64,
+          16,
+          0,
+          16
+        ],
+        [
+          1,
+          64,
+          16,
+          0,
+          16
+        ],
+        [
+          64,
+          0,
+          64,
+          0,
+          64
+        ],
+        [
+          64,
+          0,
+          64,
+          0,
+          64
+        ],
+        [
+          0
+        ],
+        [
+          1
+        ],
+        [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ]
+      ],
+      "preprocessed_codeword_cells": 67108864,
+      "preprocessed_coordinate_widths": [
+        [
+          24,
+          1,
+          0
+        ],
+        [
+          24,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          23,
+          1,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          24,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          0
+        ],
+        [
+          24,
+          1,
+          0,
+          1
+        ],
+        [
+          24,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          13,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          0
+        ],
+        [
+          24,
+          1,
+          0,
+          1
+        ],
+        [
+          24,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          16,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          16,
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          24,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          24,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          24,
+          24,
+          24,
+          24,
+          24,
+          64,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          24,
+          49,
+          1,
+          1
+        ],
+        [
+          24,
+          20,
+          24,
+          24,
+          1
+        ],
+        [
+          24,
+          20,
+          24,
+          24,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          64,
+          1,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          64,
+          0,
+          1
+        ],
+        [
+          17,
+          17,
+          1
+        ],
+        [
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24,
+          17,
+          1,
+          1,
+          1
+        ]
+      ],
+      "security_terms": [
+        [
+          "constraint-batching",
+          175.49195766557102
+        ],
+        [
+          "air-batching",
+          178.6012563080618
+        ],
+        [
+          "zerocheck",
+          177.896712191588
+        ],
+        [
+          "constraint-sumcheck",
+          176.896712191588
+        ],
+        [
+          "binary-bus",
+          154.924561329484
+        ],
+        [
+          "binary-bus-batching",
+          182.35614381022526
+        ],
+        [
+          "flock-zerocheck",
+          175.72678719014567
+        ],
+        [
+          "flock-lincheck",
+          176.6837184682538
+        ],
+        [
+          "circuit-word-batching",
+          180.35614381022526
+        ],
+        [
+          "whir-opening",
+          147.44987555632363
+        ],
+        [
+          "bit-ring-switch",
+          181.72387559472577
+        ],
+        [
+          "bit-ring-switch-claim-batching",
+          181.1545099490556
+        ],
+        [
+          "column-batching",
+          177.71084564627665
+        ],
+        [
+          "whir-opening",
+          147.6922596938247
+        ],
+        [
+          "bit-ring-switch",
+          181.82009090998505
+        ],
+        [
+          "bit-ring-switch-claim-batching",
+          180.51820056833424
+        ],
+        [
+          "column-batching",
+          176.92318440294918
+        ],
+        [
+          "commitment-and-transcript-collision",
+          128.0
+        ]
+      ],
+      "table_widths": [
+        1,
+        2,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1,
+        1,
+        2,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        1,
+        232,
+        116
+      ],
+      "witnesses": 14415389
+    }
+  },
+  "hash": "Keccak-256",
+  "outer_parameters": {
+    "fold": 4,
+    "log_inv_rate": 1,
+    "max_initial_codeword_cells": 1073741824,
+    "pcs_bits": 152,
+    "pow_bits": 16
+  },
+  "protocol": "experimental-binary-masked-flock-aggregate-v6",
+  "samples": [
+    {
+      "aggregate_decode_verify_ms": 143.061833,
+      "aggregation": {
+        "aggregate": {
+          "proof_bytes": 1403039,
+          "prove_ms": 34604.936333,
+          "verify_ms": 146.562666,
+          "witness_ms": 1706.8585409999998
+        },
+        "aggregation_wall_ms": 37055.488334,
+        "witness_import_ms": [
+          295.49370899999997,
+          301.611291
+        ]
+      },
+      "aggregation_wall_ms": 37055.488334,
+      "children": [
+        {
+          "decode_verify_ms": 296.35283400000003,
+          "proof_bytes": 1129027,
+          "prove_ms": 4123.338833,
+          "witness_ms": 3.33775
+        },
+        {
+          "decode_verify_ms": 327.607417,
+          "proof_bytes": 1128160,
+          "prove_ms": 3574.2668750000003,
+          "witness_ms": 2.2562089999999997
+        }
+      ],
+      "critical_path_ms": 45528.988375,
+      "peak_rss_bytes": 5362548736,
+      "phase": "cold-first-proof"
+    },
+    {
+      "aggregate_decode_verify_ms": 144.840708,
+      "aggregation": {
+        "aggregate": {
+          "proof_bytes": 1402003,
+          "prove_ms": 34251.97525,
+          "verify_ms": 146.916417,
+          "witness_ms": 2932.2100830000004
+        },
+        "aggregation_wall_ms": 37935.798083,
+        "witness_import_ms": [
+          302.941375,
+          301.728916
+        ]
+      },
+      "aggregation_wall_ms": 37935.798083,
+      "children": [
+        {
+          "decode_verify_ms": 334.427833,
+          "proof_bytes": 1129281,
+          "prove_ms": 3173.444708,
+          "witness_ms": 15.188625
+        },
+        {
+          "decode_verify_ms": 324.97195800000003,
+          "proof_bytes": 1128615,
+          "prove_ms": 3004.6581250000004,
+          "witness_ms": 2.022542
+        }
+      ],
+      "critical_path_ms": 44938.44925,
+      "peak_rss_bytes": 7224328192,
+      "phase": "warm-process"
+    },
+    {
+      "aggregate_decode_verify_ms": 144.762833,
+      "aggregation": {
+        "aggregate": {
+          "proof_bytes": 1400965,
+          "prove_ms": 34517.740291,
+          "verify_ms": 146.68587499999998,
+          "witness_ms": 3073.941167
+        },
+        "aggregation_wall_ms": 38356.586667,
+        "witness_import_ms": [
+          309.434291,
+          308.759875
+        ]
+      },
+      "aggregation_wall_ms": 38356.586667,
+      "children": [
+        {
+          "decode_verify_ms": 324.09537500000005,
+          "proof_bytes": 1128709,
+          "prove_ms": 3234.3062910000003,
+          "witness_ms": 17.461333
+        },
+        {
+          "decode_verify_ms": 317.609,
+          "proof_bytes": 1128438,
+          "prove_ms": 3090.486167,
+          "witness_ms": 2.069083
+        }
+      ],
+      "critical_path_ms": 45489.829375,
+      "peak_rss_bytes": 7224328192,
+      "phase": "warm-process"
+    }
+  ],
+  "settings": {
+    "batch_size": 2,
+    "depth": 32,
+    "fold": 4,
+    "log_inv_rate": 1,
+    "max_codeword_cells": 536870912,
+    "min_algebraic_bits": 144,
+    "min_security_bits": 127,
+    "packed_log_inv_rate": 3,
+    "pcs_bits": 152,
+    "pow_bits": 16
+  },
+  "setup_ms": 11118.330915999999,
+  "succinct": true,
+  "summary": {
+    "aggregate_verify_ms": {
+      "max": 144.840708,
+      "median": 144.8017705,
+      "min": 144.762833
+    },
+    "aggregation_wall_ms": {
+      "max": 38356.586667,
+      "median": 38146.192375,
+      "min": 37935.798083
+    },
+    "critical_path_ms": {
+      "max": 45489.829375,
+      "median": 45214.1393125,
+      "min": 44938.44925
+    }
+  },
+  "verifier_key_bytes": 28692,
+  "verifier_key_export_ms": 0.5132920000000001,
+  "process_measurement": {
+    "tool": "/usr/bin/time -l",
+    "exit_code": 0,
+    "peak_physical_footprint_bytes": 16640628480,
+    "maximum_resident_set_bytes": 7224328192,
+    "concurrent_compilation": false
+  },
+  "command": "target/release/masked-demo --depth 32 --batch-size 2 --samples 3 --out run/grouped-copy-final-d32-n2"
+}

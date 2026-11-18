@@ -95,7 +95,7 @@ impl Chip {
             "unexpected periodic AIR"
         );
         let next = source.main_next_row_columns();
-        let successor = !next.is_empty();
+        let mut successor = !next.is_empty();
         ensure!(
             !successor || (source.width() == 1 && next == [0]),
             "unsupported successor table"
@@ -104,7 +104,26 @@ impl Chip {
             source.preprocessed_next_row_columns().is_empty(),
             "unsupported preprocessing successor"
         );
-        let constraints = symbolic.base_constraints();
+        let mut constraints = symbolic.base_constraints();
+        if shard.is_some() {
+            let interactions = symbolic.interactions();
+            ensure!(
+                successor
+                    && source.preprocessed_width() == 3
+                    && interactions.len() == 1
+                    && interactions[0].direction == OldDirection::Pull
+                    && interactions[0].fields.len() == 2
+                    && is_column(
+                        &interactions[0].fields[0],
+                        BaseEntry::Preprocessed { offset: 0 },
+                        0
+                    )
+                    && is_column(&interactions[0].fields[1], BaseEntry::Main { offset: 0 }, 0)
+                    && matches!(&interactions[0].activation, OldActivation::Boolean(v)
+                        if is_column(v, BaseEntry::Preprocessed { offset: 0 }, 1)),
+                "unexpected native fanout interaction"
+            );
+        }
         let public_table = source.num_public_values() > 0;
         if public_table {
             ensure!(
@@ -119,12 +138,31 @@ impl Chip {
                 "unexpected native public-copy table"
             );
         }
+        if shard.as_ref().is_some_and(|s| !s.needs_successor()) {
+            // Every ID is represented by one row and is nonzero. The
+            // same-ID selector is therefore identically zero. Remove only
+            // equations that vanish by this trusted substitution, then check
+            // that no remaining equation can read a successor value.
+            constraints
+                .retain(|c| fixed_value(c, &[false, false, true]) != Some(OldF::from_repr(0)));
+            ensure!(
+                constraints.iter().all(|c| !uses_next_main(c)),
+                "remaining fanout successor constraint"
+            );
+            successor = false;
+        }
         Ok(Self::Native(Box::new(ImportedAir {
             successor,
             public_table,
             successor_bus: shard.as_ref().map_or_else(
                 || "imt.successor".to_owned(),
-                |s| format!("imt.successor.{}", s.coordinate_width),
+                |s| {
+                    format!(
+                        "imt.successor.{}.{}",
+                        s.coordinate_width,
+                        s.copies_per_row()
+                    )
+                },
             ),
             shard,
             gates: None,
@@ -147,6 +185,7 @@ impl BaseAir<F> for Chip {
     }
     fn preprocessed_width(&self) -> usize {
         match self {
+            Self::Native(a) if a.shard.is_some() => a.shard.as_ref().unwrap().preprocessed_width(),
             Self::Native(a) => a.preprocessed_map.iter().filter(|c| c.is_some()).count(),
             Self::Keccak { .. } => 3,
         }
@@ -287,6 +326,22 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                         activation,
                     );
                 }
+                if let Some(shard) = &a.shard {
+                    // The first occurrence is the original imported pull.
+                    // Additional occurrences use the SAME constrained value,
+                    // with trusted Boolean selectors for the exact count.
+                    let id = b.preprocessed().current(0).unwrap();
+                    let value = b.main().current(0).unwrap();
+                    for copy in 1..shard.copies_per_row() {
+                        let active = b.preprocessed().current(2 + copy).unwrap();
+                        b.push_bus_interaction(
+                            BusName::new(&a.interactions[0].bus_name),
+                            BusDirection::Pull,
+                            [id.into(), value.into()],
+                            BusActivation::Boolean(active.into()),
+                        );
+                    }
+                }
             }
             Self::Keccak { .. } => {
                 let row = b.main().current_slice().to_vec();
@@ -317,6 +372,23 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
 
 pub fn convert(v: OldF) -> F {
     F::from_repr(v.to_repr())
+}
+
+fn is_column(e: &SymbolicExpression<OldF>, entry: BaseEntry, index: usize) -> bool {
+    matches!(e, SymbolicExpr::Leaf(BaseLeaf::Variable(v)) if v.entry == entry && v.index == index)
+}
+
+fn uses_next_main(e: &SymbolicExpression<OldF>) -> bool {
+    match e {
+        SymbolicExpr::Leaf(BaseLeaf::Variable(v)) => {
+            matches!(v.entry, BaseEntry::Main { offset: 1 })
+        }
+        SymbolicExpr::Add { x, y, .. }
+        | SymbolicExpr::Sub { x, y, .. }
+        | SymbolicExpr::Mul { x, y, .. } => uses_next_main(x) || uses_next_main(y),
+        SymbolicExpr::Neg { x, .. } => uses_next_main(x),
+        _ => false,
+    }
 }
 
 fn resolve<AB: BusInteractionBuilder<F = F>>(

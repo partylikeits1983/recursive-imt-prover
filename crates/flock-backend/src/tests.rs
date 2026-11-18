@@ -247,6 +247,16 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     let scaled = builder.mul(bit, constant);
     let scaled_public = builder.alloc_public_input("scaled_bit");
     builder.connect(scaled, scaled_public);
+    // Force several packed rows for the same ID, including a partial final
+    // row. Distinct outputs prevent common-subexpression elimination.
+    let mut extra_public = Vec::new();
+    for i in 1..40 {
+        let c = builder.define_const(OldF::from_repr(i));
+        let y = builder.mul(x, c);
+        let output = builder.public_input();
+        builder.connect(y, output);
+        extra_public.push(OldF::from_repr(3) * OldF::from_repr(i));
+    }
     let circuit = builder.build().unwrap();
     let bus = NativeBusCircuit::with_compact_options(
         &circuit,
@@ -263,16 +273,19 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
     let widths = fanout::coordinate_widths(&circuit, &[], 119).unwrap();
     let shards = fanout::partition(&widths, &fanout_pp.values).unwrap();
-    assert_eq!(
-        shards
-            .iter()
-            .map(|s| s.coordinate_width)
-            .collect::<Vec<_>>(),
-        [1, 16, 64]
-    );
+    let mut shard_widths = shards
+        .iter()
+        .map(|s| s.coordinate_width)
+        .collect::<Vec<_>>();
+    shard_widths.dedup();
+    assert_eq!(shard_widths, [1, 16, 64]);
     let mut source_rows: Vec<_> = shards
         .iter()
-        .flat_map(|s| s.rows.iter().map(|r| r.source_row))
+        .flat_map(|s| {
+            s.rows
+                .iter()
+                .flat_map(|r| r.source_row..r.source_row + u32::from(r.copies))
+        })
         .collect();
     source_rows.sort_unstable();
     let live = fanout_pp
@@ -283,10 +296,21 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         .filter(|r| r[1].to_repr() == 1)
         .count();
     assert_eq!(source_rows, (0..live as u32).collect::<Vec<_>>());
-    let public = [
+    assert!(shards.iter().any(|s| {
+        s.rows
+            .iter()
+            .any(|r| r.copies == fanout::MAX_COPIES_PER_ROW)
+    }));
+    assert!(
+        shards
+            .iter()
+            .any(|s| s.rows.windows(2).any(|r| r[0].id == r[1].id))
+    );
+    let mut public = vec![
         OldF::from_repr(0x1234) * OldF::from_repr(3) + OldF::from_repr(1),
         OldF::from_repr(0x1234),
     ];
+    public.extend(extra_public);
     let mut runner = circuit.runner();
     runner
         .set_private_inputs(&[OldF::from_repr(1), OldF::from_repr(3)])
@@ -303,14 +327,17 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
                 .unwrap(),
         );
         let height = 1 << shard.log_height;
-        let mut values = vec![F::ZERO; height * 2];
+        let width = airs.last().unwrap().width();
+        let mut values = vec![F::ZERO; height * width];
         for (i, r) in shard.rows.iter().enumerate() {
-            values[2 * (i + 1)] = convert(original[0].column(0).value(r.source_row as usize));
+            values[width * (i + 1)] = convert(original[0].column(0).value(r.source_row as usize));
         }
-        for i in 0..height {
-            values[2 * i + 1] = values[2 * (i + 1).min(height - 1)];
+        if shard.needs_successor() {
+            for i in 0..height {
+                values[2 * i + 1] = values[2 * (i + 1).min(height - 1)];
+            }
         }
-        rows.push(RowMajorMatrix::new(values, 2));
+        rows.push(RowMajorMatrix::new(values, width));
         publics.push(vec![]);
     }
     let original_public = bus.public_values(&public).unwrap();
@@ -410,31 +437,49 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
     // changed witness-bus multiset or the equality to other copies of this ID.
     for i in 0..shards.len() {
         let mut tampered = rows.clone();
-        tampered[i].values[2] += F::ONE;
-        tampered[i].values[1] = tampered[i].values[2];
+        let width = tampered[i].width;
+        tampered[i].values[width] += F::ONE;
+        if shards[i].needs_successor() {
+            tampered[i].values[1] = tampered[i].values[width];
+        }
         assert_ne!(fanout_diagnostics(&airs, &tampered, &publics), (true, true));
     }
     // A nonzero absent addend is rejected even if every copy of ID zero agrees.
     let mut tampered = rows.clone();
-    assert!(shards[0].rows.iter().any(|r| r.id == 0));
-    tampered[0].values[0] = F::ONE;
-    for (i, r) in shards[0].rows.iter().enumerate().filter(|(_, r)| r.id == 0) {
+    let zero_shard = shards
+        .iter()
+        .position(|s| s.rows.iter().any(|r| r.id == 0))
+        .unwrap();
+    tampered[zero_shard].values[0] = F::ONE;
+    for (i, r) in shards[zero_shard]
+        .rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.id == 0)
+    {
         assert_eq!(r.id, 0);
-        tampered[0].values[2 * (i + 1)] = F::ONE;
+        tampered[zero_shard].values[2 * (i + 1)] = F::ONE;
     }
-    for i in 0..1 << shards[0].log_height {
-        tampered[0].values[2 * i + 1] =
-            tampered[0].values[2 * (i + 1).min((1 << shards[0].log_height) - 1)];
+    for i in 0..1 << shards[zero_shard].log_height {
+        tampered[zero_shard].values[2 * i + 1] =
+            tampered[zero_shard].values[2 * (i + 1).min((1 << shards[zero_shard].log_height) - 1)];
     }
     assert!(!fanout_diagnostics(&airs, &tampered, &publics).0);
     // Swap two next-values across different shards at the same row address.
     // Their distinct bus names prevent an otherwise cancelling cross-table swap.
     let mut tampered = rows.clone();
-    let a = tampered[1].values[1];
-    let b = tampered[2].values[1];
-    assert_ne!(a, b);
-    tampered[1].values[1] = b;
-    tampered[2].values[1] = a;
+    let (left, right) = (0..shards.len())
+        .flat_map(|i| (i + 1..shards.len()).map(move |j| (i, j)))
+        .find(|&(i, j)| {
+            shards[i].needs_successor()
+                && shards[j].needs_successor()
+                && tampered[i].values[1] != tampered[j].values[1]
+        })
+        .unwrap();
+    let a = tampered[left].values[1];
+    let b = tampered[right].values[1];
+    tampered[left].values[1] = b;
+    tampered[right].values[1] = a;
     assert!(!fanout_diagnostics(&airs, &tampered, &publics).1);
 }
 

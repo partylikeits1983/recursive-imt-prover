@@ -45,7 +45,8 @@ These requirements do not change when inspecting other implementations.
    `masked-demo` compiles the complete child verifier for the fixed ordered batch.
    `crates/flock-backend` proves its arithmetic on the native product bus and its
    Keccak calls with the pinned upstream Flock circuit-table prover. Two- and
-   four-child aggregates have passed independent-process verification and negative
+   four-child Flock aggregates, and an eight-child checkpoint aggregate, have
+   passed independent-process verification and negative
    public-statement checks. The component bundle remains an explicitly non-succinct
    diagnostic. See the measurements and resource limits in `binary-veil.md`.
 5. **Privacy/security review follows integration.** The user accepts a plausible
@@ -58,15 +59,15 @@ These requirements do not change when inspecting other implementations.
    separately reporting circuit construction, proof generation, decoding,
    trusted setup and final verification. Profile before changing the design;
    compare a recursion tree only if the fixed batch hits a measured limit.
-   Depth-32 N=4 now completes end to end, with 6 GiB of initial codewords and
-   about 40.5 GB peak physical footprint including compressed/swapped pages.
+   Depth-32 N=4 now completes end to end, with 5 GiB of initial codewords and
+   about 31.6 GB peak physical footprint including compressed/swapped pages.
    The local prover patches regenerate product-bus leaves, factor equality
    weights, omit fixed-zero preprocessing columns and release unused folded
    capacity; large bus columns defer their first extension-field allocation.
    Larger batches still need lower simultaneous sumcheck storage;
    the current construction/codeword guards remain in place. Authenticated
    verifier snapshots now avoid rebuilding proving tables: a fresh N=4 verifier
-   takes about 140 ms total and 34 MB RSS. Reduce AIR opening reductions and
+   takes about 181 ms total and 34 MB RSS. Reduce AIR opening reductions and
    simultaneous prover allocations next. Checkpointed Keccak
    GKR now has a standalone committed component and an optional fully linked
    aggregate backend (`--keccak-backend checkpoint`). Its boundary commitment is
@@ -75,12 +76,18 @@ These requirements do not change when inspecting other implementations.
    the complete tradeoff. Both use authenticated v2 verifier snapshots.
    The linked depth-32 N=2 measurement reduces physical footprint to 18.74 GB but
    increases warm aggregation to 70.56 s, so it is not the selected fast path.
-   Next compare the pinned Plonky3 indexed-lookup/Logup* implementation with
-   the repeated fanout table. It uses challenge-weighted pushforwards rather
-   than integer multiplicities and has a binary-field security ledger. Any
-   adapter must pin positions, constrain every payload and preserve the complete
-   child verifier. Extra indexed openings may offset the storage saving;
-   benchmark before selecting it.
+   The indexed-lookup/Logup* experiment was rejected: its pushforward vectors
+   are sent in full, making a canonical witness table too large, and its many
+   position openings produced a 46 MB PCS proof even on a two-permutation test.
+   The current optimization groups repeated witness reads into bounded rows,
+   preserving each ordinary product-bus factor and the successor checks.
+   The checkpoint backend now completes depth-32 N=8, with 41.5 GB peak physical
+   footprint, but aggregation takes 347.6 s in one cold run. A brief profile
+   caught boundary PCS evaluation materializing full equality-weight vectors.
+   Next forward prover-computed opening values for unchanged Boolean
+   columns through the mixed PCS adapter; the existing PCS still authenticates them.
+   Dense coordinate expansions require separate treatment. Keep byte-for-byte
+   proof/transcript differential tests before choosing this optimization.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover before adding another recursion layer.

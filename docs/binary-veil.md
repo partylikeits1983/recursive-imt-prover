@@ -1272,3 +1272,71 @@ bytes, authority, key digest, key bytes, backend, and backend plus protocol.
 [Negative-check results](../benchmarks/binary/masked-aggregate/checkpoint-linked-negative.json).
 Unit tests additionally construct false port-link proofs and mismatched valid
 subarguments, requiring rejection by the actual linked verifier.
+
+### Grouped witness copies
+
+The current adapter stores up to 16 occurrences of the same witness ID in one
+row. Each occurrence still contributes a separate product-bus factor, with its
+own fixed Boolean activation. This is exact multiplicity preservation, not a
+field-valued count that would cancel even multiplicities in characteristic two.
+Buckets of 1/2/4/8/16 occurrences limit padding. All chunks of an ID remain in
+one table, and successor equalities connect them. Tables containing only unique
+nonzero IDs omit that extra column and bus after substituting their identically
+zero successor selector. The zero sentinel remains constrained.
+
+Depth-32 N=2 now stores 13,579,041 fanout rows rather than 33,090,901. All original
+witness occurrences are retained. The circuit itself is unchanged: 14,415,389
+witnesses and 51,376 Keccak permutations. Flock backend identity v9 and checkpoint
+identity v2 bind the new tables; verifier snapshot format stays v2.
+
+The same M2 Pro, four threads, Rust 1.98.1 and unchanged security parameters give:
+
+| Depth / children | Aggregation | Aggregate bytes | Fresh verifier wall | Peak physical footprint |
+|---|---:|---:|---:|---:|
+| 32 / 2 | 38.146 s warm median (37.936–38.357 s) | 1,400,965–1,403,039 | 159.1 ms | 16.64 GB |
+| 32 / 4 | 93.031 s, one cold sample | 1,439,752 | 181.4 ms | 31.60 GB |
+| 16 / 2 | 35.031 s, one cold sample | 1,398,190 | 160.5 ms | 16.46 GB |
+
+The two-child cold sample is 37.055 s. Its warm decode/verify median is 144.80 ms;
+fresh verification uses 34.36 MB RSS and a 28,692-byte key. Relative to the
+retained Flock measurements above, two-child warm aggregation improves by 31.5%
+and peak physical footprint by 19.6%. The aggregate grows by about 9%, and fresh
+verification is slower; this is a proving/memory tradeoff, not an improvement
+in every metric. Four-child aggregation improves by 28.3% on one cold sample.
+No compilation ran concurrently. Physical footprint includes compressed/swapped
+pages and is distinct from RSS; filesystem caches were not reset.
+
+Raw reports: [depth 32, N=2](../benchmarks/binary/masked-aggregate/flock-grouped-copy-d32-n2.json),
+[depth 32, N=4](../benchmarks/binary/masked-aggregate/flock-grouped-copy-d32-n4.json),
+[depth 16, N=2](../benchmarks/binary/masked-aggregate/flock-grouped-copy-d16-n2.json).
+Their source fingerprint is `6358c4b416213c8037daf6bb442309075c773c000e756eb62f1b32c997ae4958`.
+All 45 library tests pass. Tests expand the grouped rows back to every original
+occurrence, check full AIR and bus multisets, and reject altered copies, zero
+sentinels and cross-table successor swaps. Actual aggregate proofs pass both
+proving-key and cached-key verification. The fresh-process suite again rejects
+[all 13 tampering cases](../benchmarks/binary/masked-aggregate/flock-grouped-copy-negative.json).
+The Flock conditional outer floor remains above 146 bits; child privacy and end-to-end
+security claims are unchanged. Latency and 64-child scaling remain open.
+
+The grouped layout also completes **depth 32, N=8 with the checkpoint backend**.
+One cold aggregate takes 347.640 s, produces 1,981,907 bytes, and verifies in a
+fresh process in 210.90 ms (176.45 ms decoding/verification, 24.69 ms key setup).
+The fresh verifier uses 29.67 MB RSS and a 38,629-byte key. Prover setup takes
+73.412 s; the full proof batch critical path after setup is 379.689 s.
+Peak physical footprint is 41.48 GB, below the 40 GiB operational guard.
+No construction, codeword, memory or security limit was raised. The conditional
+outer ledger is 145.92 bits. This is a successful scaling milestone, **not** a
+low-latency result or a repeated benchmark. Flock remains the smaller-batch
+default; its N=8 path was not measured in this pass.
+
+[Eight-child raw report](../benchmarks/binary/masked-aggregate/checkpoint-grouped-copy-d32-n8.json)
+records a one-second `sample` profile taken during aggregation. It caught
+`LinkedBatch::prove` opening the boundary PCS through
+`BooleanTraceCommitment::evaluate_requested` and `SplitEq::materialize`. This
+snapshot identifies avoidable large allocations, not the fraction of total
+runtime they consume. Forwarding already available Boolean opening values via
+the existing authenticated-known-values API is the next optimization to test.
+The final verifier also rejects
+[all 13 tampering cases for N=8](../benchmarks/binary/masked-aggregate/checkpoint-grouped-copy-negative.json).
+Sixteen through 64 children remain unvalidated; the child privacy and composed
+128-bit security obligations are unchanged.

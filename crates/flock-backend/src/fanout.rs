@@ -8,30 +8,52 @@ use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 use std::sync::Arc;
 
+/// Repeat ordinary bus factors, never a field-valued multiplicity (which
+/// would lose even counts in characteristic two).
+pub const MAX_COPIES_PER_ROW: u8 = 16;
+
 pub struct FanoutShard {
     pub coordinate_width: usize,
     pub rows: Vec<FanoutRow>,
     pub log_height: usize,
+    copies_per_row: usize,
+    successor: bool,
 }
 
 pub struct FanoutRow {
     pub source_row: u32,
     pub id: u32,
+    pub copies: u8,
 }
 
 impl FanoutShard {
+    pub fn needs_successor(&self) -> bool {
+        self.successor
+    }
+    pub fn copies_per_row(&self) -> usize {
+        self.copies_per_row
+    }
+
+    pub fn preprocessed_width(&self) -> usize {
+        2 + self.copies_per_row()
+    }
+
     pub fn preprocessing(&self) -> RowMajorMatrix<F> {
         // An inactive zero row preserves the imported first-row zero check.
         // If the first real group is the zero sentinel, link it to this row.
-        let mut values = vec![F::ZERO; 3 * (1 << self.log_height)];
+        let width = self.preprocessed_width();
+        let mut values = vec![F::ZERO; width * (1 << self.log_height)];
         values[2] = F::from_bool(self.rows.first().is_some_and(|r| r.id == 0));
         for (i, row) in self.rows.iter().enumerate() {
-            values[3 * (i + 1)] = F::from_repr(u64::from(row.id));
-            values[3 * (i + 1) + 1] = F::ONE;
-            values[3 * (i + 1) + 2] =
+            values[width * (i + 1)] = F::from_repr(u64::from(row.id));
+            values[width * (i + 1) + 1] = F::ONE;
+            values[width * (i + 1) + 2] =
                 F::from_bool(self.rows.get(i + 1).is_some_and(|next| next.id == row.id));
+            for copy in 1..usize::from(row.copies) {
+                values[width * (i + 1) + 2 + copy] = F::ONE;
+            }
         }
-        RowMajorMatrix::new(values, 3)
+        RowMajorMatrix::new(values, width)
     }
 }
 
@@ -113,13 +135,19 @@ pub fn coordinate_widths(
 pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>> {
     let mut shards: Vec<_> = [1, 16, 64]
         .into_iter()
-        .map(|coordinate_width| FanoutShard {
-            coordinate_width,
-            rows: vec![],
-            log_height: 0,
+        .flat_map(|coordinate_width| {
+            (0..=MAX_COPIES_PER_ROW.ilog2()).map(move |log| FanoutShard {
+                coordinate_width,
+                rows: vec![],
+                log_height: 0,
+                copies_per_row: 1 << log,
+                successor: false,
+            })
         })
         .collect();
     let mut previous = 0;
+    let mut start = 0;
+    let mut count = 0;
     let mut padding = false;
     for (source_row, row) in fanout.as_chunks::<3>().0.iter().enumerate() {
         ensure!(
@@ -136,21 +164,25 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>
             id >= previous && id < widths.len(),
             "invalid fanout witness ID order"
         );
+        if count != 0 && id != previous {
+            append_group(&mut shards, widths[previous], previous, start, count)?;
+            count = 0;
+        }
+        if count == 0 {
+            start = source_row;
+        }
+        count += 1;
         previous = id;
-        let shard = match widths[id] {
-            0..=1 => 0,
-            2..=16 => 1,
-            _ => 2,
-        };
-        shards[shard].rows.push(FanoutRow {
-            source_row: u32::try_from(source_row)?,
-            id: u32::try_from(id)?,
-        });
+    }
+    if count != 0 {
+        append_group(&mut shards, widths[previous], previous, start, count)?;
     }
     Ok(shards
         .into_iter()
         .filter(|s| !s.rows.is_empty())
         .map(|mut s| {
+            s.successor = s.rows.first().is_some_and(|r| r.id == 0)
+                || s.rows.windows(2).any(|r| r[0].id == r[1].id);
             s.log_height = (s.rows.len() + 1)
                 .next_power_of_two()
                 .trailing_zeros()
@@ -159,6 +191,35 @@ pub fn partition(widths: &[u8], fanout: &[OldF]) -> Result<Vec<Arc<FanoutShard>>
             Arc::new(s)
         })
         .collect())
+}
+
+fn append_group(
+    shards: &mut [FanoutShard],
+    width: u8,
+    id: usize,
+    start: usize,
+    count: usize,
+) -> Result<()> {
+    let width_bucket = match width {
+        0..=1 => 0,
+        2..=16 => 1,
+        _ => 2,
+    };
+    let copies = count
+        .next_power_of_two()
+        .min(usize::from(MAX_COPIES_PER_ROW));
+    let buckets = MAX_COPIES_PER_ROW.ilog2() as usize + 1;
+    let shard = &mut shards[width_bucket * buckets + copies.ilog2() as usize];
+    // Keep every chunk of an ID in one shard so the imported successor
+    // equality still links all copies, including the partial final chunk.
+    for offset in (0..count).step_by(copies) {
+        shard.rows.push(FanoutRow {
+            source_row: u32::try_from(start + offset)?,
+            id: u32::try_from(id)?,
+            copies: u8::try_from((count - offset).min(copies))?,
+        });
+    }
+    Ok(())
 }
 
 fn product_width(a: u8, b: u8) -> u8 {

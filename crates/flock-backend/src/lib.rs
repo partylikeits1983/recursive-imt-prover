@@ -86,6 +86,8 @@ pub struct Geometry {
     pub checkpoint_codeword_cells: usize,
     pub witnesses: u32,
     pub fanout_rows_by_width: Vec<(usize, usize)>,
+    /// (coordinate width, maximum occurrences per row, stored rows).
+    pub fanout_copy_layout: Vec<(usize, usize, usize)>,
     pub gate_rows_by_width: Vec<(Vec<usize>, usize)>,
     pub keccak_permutations: usize,
     pub table_widths: Vec<usize>,
@@ -163,11 +165,24 @@ impl Prepared {
             .collect();
         eprintln!("Gate live rows by coordinate widths: {gate_rows_by_width:?}");
         drop(bridge);
-        let fanout_rows_by_width: Vec<_> = shards
+        let fanout_copy_layout: Vec<_> = shards
             .iter()
-            .map(|s| (s.coordinate_width, s.rows.len()))
+            .map(|s| (s.coordinate_width, s.copies_per_row(), s.rows.len()))
             .collect();
-        eprintln!("Fanout live rows by coordinate width: {fanout_rows_by_width:?}");
+        let fanout_rows_by_width = [1, 16, 64]
+            .into_iter()
+            .map(|width| {
+                (
+                    width,
+                    shards
+                        .iter()
+                        .filter(|s| s.coordinate_width == width)
+                        .map(|s| s.rows.len())
+                        .sum(),
+                )
+            })
+            .collect();
+        eprintln!("Fanout (coordinate width, copies per row, rows): {fanout_copy_layout:?}");
         ensure!(
             calls > 0 && calls <= 1 << 20,
             "unsupported Keccak call count"
@@ -239,10 +254,10 @@ impl Prepared {
         let mut identity = Keccak256::new();
         identity.update(match backend {
             HashBackend::Flock => {
-                b"imt-flock-backend-v8/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-flock-backend-v9/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
             HashBackend::Checkpoint => {
-                b"imt-checkpoint-backend-v1/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
+                b"imt-checkpoint-backend-v2/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
         identity.update((domain.len() as u64).to_le_bytes());
@@ -397,6 +412,7 @@ impl Prepared {
             checkpoint_codeword_cells,
             witnesses: circuit.witness_count,
             fanout_rows_by_width,
+            fanout_copy_layout,
             gate_rows_by_width,
             keccak_permutations: calls,
             table_widths: airs.iter().map(BaseAir::width).collect(),
@@ -497,12 +513,15 @@ impl Prepared {
             if let Some(shard) = &mapping.shard {
                 let height = 1 << shard.log_height;
                 let column = table.column(0);
-                let mut values = vec![F::ZERO; 2 * height];
+                let width = self.airs[i].width();
+                let mut values = vec![F::ZERO; width * height];
                 for (r, row) in shard.rows.iter().enumerate() {
                     values[r + 1] = convert(column.value(row.source_row as usize));
                 }
-                for r in 0..height {
-                    values[height + r] = values[(r + 1).min(height - 1)];
+                if self.airs[i].has_successor() {
+                    for r in 0..height {
+                        values[height + r] = values[(r + 1).min(height - 1)];
+                    }
                 }
                 tables.push(Some(Table::new(RowMajorMatrix::new(values, height))));
                 continue;

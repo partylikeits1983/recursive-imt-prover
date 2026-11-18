@@ -37,6 +37,19 @@ Local adaptations:
   retain 64 coordinates; hint execution never supplies a bound. Each original
   witness-bus occurrence appears exactly once. Each partition has an inactive
   leading zero row, linked to the zero-sentinel group when present.
+- Copy occurrences share a row in groups of at most 16. Each occurrence still
+  emits its own ordinary product-bus factor, selected by a trusted Boolean
+  preprocessing column. No field-valued multiplicity is used: even counts must
+  not disappear in characteristic two. Tables are bucketed by the next power
+  of two of their read counts to bound padding. Every chunk of one witness ID
+  stays in the same table and retains the successor equality, including a
+  partial final chunk. Successor bus names bind both the coordinate width and
+  the occurrence bucket. This reduces stored copies without replacing the
+  existing multiset argument.
+  A table with unique nonzero IDs has an identically zero same-ID successor
+  selector. The adapter substitutes that zero, checks that no remaining
+  constraint reads a successor, and omits the extra column and successor bus.
+  Tables containing the zero sentinel or multiple chunks of an ID retain both.
 - `gates.rs` groups independent arithmetic rows by their per-column bounds.
   All selectors, constants and witness IDs remain fixed and unchanged. The
   grouping retains every live row; padding has inactive selectors. A group is
@@ -79,7 +92,7 @@ This is a local encoding argument, not a full proof-system security theorem.
 Tests check exact occurrence preservation, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
 swap across partitions. The checkpoint aggregate uses protocol v7 / backend
-identity v1; Flock retains protocol v6 / backend identity v8. Both export verifier
+identity v2; Flock retains protocol v6 / backend identity v9. Both export verifier
 snapshot v2, rejecting older key snapshots. Child proof formats and security
 parameters are unchanged.
 
