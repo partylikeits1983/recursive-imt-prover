@@ -72,6 +72,7 @@ impl BinaryPolyCoordinateWhirVerifier {
         heights: &[usize],
         main: CoordinatePcsParameters<'_, C>,
         preprocessing: Option<(CoordinatePcsParameters<'_, C>, MerkleCap<F, [u8; 32]>)>,
+        limits: &VerifierLimits,
     ) -> Result<Self, VerificationError>
     where
         A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
@@ -83,7 +84,7 @@ impl BinaryPolyCoordinateWhirVerifier {
             0,
             heights.iter().copied().max().unwrap_or(0).saturating_add(2),
             preprocessing.is_some(),
-            &VerifierLimits::default(),
+            limits,
         )?;
         if relation.indexed.is_some() {
             return Err(invalid(
@@ -103,7 +104,7 @@ impl BinaryPolyCoordinateWhirVerifier {
         };
         let cap_roots = 1usize
             .checked_shl(main.cap_height as u32)
-            .filter(|&n| n <= VerifierLimits::default().max_cap_roots)
+            .filter(|&n| n <= limits.max_cap_roots)
             .ok_or_else(|| invalid("invalid coordinate cap height"))?;
         let main = build(main_protocol, main)?;
         let preprocessed = match (preprocessing, pp_protocol) {

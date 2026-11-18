@@ -134,23 +134,21 @@ fn complete_aggregate_verifier_links_arithmetic_and_keccak() -> Result<()> {
     )?;
     let recursive = RecursiveAggregate::new(authority)?;
     let private = recursive.private_inputs(&bytes, &public)?;
+    let circuit = recursive.circuit()?;
     eprintln!(
         "Complete aggregate verifier: {} witnesses",
-        recursive.circuit.witness_count
+        circuit.witness_count
     );
-    assert!(accepts(&recursive.circuit, &public, &private));
+    assert!(accepts(&circuit, &public, &private));
     for index in [0, public.len() - 1] {
         let mut bad = public.clone();
         bad[index] = F::new(bad[index].to_bits() ^ 1);
-        assert!(!accepts(&recursive.circuit, &bad, &private));
+        assert!(!accepts(&circuit, &bad, &private));
     }
     for index in [0, 16, 32, private.len() / 2, private.len() - 1] {
         let mut bad = private.clone();
         bad[index] = F::new(bad[index].to_bits() ^ 1);
-        assert!(
-            !accepts(&recursive.circuit, &public, &bad),
-            "private {index}"
-        );
+        assert!(!accepts(&circuit, &public, &bad), "private {index}");
     }
     Ok(())
 }
@@ -174,7 +172,7 @@ fn two_aggregate_verifications_have_an_actual_outer_proof() -> Result<()> {
     private.extend(recursive.private_inputs(&b, &second)?);
     let public = [first.clone(), second.clone()].concat();
     let outer = Prepared::repeated(
-        recursive.circuit,
+        recursive.circuit()?,
         2,
         b"two-aggregate-test",
         HashBackend::Checkpoint,

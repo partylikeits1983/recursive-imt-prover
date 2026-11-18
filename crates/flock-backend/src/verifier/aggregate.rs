@@ -1,7 +1,7 @@
 use anyhow::{Result, ensure};
 use old_binary_field::Poly64 as F;
 use p3_circuit::{
-    Circuit,
+    Circuit, CircuitBuilder, ExprId,
     ops::{ByteHash, binary_encoding::NativeBinaryEncoding},
 };
 use p3_recursion::BinaryTower128Challenger;
@@ -18,10 +18,10 @@ use crate::{
 };
 
 pub struct RecursiveAggregate {
-    pub circuit: Circuit<F>,
     authority: Verifier,
     arithmetic: RecursiveArithmetic,
     boundary: BoundaryPcs,
+    linked: PreparedLinkedVerifier,
 }
 
 impl RecursiveAggregate {
@@ -35,42 +35,62 @@ impl RecursiveAggregate {
         let arithmetic = authority.recursive_arithmetic()?;
         let boundary = BoundaryPcs::new(scheme.log_batch, 2, scheme.recursive_pcs_seed())?;
         let linked = PreparedLinkedVerifier::new(scheme.log_batch)?;
+        Ok(Self {
+            authority,
+            arithmetic,
+            boundary,
+            linked,
+        })
+    }
+
+    pub fn circuit(&self) -> Result<Circuit<F>> {
         let mut b = builder()?;
-        let public: Vec<_> = (0..authority.public_count)
+        let public: Vec<_> = (0..self.authority.public_count)
             .map(|_| b.alloc_public_input("aggregate statement"))
             .collect();
-        let cap = boundary.allocate_cap(&mut b, false);
-        let arithmetic_proof = arithmetic.allocate(&mut b)?;
-        let keccak_proof = linked.allocate(&mut b)?;
-        let opening = boundary.verifier.allocate_native_targets(&mut b)?;
-        let identity: Vec<_> = authority
+        self.verify_in(&mut b, &public)?;
+        Ok(b.build()?)
+    }
+
+    pub fn verify_in(&self, b: &mut CircuitBuilder<F>, public: &[ExprId]) -> Result<()> {
+        ensure!(
+            public.len() == self.authority.public_count,
+            "incorrect recursive public count"
+        );
+        let scheme = self.authority.checkpoint.as_ref().unwrap();
+        let cap = self.boundary.allocate_cap(b, false);
+        let arithmetic_proof = self.arithmetic.allocate(b)?;
+        let keccak_proof = self.linked.allocate(b)?;
+        let opening = self.boundary.verifier.allocate_native_targets(b)?;
+        let identity: Vec<_> = self
+            .authority
             .data
             .seed
             .iter()
             .map(|&v| b.define_const(F::new(u64::from(v))))
             .collect();
-        let seed = linked.arithmetic_seed(&mut b, &identity, &cap)?;
+        let seed = self.linked.arithmetic_seed(b, &identity, &cap)?;
         let ch = BinaryTower128Challenger::with_initial_bytes_with_host::<NativeBinaryEncoding, F>(
-            &mut b,
+            b,
             ByteHash::Keccak256,
             &seed,
         )?;
-        let authenticated = arithmetic.verify(&mut b, ch, &public, &arithmetic_proof)?;
+        let authenticated = self.arithmetic.verify(b, ch, public, &arithmetic_proof)?;
         ensure!(
             authenticated.point.len() >= scheme.log_batch,
             "incorrect recursive port point"
         );
         let ports = PortTargets {
             instance: authenticated.point[authenticated.point.len() - scheme.log_batch..].to_vec(),
-            values: authenticated.main[authority.data.hash_index]
+            values: authenticated.main[self.authority.data.hash_index]
                 .current()
                 .to_vec(),
         };
-        let seed = scheme.transcript_seed(&authority.data.seed);
-        let ch = boundary.challenger(&mut b, &seed, &cap)?;
-        let reduced = linked.verify_reduction(&mut b, ch, &ports, &keccak_proof)?;
-        let (values, _) = boundary.verifier.verify_at_native(
-            &mut b,
+        let seed = scheme.transcript_seed(&self.authority.data.seed);
+        let ch = self.boundary.challenger(b, &seed, &cap)?;
+        let reduced = self.linked.verify_reduction(b, ch, &ports, &keccak_proof)?;
+        let (values, _) = self.boundary.verifier.verify_at_native(
+            b,
             reduced.challenger.clone(),
             &cap,
             &reduced.points,
@@ -83,13 +103,8 @@ impl RecursiveAggregate {
                     .all(|v| v.current().len() == 1 && v.next().is_empty()),
             "incorrect recursive Keccak opening shape"
         );
-        reduced.authenticate(&mut b, core::array::from_fn(|i| &values[i].current()[0]));
-        Ok(Self {
-            circuit: b.build()?,
-            authority,
-            arithmetic,
-            boundary,
-        })
+        reduced.authenticate(b, core::array::from_fn(|i| &values[i].current()[0]));
+        Ok(())
     }
 
     pub fn private_inputs(&self, bytes: &[u8], public: &[F]) -> Result<Vec<F>> {

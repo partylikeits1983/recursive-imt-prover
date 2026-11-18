@@ -271,6 +271,18 @@ pub fn closing_weight_native_poly(
     let survivor: Vec<Limbs> = survivor.iter().map(|y| *y.coefficients()).collect();
     let not_survivor: Vec<Limbs> = survivor.iter().map(|&y| add3(b, one, y)).collect();
     let selector = successor.map_or(high.len(), |(kept, _)| high.len() - kept);
+    let mut scale = one;
+    let mut prefix = Vec::new();
+    for i in (0..selector).rev() {
+        if high[i] == [ExprId::ZERO; LIMBS] || high[i] == one {
+            // F_2 selectors are fixed by every Frobenius map, so their
+            // equality factors multiply the complete closing weight once.
+            let factor = add3(b, high[i], not_survivor[i]);
+            scale = mul3(b, scale, factor);
+        } else {
+            prefix.push(i);
+        }
+    }
     let legs = successor.map(|(_, alpha)| {
         let kept = selector..high.len();
         successor_legs(
@@ -329,12 +341,10 @@ pub fn closing_weight_native_poly(
                 let product = product.at(b, m, r);
                 image = mul_add3(b, product, legs.last_right, image);
             }
-            let prefix = twisted_high[..selector]
-                .iter()
-                .zip(&not_survivor[..selector]);
-            for (a, &not_b) in prefix {
-                let a = a.at(b, m, r);
-                let factor = add3(b, a, not_b);
+            // Trailing row coordinates are shared across trace openings.
+            for &i in &prefix {
+                let a = twisted_high[i].at(b, m, r);
+                let factor = add3(b, a, not_survivor[i]);
                 image = mul3(b, image, factor);
             }
             sum = mul_add3(b, g, image, sum);
@@ -342,6 +352,7 @@ pub fn closing_weight_native_poly(
         }
         weight = mul_add3(b, h, sum, weight);
     }
+    weight = mul3(b, scale, weight);
     b.check_construction_limits()?;
     Ok(b.native_poly192_from_coefficients(weight))
 }

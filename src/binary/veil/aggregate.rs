@@ -13,11 +13,14 @@ use super::{
 use crate::{
     benchmark::ms,
     binary::{
-        aggregation_tree::{STATEMENT_BYTES, TreeStatement, TreeTarget},
+        aggregation_tree::{STATEMENT_BYTES, TreeStatement, TreeTarget, merge::TreeVerifier},
         engine::Settings,
         relation::{AggregatePublic, ClientPublic, F, PUBLIC_BYTES},
     },
 };
+
+#[cfg(test)]
+mod tests;
 
 pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v7";
 pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v9";
@@ -211,6 +214,14 @@ impl MaskedAggregateVerifier {
         })
     }
 
+    pub fn into_tree_verifier(self) -> Result<TreeVerifier> {
+        ensure!(
+            self.format == StatementFormat::TreePair && self.count == 2,
+            "expected first tree aggregate authority"
+        );
+        Ok(TreeVerifier { outer: self.outer })
+    }
+
     pub fn verify(&self, proof: &[u8], public: &AggregatePublic) -> Result<()> {
         ensure!(public.children.len() == self.count, "incorrect child count");
         self.outer.verify(proof, &self.format.fields(public)?)
@@ -245,10 +256,7 @@ impl StatementFormat {
                     public.children.len() == 2,
                     "first aggregation requires two children"
                 );
-                let statement = TreeStatement::from_public(public)?.fields();
-                Ok((0..2)
-                    .flat_map(|side| statement.into_iter().chain([F::new(side)]))
-                    .collect())
+                Ok(TreeStatement::from_public(public)?.verifier_fields())
             }
         }
     }

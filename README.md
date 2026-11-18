@@ -1,6 +1,6 @@
 # recursive-imt-prover
 
-**Binary-field Keccak IMT proofs, with experimental statistical ZK and planned tree aggregation.**
+**Binary-field Keccak IMT proofs, with experimental statistical ZK and tree aggregation.**
 
 A research proof of concept for aggregating Keccak-256 incremental Merkle tree
 (IMT) membership proofs into one proof authenticating an ordered list of public
@@ -18,7 +18,7 @@ real funds. No on-chain verifier.
 |---|---|---|
 | IMT child | Prove private membership in a depth-32 Keccak IMT | Implemented with experimental masking |
 | First aggregation | Verify two child proofs and produce a standard aggregate | Working first level via `--tree-pair`; common recursive format pending |
-| Recursive merge | Verify two aggregates and produce another aggregate of the same format | Two-proof component test passes; reusable merge pending |
+| Recursive merge | Verify two aggregates and produce another aggregate | Four-child run works with a fixed source key; same-key reuse pending |
 
 ```text
 8 IMT children → 4 first aggregates → 2 merges → 1 final merge
@@ -37,9 +37,11 @@ statements are valid. Spending, spent-nullifier tracking and accepted-root histo
 scope.
 
 The planned tree supports balanced batches of 2, 4, 8, 16, 32 or 64 children.
-Only the first aggregation is available for IMT proofs. Completion requires an
-eight-child run through two merge levels using the exact same merge key, followed by fresh
-process verification and tamper tests. See the [implementation plan](docs/aggregation-tree.md).
+A four-child run now produces and independently verifies a real merge proof.
+Its source verifier key is fixed in the circuit; a further level would require a
+new key. Completion requires an eight-child run through two merge levels using
+the exact same merge key, followed by fresh-process verification and tamper tests.
+See the [implementation plan](docs/aggregation-tree.md).
 
 Aggregates are intentionally non-ZK. Their inputs are child proofs and public
 statements; they add no privacy guarantee beyond the child construction.
@@ -113,22 +115,26 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Last repeated depth-32 root/nullifier-hash measurements, before the checkpoint
-transcript update, on an Apple M2 Pro with four threads.
-One cold and two warm samples; aggregation is the warm median. Fresh verification
-includes process startup and authenticated verifier-key loading.
+Depth-32 root/nullifier-hash measurements on an Apple M2 Pro with four threads.
+Each row uses one cold and two warm samples; aggregation is the warm median.
+Fresh verification includes process startup and authenticated verifier-key loading.
 
 | Backend / children | Aggregation | Aggregate size | Fresh verification |
 |---|---:|---:|---:|
 | Checkpoint tree pair / 2 | 21.0 s | 1.35 MB | 136 ms |
+| Checkpoint merge / 4 | 59.4 s | 1.386 MB | 142 ms |
 
-Children took 3.2–4.0 s each, producing approximately 1.13 MB proofs. Warm
-aggregation ranged from 20.7–21.3 s; the complete batch critical path was 29.2 s
-median, excluding setup. Peak physical footprint was 8.2 GB. The compact format
-is about 24% smaller than the previous aggregate, with about 11% longer aggregation
-and higher memory use. Compilation is excluded; filesystem caches were not reset.
-This measures the first tree level; recursive merging remains unimplemented.
-[Raw measurements and optimization history](docs/binary-veil.md#compact-aggregate-proofs).
+Children took 3.2–4.0 s each, producing approximately 1.13 MB proofs. The first
+row predates the checkpoint transcript update; a current cold pair took 21.7 s.
+The merge row measures two already-created first aggregates representing four
+children. It excludes child and first-aggregate proving, plus 19.3 s of merge
+setup. Warm merges ranged from 54.8–64.1 s. Peak physical footprint was 23.4 GB
+(8.14 GB maximum RSS), including compressed/swapped memory.
+
+Both aggregate sizes meet the 1.5 MB target. The 1 MB and sub-10-second targets
+remain unmet; a tree speed advantage has not been demonstrated. Compilation is
+excluded; filesystem caches were not reset.
+[Raw measurements and optimization history](docs/binary-veil.md#four-child-tree-merge).
 
 ## Running locally
 
@@ -145,6 +151,13 @@ cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --s
 
 # Independent verification of saved artifacts.
 cargo run --locked --release --bin masked-demo -- --verify --out run/pair32
+
+# Create a second pair with the same authority, then merge both aggregates.
+cargo run --locked --release --bin masked-demo -- --tree-pair --batch-size 2 --keccak-backend checkpoint --out run/pair32-b
+cargo run --locked --release --bin merge-demo -- --left run/pair32 --right run/pair32-b --samples 3 --out run/merge4
+
+# Requires only the final proof, ordered statements and trusted final key files.
+cargo run --locked --release --bin merge-demo -- --verify --out run/merge4
 ```
 
 The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
@@ -156,8 +169,8 @@ Aggregate encoding and verifier snapshots have changed; regenerate older artifac
 
 `demo` and `bench` retain the original **non-ZK child** baseline.
 `masked-demo --components` produces a diagnostic proof bundle, not one aggregate.
-Omitting `--tree-pair` selects the existing flat-batch format. There is no
-aggregate-of-aggregate CLI yet.
+Omitting `--tree-pair` selects the existing flat-batch format. `merge-demo`
+requires checkpoint tree inputs with the same trusted source authority.
 
 ## Implementation and dependencies
 

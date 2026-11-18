@@ -88,6 +88,44 @@ See [the backend implementation](../crates/flock-backend/README.md).
 - Encode aggregate field elements at fixed width and use outer rate 1/4 to reduce
   opening traffic. Johnson, the PCS target and the conditional floor are unchanged.
 
+## Four-child tree merge
+
+Two actual depth-32 first aggregates now merge into one checkpoint proof for four
+ordered `(root, nullifier_hash)` statements. The merge circuit fixes the source
+authority and verifies both complete proofs. The output uses a new verifier key;
+reuse of one key at every higher level remains unfinished.
+
+Apple M2 Pro, four threads, Rust 1.98.1, release with thin LTO. One cold and two
+warm samples; compilation and creation of the four children/two first aggregates
+are excluded. Filesystem caches were not reset.
+
+| Operation | Measurement |
+|---|---:|
+| Merge setup | 19.304 s |
+| Cold merge | 62.096 s |
+| Warm merge median (range) | 59.445 s (54.802–64.088) |
+| Aggregate proof bytes | 1,386,223 |
+| Fresh verification / full process wall | 127.5 ms / 141.9 ms |
+| Witnesses per source verifier template | 15,326,145 |
+| Initial codeword cells | 687,865,856 |
+| Peak physical footprint / maximum RSS | 23.40 GB / 8.14 GB |
+
+Factoring constant Boolean selectors out of the Frobenius closing-weight sum
+and sharing trailing row-coordinate products cut template witnesses from 19.4
+to 15.3 million, and initial codeword cells by 16.3%. Parameters and proof
+relations are unchanged. An earlier single cold run took 116.8 s and produced
+1,441,981 bytes, but briefly overlapped unrelated compilation; it is diagnostic,
+not a controlled timing comparison. The optimized run still exceeds physical
+RAM, and no tree speed advantage over flat aggregation has been established.
+
+The final verifier succeeds with only the final proof, ordered statements and
+trusted verifier files. Sixteen mutations are rejected, including changed roots,
+nullifier hashes, ordering, counts, proof encoding and authority. The source
+aggregate also passes the complete verifier circuit directly; changed public
+inputs fail. Conditional algebraic accounting reports 146.119 bits; end-to-end
+security and joint child statistical ZK remain unestablished.
+[Raw samples, resource measurements and checks](../benchmarks/binary/tree-merge/depth32-four.json).
+
 ## Compact aggregate proofs
 
 Aggregate encoding now uses fixed-width field elements instead of variable-length
@@ -121,8 +159,8 @@ reports 146.218 bits; end-to-end security remains unestablished.
 Fresh verification succeeds with only the proof, ordered statement and trusted
 key files. Seventeen mutations of statements, proof bytes, encoding and authority
 are rejected. Recursive Keccak and coordinate-opening components also pass real
-proof tests; the complete in-circuit aggregate verifier and reusable merge remain
-unfinished.
+proof tests. These measurements predate the complete aggregate-verifier circuit
+and fixed-authority merge above; cyclic same-key merging remains unfinished.
 [Raw samples, resource measurements and checks](../benchmarks/binary/masked-aggregate/compact-d32-n2.json).
 
 ## Nullifier statement

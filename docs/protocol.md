@@ -85,9 +85,9 @@ half-distance cap. See [security accounting](binary-security.md).
 2. **First aggregation:** constrain two complete child verifiers, with a fixed
    trusted child authority. Consume only proofs and public statements. Produce
    a non-ZK aggregate authenticating their ordered statement commitment.
-3. **Recursive merge, planned:** constrain two aggregate verifiers and combine
-   their statements. Normalize first aggregates and merges to one proof format,
-   then reuse exactly one merge circuit/key at all higher levels.
+3. **Recursive merge:** constrain two aggregate verifiers and combine their
+   statements. A four-child merge works under a fixed source authority. Common
+   geometry and reuse of exactly one merge circuit/key remain planned.
 
 Statement commitments are:
 
@@ -106,9 +106,16 @@ rehashes the complete ordered list and verifies one proof with independently
 trusted data; it needs no child or intermediate proofs. Swapping statements or
 changing a root, nullifier hash or count changes the authenticated statement.
 
-The first aggregation is implemented. The complete aggregate-verifier circuit
-and a two-verifier outer proof pass small component tests. Reusable merging of
-depth-32 IMT aggregates remains unimplemented.
+The merge circuit embeds the complete checkpoint verifier: product bus, AIR,
+main/preprocessing PCS, transcript checks and the linked Keccak GKR argument.
+It consumes two actual aggregate proofs and statements, with no IMT witnesses.
+Two copies of one template each authenticate their source digest and count,
+combine it with a sibling digest, and constrain the same parent. Public roles
+fix left/right order. Inconsistent sibling digests require a Keccak collision.
+The public field layout is `(digest[32], count, role)` twice, with roles 0 and 1.
+
+The source authority is embedded in the compiled circuit. The output has its own
+trusted verifier key; it does not yet reproduce its source geometry or key.
 Cyclic merging must authenticate the first-aggregation and merge authorities,
 constrain its branch choice, and decrease counts toward actual child proofs.
 Native verification followed by an unconstrained acceptance bit is insufficient.
@@ -120,6 +127,7 @@ The active statement is exactly 64 bytes: root followed by nullifier hash.
 JSON carries two 32-byte arrays and rejects extra or missing fields. Child v6
 uses the `IMTVCA06` header. Flock tree-pair v2, checkpoint tree-pair v3, flat
 Flock v7 and flat checkpoint v9 bind the relation and trusted configuration.
+Fixed-authority merging uses `experimental-binary-checkpoint-tree-merge-v1`.
 Old root/amount proofs and keys are incompatible and must be regenerated. Historical measurements retain their
 original protocol identifiers and are not measurements of this relation.
 
@@ -142,8 +150,13 @@ that attack.
 Each first-aggregation backend passed 22 fresh-process checks, including changed
 nullifier hashes, roots, order, counts, proof encodings, keys, authorities and
 statement formats. Old root/amount artifacts are rejected. The retained
-[measurements](binary-veil.md#nullifier-statement) cover two children, not the
-planned higher merge levels.
+[first-aggregation measurements](binary-veil.md#nullifier-statement) cover two children.
+
+The four-child merge passes fresh verification with only the final proof,
+statement and trusted key files. Sixteen mutations of ordering, statements,
+counts, proof encoding and authority are rejected. The real depth-32 source
+proof also passes the verifier circuit directly; changed public data fails.
+See the [merge measurements](binary-veil.md#four-child-tree-merge).
 
 ## What might be publishable?
 

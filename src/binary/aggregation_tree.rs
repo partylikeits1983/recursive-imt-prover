@@ -10,6 +10,9 @@ use super::{
     tree::{Hash, keccak},
 };
 
+pub mod files;
+pub mod merge;
+
 const LEAF_DOMAIN: &[u8] = b"IMT-AGG-LEAF-V2";
 const NODE_DOMAIN: &[u8] = b"IMT-AGG-NODE-V2";
 pub const STATEMENT_BYTES: usize = 33;
@@ -72,6 +75,12 @@ impl TreeStatement {
                 .collect::<Result<_>>()?;
         }
         Ok(level.remove(0))
+    }
+
+    pub fn verifier_fields(&self) -> Vec<F> {
+        (0..2)
+            .flat_map(|side| self.fields().into_iter().chain([F::new(side)]))
+            .collect()
     }
 
     pub fn fields(&self) -> [F; STATEMENT_BYTES] {

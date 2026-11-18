@@ -22,7 +22,7 @@ use p3_recursion::{
     pcs::binary::{BinaryPolyCoordinateOpeningPlan, BinaryPolyDeferredWhirTraceVerifier},
     verifier::{
         AuthenticatedCoordinateOpenings, BinaryPolyCoordinateWhirVerifier, CoordinatePcsParameters,
-        CoordinateWhirTargets,
+        CoordinateWhirTargets, VerifierLimits,
     },
 };
 
@@ -102,6 +102,11 @@ impl Verifier {
                 parameters(1, &pp, &self.data.preprocessed_coordinates),
                 MerkleCap::new(cap.roots().to_vec()),
             )),
+            &VerifierLimits {
+                // Product GKR sums rounds across its radix-four layers.
+                max_rounds: 320,
+                ..VerifierLimits::default()
+            },
         )?;
         Ok(RecursiveArithmetic {
             verifier,

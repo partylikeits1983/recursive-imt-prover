@@ -55,9 +55,11 @@ Roots can differ and repeated statements are permitted. Changing order, count,
 root or nullifier hash changes the expected statement. The public list remains available;
 only the statement consumed inside recursion has fixed length.
 
-The gadget tests generate proofs of the hash relation at multiple levels using
-one key. The `masked-demo --tree-pair` command separately generates two real
-masked child proofs, aggregates them and verifies again in a fresh process.
+The `masked-demo --tree-pair` command generates two real masked child proofs,
+aggregates them and verifies again in a fresh process. `merge-demo` now combines
+two such aggregates into one proof for four children. It verifies independently
+without the child or intermediate proofs. Its source key is fixed; the output
+key differs, so this does not yet satisfy same-key recursion.
 
 First aggregation reuses two instances of one child-verifier template. Each
 instance authenticates its own statement leaf and computes the parent with a
@@ -108,45 +110,32 @@ an equivalent-security benchmark for this project's 128-bit target.
 
 ## Implementation order
 
-The checkpoint Keccak reduction now has a native Poly64 circuit replaying all
-24 cubic sumchecks over Poly192. Its separate fixed-width transcript binds the
-complete initial claim and avoids reproducing Postcard's variable-length integer
-encoding in the circuit. The checkpoint first aggregation now uses this
-fixed-width transcript; older checkpoint proofs and verifier keys must be regenerated.
-The transposed linear layer factors by lane and bit; cyclic rotations use two
-carry states instead of materializing a dense weight vector.
+`RecursiveAggregate` composes the full product-bus, AIR, main/preprocessing PCS
+and linked Keccak verifier under a fixed trusted authority. The coordinate
+adapter reconstructs logical columns from authenticated bit coordinates. Keccak
+GKR constrains all 24 rounds, the arithmetic port link and four authenticated
+boundary openings. Transcript seeds bind the authority and boundary commitment.
+The first aggregation uses the circuit-compatible fixed-width transcript;
+older checkpoint proofs and verifier keys must be regenerated.
 
-The native Boolean-WHIR adapter also verifies complete batches across multiple
-tables, including successor openings and aligned column blocks. Real-proof tests
-check transcript agreement and reject matching forged public/private openings.
-`src/binary/checkpoint.rs` now composes the GKR reduction, input closing and
-boundary PCS verification in one native circuit. Its deferred ring-switch adapter
-checks tensor readings and closes their linear functional in WHIR's first
-sumcheck, using the backend's existing protocol. Real proofs pass; modified
-commitments, tensors, openings and proof messages fail after witness import.
-An actual outer proof also verifies against a separately restored verifier key.
-At the previous rate 1/2, eight Keccak permutations used 616,467 witnesses. One first-proof
-sample took 1.21 s to prove and 57 ms to verify (1.25 MB, M2 Pro, four threads).
-The full test command's peak RSS was 943 MB; this is not physical footprint.
-[Raw component measurement](../benchmarks/binary/checkpoint-keccak/recursive-committed.json).
-The linked adapter now also constrains the 232 arithmetic port readings against
-four authenticated boundary openings, including byte-swapped words. Its arithmetic
-transcript seed binds the authority and boundary commitment before row challenges.
-The coordinate-opening adapter reconstructs logical columns from authenticated
-bit coordinates using trusted widths. `RecursiveAggregate` now composes the full
-product-bus, AIR, main/preprocessing PCS and linked Keccak verifier under a fixed
-trusted authority. A small real aggregate passes this circuit with 3,875,402
-witnesses; modified public inputs and post-import proof messages are rejected.
-Two such verifiers now produce an actual outer proof, accepted by a separately
-restored trusted key. One component run took 14.0 s to prove and 99 ms to verify,
-with a 1.25 MB proof. Each source fixture contains one Keccak permutation plus
-arithmetic constraints; these are not depth-32 IMT aggregates or a cyclic merge.
-[Raw component measurement](../benchmarks/binary/checkpoint-keccak/recursive-aggregate.json).
-Common geometry and the cyclic merge authority remain unfinished.
+`PreparedMerge` embeds two instances of that verifier and constrains their
+ordered parent digest/count. The four-child run uses 15.3 million witnesses per
+template and 688 million initial codeword cells. Warm merge time is 59.4 s median,
+with a 1.386 MB proof and 142 ms fresh verification. Setup takes another 19.3 s.
+This measures only the merge stage, excluding child and first-aggregate proving.
+Peak physical footprint is 23.4 GB; the sub-10-second target remains unmet.
+[Raw measurements and optimization](binary-veil.md#four-child-tree-merge).
+
+Real-proof tests reject changes to public inputs and imported proof messages.
+Fresh-process tests also reject altered statements, ordering, counts, encoding
+and authorities. Common geometry and the cyclic merge authority remain unfinished.
 
 Run these component checks with:
 
 ```bash
+# After creating run/pair32 with masked-demo --tree-pair and checkpoint.
+IMT_AGGREGATE_INPUT=run/pair32 RAYON_NUM_THREADS=4 cargo test --locked --release \
+  real_tree_pair_verifies_recursively -- --include-ignored --nocapture
 RAYON_NUM_THREADS=4 cargo test --locked --release --workspace \
   verifier::recursive -- --include-ignored --nocapture --test-threads=1
 RAYON_NUM_THREADS=4 cargo test --locked --release -p imt-flock-backend \
@@ -165,9 +154,9 @@ RAYON_NUM_THREADS=4 cargo test --locked --release --test linked_checkpoint \
    [measurements](binary-veil.md#compact-aggregate-proofs).
 2. **Implement the checkpoint verifier inside a binary circuit.** Reuse upstream
    native Poly192 sumcheck, product-bus, Boolean WHIR and Keccak gadgets. The
-   combined verifier now passes small real aggregates, tamper tests and an actual
-   two-verifier outer proof. Measure and prove it on depth-32 first aggregates.
-   A reduction without its authenticated PCS boundaries is not an aggregate.
+   combined verifier and fixed-authority merge now pass on depth-32 first
+   aggregates, including independent verification and tamper tests. This step
+   is complete; its measured memory and proving time need improvement.
 3. **Fix the common aggregate layout.** First aggregation and merge must share
    a bounded proof shape, public layout, hash/PCS parameters and AIR layout.
    Their preprocessing authorities may differ. Measure the merge graph and pad
