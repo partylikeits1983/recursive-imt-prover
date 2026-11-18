@@ -22,3 +22,5 @@ Upstream ring-switch tests remain available.
 ```sh
 cargo test --locked --release --manifest-path vendor/p3-sumcheck/Cargo.toml --target-dir target --lib ring_switch::bits
 ```
+
+Unused development dependencies removed: `criterion`.

@@ -41,10 +41,8 @@ thiserror = { version = "2.0", default-features = false }
 tracing = { version = "0.1.44", default-features = false, features = ["attributes"] }
 
 [dev-dependencies]
-criterion = { version = "0.8" }
 p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-binary-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
-p3-binary-pcs = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-blake3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-bus = { features = ["diagnostics"], git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-dft = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
@@ -57,8 +55,6 @@ p3-sha256-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a73
 p3-whir = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 rand = { version = "0.10.1", default-features = false }
-tracing-forest = { version = "0.3.1", features = ["ansi", "smallvec"] }
-tracing-subscriber = { version = "0.3.23", default-features = false, features = ["alloc", "std", "env-filter"] }
 
 [profile.release]
 codegen-units = 16

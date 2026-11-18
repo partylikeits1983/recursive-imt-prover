@@ -18,3 +18,5 @@ including unequal products and both short and long malformed prefixes.
 ```sh
 cargo test --locked --release --manifest-path vendor/p3-bus/Cargo.toml --target-dir target --features parallel --lib argument::tests
 ```
+
+Unused development dependencies removed: `criterion`.

@@ -1,8 +1,5 @@
-//! Experimental characteristic-two port of VEIL's inner algebraic argument.
-//!
-//! This is not the native MultiStark/WHIR child backend. The code and transcript
-//! changes need a complete simulation and composition analysis before the
-//! application may claim full ZK or 128-bit end-to-end security.
+//! Experimental binary masking and proof aggregation.
+//! Joint privacy and end-to-end soundness remain unproved.
 
 pub mod aggregate;
 mod air_algebra;

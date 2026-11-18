@@ -45,3 +45,5 @@ resource-bound; see the root README for timings and security limitations.
 The local copy is necessary because the upstream portable registry rejects
 Johnson even though native WHIR supports it. Keep these changes explicit when
 updating the dependency; do not silently replace Johnson with capacity bounds.
+
+Unused development dependencies removed: `p3-poseidon2`.

@@ -1,8 +1,5 @@
-//! Eliminate auxiliary fanout values for wires used once or twice.
-//!
-//! Singletons need no equality; pairs match their two actual uses directly.
-//! Higher-fanout wires and the zero sentinel retain their copy table. Equations and Keccak ports
-//! remain unchanged. Classification and selectors use only trusted preprocessing.
+//! Remove single-use auxiliary copies and directly match pairs.
+//! Higher fanout and ID zero retain their copy constraints.
 use crate::F;
 use anyhow::{Result, bail, ensure};
 use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression};

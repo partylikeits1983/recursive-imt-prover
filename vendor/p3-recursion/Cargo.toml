@@ -70,7 +70,6 @@ p3-dft = "0.9.0-rc.2"
 p3-goldilocks = "0.9.0-rc.2"
 p3-keccak-air = "0.9.0-rc.2"
 p3-matrix = "0.9.0-rc.2"
-p3-poseidon2 = "0.9.0-rc.2"
 p3-test-utils = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-util = "0.9.0-rc.2"
 proptest = { version = "1.11", default-features = true }

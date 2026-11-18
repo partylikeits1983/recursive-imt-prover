@@ -39,7 +39,6 @@ p3-binary-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a
 p3-challenger = { features = ["test-utils"], git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-keccak = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-matrix = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
-criterion = { version = "0.8" }
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 rand = { version = "0.10.1", default-features = false }
 rand_xoshiro = { version = "0.8.1" }

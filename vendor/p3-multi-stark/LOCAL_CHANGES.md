@@ -88,3 +88,5 @@ The application uses this receipt to link its Keccak boundary proof to the
 arithmetic proof; an unverified opening is never accepted as a receipt. Backend
 tests exercise actual valid arithmetic proofs, altered authenticated values,
 changed public values and mismatched Keccak subarguments.
+
+Unused development dependencies removed: `criterion`, `p3-binary-pcs`, `tracing-forest`, `tracing-subscriber`.

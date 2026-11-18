@@ -43,7 +43,6 @@ p3-keccak = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6c
 p3-koala-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-merkle-tree = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
-criterion = { version = "0.8" }
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 rand = { version = "0.10.1", default-features = false, features = ["std_rng"] }
 serde_json = { version = "1.0.150" }

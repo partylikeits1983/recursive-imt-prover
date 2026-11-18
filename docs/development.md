@@ -59,55 +59,20 @@ These requirements do not change when inspecting other implementations.
    separately reporting circuit construction, proof generation, decoding,
    trusted setup and final verification. Profile before changing the design;
    compare a recursion tree only if the fixed batch hits a measured limit.
-   Depth-32 N=4 now completes end to end, with 5 GiB of initial codewords and
-   about 31.6 GB peak physical footprint including compressed/swapped pages.
-   The local prover patches regenerate product-bus leaves, factor equality
-   weights, omit fixed-zero preprocessing columns and release unused folded
-   capacity; large bus columns defer their first extension-field allocation.
-   Larger batches still need lower simultaneous sumcheck storage;
-   the current construction/codeword guards remain in place. Authenticated
-   verifier snapshots now avoid rebuilding proving tables: a fresh N=4 verifier
-   takes about 181 ms total and 34 MB RSS. Reduce AIR opening reductions and
-   simultaneous prover allocations next. Checkpointed Keccak
-   GKR now has a standalone committed component and an optional fully linked
-   aggregate backend (`--keccak-backend checkpoint`). Its boundary commitment is
-   fixed before the arithmetic proof; authenticated native port readings close
-   an additional sumcheck/PCS link. Flock remains the default while measuring
-   the complete tradeoff. Both use authenticated v2 verifier snapshots.
-   The first linked depth-32 N=2 measurement reduced physical footprint to
-   18.74 GB but increased warm aggregation to 70.56 s; that comparison preceded
-   the grouped-copy and known-opening optimizations below.
-   The indexed-lookup/Logup* experiment was rejected: its pushforward vectors
-   are sent in full, making a canonical witness table too large, and its many
-   position openings produced a 46 MB PCS proof even on a two-permutation test.
-   The current optimization groups repeated witness reads into bounded rows,
-   preserving each ordinary product-bus factor and the successor checks.
-   The first checkpoint depth-32 N=8 run used 41.5 GB peak physical
-   footprint and took 347.6 s to aggregate. A brief profile
-   caught boundary PCS evaluation materializing full equality-weight vectors.
-   The mixed PCS adapter now forwards prover-computed opening values for
-   unchanged Boolean batches; the existing PCS authenticates them. The checkpoint
-   prover reuses its four boundary evaluations, avoiding full-table equality
-   vectors. Differential tests preserve proof bytes and transcript challenges;
-   incorrect supplied values still fail cryptographic verification. Dense
-   coordinate expansions retain the original evaluation path. Depth-32 N=2
-   checkpoint aggregation now takes 32.52 s warm, with 10.63 GB peak footprint.
-   N=8 now takes 220.62 s cold and 219.72 s warm median; its peak footprint
-   remains about 41.5 GB. Its circuit, parameters and trusted key are unchanged.
-   Reusing a captured AIR and a shared expression DAG was tested and dropped:
-   warm timing ranges overlapped, with only about a 2% median improvement for
-   the DAG. Avoid adding that evaluator without a stronger measured benefit.
-   The adapter now eliminates single-use auxiliary copies and directly matches
-   pairs; higher-fanout IDs and the zero sentinel retain the product-bus copy
-   table. Counts and selectors are fixed by the trusted circuit. At depth 32,
-   N=2 retains 3.02 million copy rows instead of 13.58 million and halves the
-   main PCS codeword allocation. See the current measurements in `binary-veil.md`.
-   Larger batches still need less simultaneous prover storage and circuit
-   construction memory. Investigate compiling one child-verifier template and
-   instantiating it over an ordered batch, with separate authenticated wire/port
-   namespaces, instead of building every verifier into one large circuit.
-   This is proposed work, not an implemented aggregation mode. Do not simply
-   raise the current resource guards.
+   Current depth-32 checkpoint results: N=2 takes 29.69 s warm with 9.23 GB
+   peak physical footprint; N=8 takes 202.22 s with 35.73 GB. Flock retains the
+   smaller proof and slightly faster verification. See `binary-veil.md` for raw
+   measurements, ranges and the Flock proving regression.
+   Product-bus leaves are regenerated in chunks; known Boolean PCS evaluations
+   avoid full equality vectors. Fixed-zero preprocessing is omitted, repeated
+   copies share rows, and single-use/pair auxiliary copies are eliminated.
+   Verifier snapshots avoid reconstructing prover tables in the final process.
+   Next, reduce simultaneous sumcheck storage and circuit construction memory.
+   Investigate one child-verifier template instantiated over an ordered batch,
+   with separately authenticated wire/port namespaces. Keep resource guards.
+   Avoid two rejected approaches: indexed Logup* required large transmitted
+   pushforwards, and a shared AIR expression DAG produced only about 2%
+   improvement with overlapping warm timing ranges.
 
 Do not implement Ethereum verification yet. Optimize the measured fixed-batch
 prover before adding another recursion layer.
