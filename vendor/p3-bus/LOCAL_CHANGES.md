@@ -20,3 +20,14 @@ cargo test --locked --release --manifest-path vendor/p3-bus/Cargo.toml --target-
 ```
 
 Unused development dependencies removed: `criterion`.
+
+`BusInteractionRecorder::RECORDS_BUS_INTERACTIONS` defaults to true. Constraint-only
+builders opt out of payload construction through `push_bus_interaction_with`.
+The existing declaration method still emits every activation constraint, in the
+same order. Symbolic bus recording remains eager and unchanged. Tests compare
+payloads and constraints with the original method, forbid payload evaluation in
+constraint-only passes, and reject non-Boolean activations.
+
+```sh
+cargo test --locked --release --manifest-path vendor/p3-bus/Cargo.toml --target-dir target --features parallel --lib builder::tests
+```

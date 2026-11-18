@@ -139,9 +139,14 @@ impl Chip {
             })
             .collect();
         ensure!(next > 0, "empty arithmetic preprocessing");
+        air.constraints = air
+            .constraints
+            .iter()
+            .map(|c| specialize(c, &shard.zero_columns))
+            .collect();
         air.interactions.retain(|i| {
             !matches!(&i.activation, OldActivation::Boolean(v)
-            if fixed_value(v, &shard.zero_columns) == Some(OldF::from_repr(0)))
+            if is_fixed_zero(v, &shard.zero_columns))
         });
         air.gates = Some(shard);
         Ok(Self::Native(air))
@@ -210,8 +215,7 @@ impl Chip {
             // same-ID selector is therefore identically zero. Remove only
             // equations that vanish by this trusted substitution, then check
             // that no remaining equation can read a successor value.
-            constraints
-                .retain(|c| fixed_value(c, &[false, false, true]) != Some(OldF::from_repr(0)));
+            constraints.retain(|c| !is_fixed_zero(c, &[false, false, true]));
             ensure!(
                 constraints.iter().all(|c| !uses_next_main(c)),
                 "remaining fanout successor constraint"
@@ -372,26 +376,25 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                         })
                     };
                     if a.successor {
-                        let row = b.main().current_slice().to_vec();
-                        let addresses = b.periodic_values().to_vec();
-                        // Every next-value is matched to the following row at its unique
-                        // trusted address. The repeat-last endpoint is constrained locally.
+                        let row = [
+                            b.main().current(main_offset).unwrap(),
+                            b.main().current(main_offset + 1).unwrap(),
+                        ];
                         let first = b.is_first_row();
                         let last = b.is_last_row();
-                        b.push_bus_interaction(
+                        b.push_bus_interaction_with(
                             BusName::new(successor_bus),
                             BusDirection::Push,
-                            [addresses[0].into(), row[main_offset].into()],
+                            |b| vec![b.periodic_values()[0].into(), row[0].into()],
                             BusActivation::Boolean(AB::Expr::ONE - first),
                         );
-                        b.push_bus_interaction(
+                        b.push_bus_interaction_with(
                             BusName::new(successor_bus),
                             BusDirection::Pull,
-                            [addresses[1].into(), row[main_offset + 1].into()],
+                            |b| vec![b.periodic_values()[1].into(), row[1].into()],
                             BusActivation::Boolean(AB::Expr::ONE - last.clone()),
                         );
-                        b.when(last)
-                            .assert_eq(row[main_offset], row[main_offset + 1]);
+                        b.when(last).assert_eq(row[0], row[1]);
                     }
                     if a.public_table {
                         // The only committed column is a zero placeholder. Original
@@ -403,14 +406,6 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                         b.assert_zero(value);
                     }
                     for (index, i) in a.interactions.iter().enumerate() {
-                        let mut fields: Vec<_> = i
-                            .fields
-                            .iter()
-                            .map(|v| resolve(v, b, a, instance))
-                            .collect();
-                        if i.bus_name == "imt.keccak" {
-                            fields[0] += F::from_repr((instance * a.hash_stride) as u64);
-                        }
                         let activation = if let Some(Some(column)) =
                             a.copies.replacements.get(index)
                         {
@@ -430,13 +425,23 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                                 }
                             }
                         };
-                        b.push_bus_interaction(
+                        b.push_bus_interaction_with(
                             BusName::new(bus(index)),
                             match i.direction {
                                 OldDirection::Push => BusDirection::Push,
                                 OldDirection::Pull => BusDirection::Pull,
                             },
-                            fields,
+                            |b| {
+                                let mut fields: Vec<_> = i
+                                    .fields
+                                    .iter()
+                                    .map(|v| resolve(v, b, a, instance))
+                                    .collect();
+                                if i.bus_name == "imt.keccak" {
+                                    fields[0] += F::from_repr((instance * a.hash_stride) as u64);
+                                }
+                                fields
+                            },
                             activation,
                         );
                     }
@@ -444,14 +449,17 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                         // The first occurrence is the original imported pull.
                         // Additional occurrences use the SAME constrained value,
                         // with trusted Boolean selectors for the exact count.
-                        let id = b.preprocessed().current(0).unwrap();
-                        let value = b.main().current(main_offset).unwrap();
                         for copy in 1..shard.copies_per_row() {
                             let active = b.preprocessed().current(2 + copy).unwrap();
-                            b.push_bus_interaction(
+                            b.push_bus_interaction_with(
                                 BusName::new(bus(0)),
                                 BusDirection::Pull,
-                                [id.into(), value.into()],
+                                |b| {
+                                    vec![
+                                        b.preprocessed().current(0).unwrap().into(),
+                                        b.main().current(main_offset).unwrap().into(),
+                                    ]
+                                },
                                 BusActivation::Boolean(active.into()),
                             );
                         }
@@ -459,24 +467,24 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                 }
             }
             Self::Keccak { .. } => {
-                let row = b.main().current_slice().to_vec();
-                let pp = b.preprocessed().current_slice().to_vec();
+                let pp = core::array::from_fn::<_, 3, _>(|i| b.preprocessed().current(i).unwrap());
                 for boundary in 0..2 {
-                    let fields = core::iter::once(pp[boundary].into())
-                        .chain(
-                            row[boundary * 100..boundary * 100 + 100]
-                                .iter()
-                                .map(|v| (*v).into()),
-                        )
-                        .chain(
-                            row[200 + boundary * 16..216 + boundary * 16]
-                                .iter()
-                                .map(|v| (*v).into()),
-                        );
-                    b.push_bus_interaction(
+                    b.push_bus_interaction_with(
                         BusName::new("imt.keccak"),
                         BusDirection::Push,
-                        fields,
+                        |b| {
+                            let row = b.main();
+                            core::iter::once(pp[boundary].into())
+                                .chain(
+                                    (boundary * 100..boundary * 100 + 100)
+                                        .map(|i| row.current(i).unwrap().into()),
+                                )
+                                .chain(
+                                    (200 + boundary * 16..216 + boundary * 16)
+                                        .map(|i| row.current(i).unwrap().into()),
+                                )
+                                .collect::<Vec<AB::Expr>>()
+                        },
                         BusActivation::Boolean(pp[2].into()),
                     );
                 }
@@ -571,35 +579,27 @@ pub(crate) fn successor_values<EF: ExtensionField<F>>(point: &[EF]) -> Vec<EF> {
     vec![current, next]
 }
 
-// Partial evaluation uses only fixed preprocessing; witness-dependent terms
-// remain unknown. Removing a bus declaration is permitted only for exact zero.
-fn fixed_value(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> Option<OldF> {
+// Substitute only trusted zero preprocessing columns. Keep the ordered constraint
+// list intact, including zero equations, so sumcheck weights remain unchanged.
+fn specialize(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> SymbolicExpression<OldF> {
     match e {
-        SymbolicExpr::Leaf(BaseLeaf::Constant(v)) => Some(*v),
         SymbolicExpr::Leaf(BaseLeaf::Variable(v))
             if v.entry == (BaseEntry::Preprocessed { offset: 0 })
                 && zero_columns.get(v.index) == Some(&true) =>
         {
-            Some(OldF::from_repr(0))
+            OldF::from_repr(0).into()
         }
-        SymbolicExpr::Add { x, y, .. } => {
-            Some(fixed_value(x, zero_columns)? + fixed_value(y, zero_columns)?)
-        }
-        SymbolicExpr::Sub { x, y, .. } => {
-            Some(fixed_value(x, zero_columns)? - fixed_value(y, zero_columns)?)
-        }
-        SymbolicExpr::Mul { x, y, .. } => {
-            let x = fixed_value(x, zero_columns);
-            let y = fixed_value(y, zero_columns);
-            if x == Some(OldF::from_repr(0)) || y == Some(OldF::from_repr(0)) {
-                Some(OldF::from_repr(0))
-            } else {
-                Some(x? * y?)
-            }
-        }
-        SymbolicExpr::Neg { x, .. } => Some(-fixed_value(x, zero_columns)?),
-        _ => None,
+        SymbolicExpr::Add { x, y, .. } => specialize(x, zero_columns) + specialize(y, zero_columns),
+        SymbolicExpr::Sub { x, y, .. } => specialize(x, zero_columns) - specialize(y, zero_columns),
+        SymbolicExpr::Mul { x, y, .. } => specialize(x, zero_columns) * specialize(y, zero_columns),
+        SymbolicExpr::Neg { x, .. } => -specialize(x, zero_columns),
+        _ => e.clone(),
     }
+}
+
+fn is_fixed_zero(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> bool {
+    matches!(specialize(e, zero_columns), SymbolicExpr::Leaf(BaseLeaf::Constant(v))
+        if v == OldF::from_repr(0))
 }
 
 // Only eliminate columns whose imported equation is exactly main[i] = public[i].

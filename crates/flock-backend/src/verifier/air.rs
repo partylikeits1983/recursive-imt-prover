@@ -131,6 +131,9 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for VerifierAir {
         for constraint in &self.constraints {
             builder.assert_zero(constraint.resolve(builder));
         }
+        if !AB::RECORDS_BUS_INTERACTIONS {
+            return;
+        }
         let mut recorded = RecordedBus(builder);
         for interaction in &self.interactions {
             let activation = match &interaction.activation {

@@ -99,3 +99,9 @@ evaluator. This changes prover work only, with no new full-height tables.
 The existing differential test compares every round against generic evaluation,
 including Poly64/Poly192, mixed heights, packed columns, selectors, cancellation
 and zero/one challenges. Run the bus tests above.
+
+Ordinary, lookup and sliced constraint folders declare that they discard bus
+payloads. AIRs using the deferred bus API can skip those expressions while
+retaining every activation constraint. Product-bus evaluation still uses the
+complete recorded symbolic declarations. No transcript, degree, opening or
+security equation changes.

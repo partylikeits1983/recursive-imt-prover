@@ -55,6 +55,8 @@ where
     Var: Algebra<F> + Copy + Send + Sync,
     Acc: Algebra<Var> + Copy,
 {
+    const RECORDS_BUS_INTERACTIONS: bool = false;
+
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
         _token: RecordToken,
@@ -950,6 +952,8 @@ where
     Var: Algebra<F> + Copy + Send + Sync,
     Acc: Algebra<Var> + Copy,
 {
+    const RECORDS_BUS_INTERACTIONS: bool = false;
+
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
         _token: RecordToken,

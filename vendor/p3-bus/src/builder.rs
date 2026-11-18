@@ -74,6 +74,9 @@ pub enum BusActivation<E> {
 /// Implementations receive only declarations whose activation constraint was emitted.
 #[doc(hidden)]
 pub trait BusInteractionRecorder: AirBuilder {
+    /// False only when the builder discards bus payloads. Activation checks still apply.
+    const RECORDS_BUS_INTERACTIONS: bool = true;
+
     /// Store one checked declaration.
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
@@ -115,6 +118,23 @@ pub struct RecordToken(());
 /// }
 /// ```
 pub trait BusInteractionBuilder: BusInteractionRecorder {
+    /// Construct payload expressions only for a recorder that consumes them.
+    /// The closure must not emit constraints or change protocol state.
+    fn push_bus_interaction_with<E: Into<Self::Expr>>(
+        &mut self,
+        bus: BusName<'_>,
+        direction: BusDirection,
+        fields: impl FnOnce(&Self) -> Vec<E>,
+        activation: BusActivation<Self::Expr>,
+    ) {
+        let fields = if Self::RECORDS_BUS_INTERACTIONS {
+            fields(self)
+        } else {
+            Vec::new()
+        };
+        self.push_bus_interaction(bus, direction, fields, activation);
+    }
+
     /// Declare one tuple contribution on a named bus.
     ///
     /// A conditional activation is constrained to zero or one before it is recorded.
@@ -502,6 +522,8 @@ impl<F: Field, EF: ExtensionField<F>> IndexedLookupBuilder for BusSymbolicBuilde
 }
 
 impl<F: Field, EF: ExtensionField<F>> BusInteractionRecorder for InteractionSymbolicBuilder<F, EF> {
+    const RECORDS_BUS_INTERACTIONS: bool = false;
+
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
         _token: RecordToken,
@@ -518,6 +540,8 @@ impl<F: Field, EF: ExtensionField<F>> BusInteractionRecorder for InteractionSymb
 }
 
 impl<F: Field, EF: ExtensionField<F>> BusInteractionRecorder for DebugConstraintBuilder<'_, F, EF> {
+    const RECORDS_BUS_INTERACTIONS: bool = false;
+
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
         _token: RecordToken,
@@ -539,13 +563,18 @@ mod tests {
     use alloc::{format, vec};
 
     use p3_air::symbolic::{AirLayout, BaseEntry, BaseLeaf, SymbolicExpr};
-    use p3_air::{Air, BaseAir, WindowAccess, check_constraints};
-    use p3_binary_field::BinaryField128;
+    use p3_air::{Air, BaseAir, WindowAccess, check_all_constraints, check_constraints};
+    use p3_binary_field::{BinaryField128, TowerLevel};
     use p3_matrix::dense::RowMajorMatrix;
     use rand::{RngExt, SeedableRng};
     use rand_xoshiro::Xoroshiro128Plus;
 
     use super::*;
+
+    struct DeferredAir {
+        deferred: bool,
+        forbid_payload: bool,
+    }
 
     /// The one place this fixture names its channel.
     const DISPATCH: BusName<'static> = BusName::new("dispatch");
@@ -563,6 +592,76 @@ mod tests {
             // One column carries payloads and one carries row activation.
             2
         }
+    }
+
+    impl BaseAir<BinaryField128> for DeferredAir {
+        fn width(&self) -> usize {
+            2
+        }
+    }
+
+    impl<AB: BusInteractionBuilder<F = BinaryField128>> Air<AB> for DeferredAir {
+        fn eval(&self, builder: &mut AB) {
+            let activation = BusActivation::Boolean(builder.main().current(1).unwrap().into());
+            let fields = |b: &AB| {
+                assert!(!self.forbid_payload, "constraint pass evaluated payload");
+                vec![b.main().current(0).unwrap()]
+            };
+            if self.deferred {
+                builder.push_bus_interaction_with(DISPATCH, BusDirection::Push, fields, activation);
+            } else {
+                builder.push_bus_interaction(
+                    DISPATCH,
+                    BusDirection::Push,
+                    fields(builder),
+                    activation,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn deferred_payload_preserves_declarations_and_activation_constraints() {
+        let eager = DeferredAir {
+            deferred: false,
+            forbid_payload: false,
+        };
+        let deferred = DeferredAir {
+            deferred: true,
+            forbid_payload: false,
+        };
+        let eager =
+            BusSymbolicBuilder::<BinaryField128>::from_air(&eager, AirLayout::from_air(&eager));
+        let deferred = BusSymbolicBuilder::<BinaryField128>::from_air(
+            &deferred,
+            AirLayout::from_air(&deferred),
+        );
+        assert_eq!(
+            format!("{:?}", eager.interactions()),
+            format!("{:?}", deferred.interactions())
+        );
+        assert_eq!(
+            format!("{:?}", eager.base_constraints()),
+            format!("{:?}", deferred.base_constraints())
+        );
+        let constraints_only = DeferredAir {
+            deferred: true,
+            forbid_payload: true,
+        };
+        let symbolic = InteractionSymbolicBuilder::<BinaryField128, BinaryField128>::from_air(
+            &constraints_only,
+            AirLayout::from_air(&constraints_only),
+        );
+        assert_eq!(
+            format!("{:?}", eager.base_constraints()),
+            format!("{:?}", symbolic.base_constraints())
+        );
+        for selector in [BinaryField128::ZERO, BinaryField128::ONE] {
+            let trace = RowMajorMatrix::new(vec![BinaryField128::ONE, selector], 2);
+            assert!(check_all_constraints(&constraints_only, &trace, &[], None).is_ok());
+        }
+        let trace = RowMajorMatrix::new(vec![BinaryField128::ONE, BinaryField128::from_repr(2)], 2);
+        assert!(!check_all_constraints(&constraints_only, &trace, &[], None).is_ok());
     }
 
     impl<AB> Air<AB> for DirectionAir

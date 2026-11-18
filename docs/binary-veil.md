@@ -6,8 +6,9 @@ It supports depths 16/32, independent-process verification, and a one-proof
 Flock aggregate of complete masked-child verifiers. The older native aggregator
 remains a separate non-ZK-child baseline. Cryptographic acceptance remains
 **false**: joint statistical ZK and end-to-end 128-bit security are not established.
-See [the current aggregate](#end-to-end-aggregate) below; earlier sections retain
-their explicitly versioned component measurements.
+See [the aggregate relation](#end-to-end-aggregate) and
+[current measurements](#specialized-air-evaluation). Earlier sections retain
+versioned component measurements.
 
 ## Complete masked child and compact trace openings
 
@@ -128,7 +129,7 @@ python3 scripts/bench-veil.py --out run/masked-children --depths 16 32 \
 ## Upstream inspection and implementation plan
 
 The next implementation steps are tracked in
-[development.md](development.md#next-milestones). The source inspection found:
+[development.md](development.md#next-work). The source inspection found:
 
 | Source | What can be reused | Missing support for this project |
 |---|---|---|
@@ -1532,54 +1533,89 @@ The sub-ten-second aggregate target remains unmet.
 
 ## Shared child-verifier template
 
-The masked aggregate now compiles one child verifier. Its N executions occupy
-separate groups of witness columns while sharing the fixed preprocessing.
-Witness and successor bus names include the child position. Keccak roles use
-disjoint power-of-two ranges in one combined permutation batch. Public offsets
-bind every root and amount to its child. All N verification relations remain
-constrained; the trusted key still fixes depth and N.
+The masked aggregate compiles one child verifier. Its N executions use separate
+witness columns and share fixed preprocessing. Witness and successor bus names
+include the child position. Keccak roles use disjoint ranges in one permutation
+batch; public offsets bind each root and amount to its child. The trusted key
+still fixes depth and N.
 
-No WHIR or multi-STARK protocol change is needed. The backend identities advance
-to Flock v11 and checkpoint v4; child formats and security parameters stay fixed.
-Construction limits apply to the single template. Aggregate codeword and Keccak
-budgets remain unchanged. Cached verifier AIRs allow 8,192 columns to accommodate
-repetition, with the existing codeword, key-size and security checks still enforced.
+Backend identities are Flock v11 and checkpoint v4. Child formats, security
+parameters and aggregate resource guards are unchanged. Construction limits
+apply to the template; cached verifier AIRs allow up to 8,192 columns.
 
-For depth-32 checkpoint N=2, preprocessing codeword cells fall from 67,108,864 to
-33,554,432. Main and checkpoint allocations stay at 67,108,864 and 8,388,608 cells.
-The template has 7,210,772 witnesses. Construction takes **5.768 s**, versus
-12.628 s previously. Aggregation takes **25.227 s cold** and **24.887–25.378 s
-warm**, median **25.132 s** (8.3% faster). Warm critical-path median is 33.192 s.
-Peak physical footprint is **6.423 GB**, down 30.1%; the process takes 110.752 s.
-Proofs grow to **1,817,856–1,818,653 bytes**. Fresh verification takes **155.52 ms**,
-including 134.40 ms decoding/verification and 15.45 ms key loading, at 28.70 MB RSS.
-The key is 66,478 bytes and the conditional algebraic ledger is 146.253 bits.
-[Checkpoint measurements](../benchmarks/binary/masked-aggregate/checkpoint-shared-template-d32-n2.json).
+The first depth-32 N=2 measurement reduced checkpoint preprocessing codeword
+cells from 67,108,864 to 33,554,432. Main and checkpoint allocations remained
+67,108,864 and 8,388,608 cells. The template has 7,210,772 witnesses.
 
-Flock N=2 takes **31.317 s cold** and **30.100–31.643 s warm**, median **30.871 s**,
-10.7% below the preceding 34.587 s. Construction takes **5.515 s**. Peak physical
-footprint falls from 16.447 GB to **13.978 GB**; the process takes 123.079 s.
-Warm critical-path median is 37.924 s. Proofs grow to **1,418,467–1,419,778 bytes**.
-Fresh verification takes **144.03 ms**, including 123.76 ms decoding/verification
-and 15.30 ms key loading, at 36.13 MB RSS. The key is 66,241 bytes; the conditional
-algebraic ledger is 146.552 bits. Main codeword allocation remains 268,435,456 cells;
-preprocessing halves to 33,554,432.
-[Flock measurements](../benchmarks/binary/masked-aggregate/flock-shared-template-d32-n2.json).
+| Initial shared-template result | Checkpoint | Flock |
+|---|---:|---:|
+| Setup | 5.768 s | 5.515 s |
+| Cold aggregation | 25.227 s | 31.317 s |
+| Warm aggregation median (range) | 25.132 s (24.887–25.378) | 30.871 s (30.100–31.643) |
+| Peak physical footprint | 6.423 GB | 13.978 GB |
+| Proof size | 1.818–1.819 MB | 1.418–1.420 MB |
+| Fresh verification | 155.52 ms | 144.03 ms |
 
-These runs use the M2 Pro, four threads, Rust 1.98.1 and unchanged Johnson/security
-parameters, without concurrent compilation or profiling. Filesystem caches were
-not reset. Source fingerprint:
+[Checkpoint report](../benchmarks/binary/masked-aggregate/checkpoint-shared-template-d32-n2.json)
+and [Flock report](../benchmarks/binary/masked-aggregate/flock-shared-template-d32-n2.json)
+record the M2 Pro, four-thread measurements at source fingerprint
 `20ae649cd78230ec900e3010aab134d1b0079d6ba15db450c4e14d15233b659a`.
-The eight-child measurement above predates this layout and has not been rerun.
-Proving still exceeds the ten-second target. The change saves setup and prover
-memory; it does not improve measured final-verification latency or proof size.
+Tests cover distinct and repeated instances, ordering, public inputs, counts,
+authority and proof tampering. The optimization reduced setup and memory;
+proofs grew about 4–5% and final verification remained similar.
 
-Formatting, workspace Clippy, all 53 active library tests and the depth-16
-repeated-membership integration test pass. Shared-template tests prove three distinct
-instances and repeated statements with both backends, reject changed or reordered
-public values and wrong counts, and round-trip the expanded verifier AIR. The
-fresh-process suites accept the real depth-32 N=2 aggregate and reject 13 statement,
-proof and authority mutations for
-[checkpoint](../benchmarks/binary/masked-aggregate/checkpoint-shared-template-negative.json)
-and [Flock](../benchmarks/binary/masked-aggregate/flock-shared-template-negative.json).
-Child statistical ZK and end-to-end 128-bit security remain unproved.
+## Specialized AIR evaluation
+
+Constraint-only AIR passes now skip constructing discarded bus payloads while
+retaining every activation check. Arithmetic expressions substitute trusted zero
+preprocessing columns once during import. The ordered constraint list, including
+zero equations, is preserved. Bus recording and witness-dependent terms remain
+unchanged. Existing expression folding replaces the separate constant evaluator.
+
+Both depth-32 N=2 verifier keys are byte-for-byte identical to the preceding
+version. Old and new binaries verify each other's proofs for both backends. The
+constraint and bus tests, 53 active library tests, depth-16 integration test,
+formatting and workspace/vendor Clippy pass. No protocol or parameter change
+is involved; child statistical ZK and end-to-end security remain unproved.
+
+On the M2 Pro with four threads, depth-32 N=2 improves without changing proof
+geometry or verifier keys:
+
+| Backend | Cold aggregation | Warm median (range) | Proof size | Fresh verify | Peak physical footprint |
+|---|---:|---:|---:|---:|---:|
+| Checkpoint | 22.355 s | 22.488 s (22.371–22.605) | 1.817–1.819 MB | 143.54 ms | 6.436 GB |
+| Flock | 28.505 s | 27.768 s (27.508–28.028) | 1.418–1.419 MB | 133.38 ms | 13.995 GB |
+
+Warm aggregation falls 10.5% for checkpoint and 10.1% for Flock relative to the
+shared-template results above. Setup is 5.716/5.762 s; warm full-batch critical
+path is 30.148/34.683 s. Fresh verification includes 15.90/14.95 ms key loading
+and 121.56/113.39 ms decoding/verification. These are three-sample runs, with two
+warm samples; compilation and profiling are excluded and filesystem caches are
+not reset. Physical footprint includes compressed/swapped memory.
+
+[Checkpoint measurements](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-d32-n2.json),
+[Flock measurements](../benchmarks/binary/masked-aggregate/flock-specialized-air-d32-n2.json)
+and their fresh-process tamper checks
+([checkpoint](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-negative.json),
+[Flock](../benchmarks/binary/masked-aggregate/flock-specialized-air-negative.json))
+use source fingerprint
+`ee0f03c24d8d03461a8f7725c8f186a69ad2a4d57e201d00670d2c5066bd05dc`.
+Both reject all 13 statement, proof and authority mutations. The sub-ten-second
+aggregate target remains unmet.
+
+The same build completes depth-32 N=8: **122.334 s cold**, then
+**120.741–121.837 s warm**, median **121.289 s**. Compared with the older
+direct-pair layout's 202.216 s median, this is a 40.0% reduction across the
+intervening affine-bus, shared-template and AIR changes. Peak physical footprint
+falls from 35.730 GB to **16.344 GB**. Setup falls from 97.479 s to **5.520 s**;
+the full three-sample process takes 455.740 s and warm critical path is 148.493 s.
+
+Proofs grow from 1.909 MB to **2,545,913–2,546,406 bytes**. Fresh verification is
+**175.19 ms**, including 23.02 ms key loading and 146.28 ms decoding/verification,
+at 33.85 MB RSS. The key is 259,099 bytes. Main codeword allocation remains
+268,435,456 cells, while preprocessing falls eightfold to 33,554,432; checkpoint
+boundaries use another 33,554,432. The conditional algebraic ledger is 145.995 bits.
+[Raw N=8 measurements](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-d32-n8.json)
+and [13 rejected tampering cases](../benchmarks/binary/masked-aggregate/checkpoint-specialized-air-n8-negative.json)
+record the same hardware, threads, parameters and source fingerprint. No
+compilation or profiling ran concurrently. Scaling beyond eight remains unmeasured.

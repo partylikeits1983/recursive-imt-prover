@@ -43,6 +43,8 @@ impl<B: AirBuilder> AirBuilder for RecordedBus<'_, B> {
 }
 
 impl<B: BusInteractionRecorder> BusInteractionRecorder for RecordedBus<'_, B> {
+    const RECORDS_BUS_INTERACTIONS: bool = B::RECORDS_BUS_INTERACTIONS;
+
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
         token: RecordToken,

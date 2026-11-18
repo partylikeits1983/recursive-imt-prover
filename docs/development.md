@@ -23,9 +23,9 @@ See [security limits](binary-security.md) and [measurements](binary-veil.md).
    Keccak separately. Keep parameters fixed and report cold/warm ranges, setup,
    proof size, memory and independent verification. Current results exceed
    the latency target.
-2. Remeasure the shared child-verifier template at eight children, then extend
-   to 16–64 under the existing resource guards. Measure main trace, PCS and Keccak
-   memory before adding another recursion layer.
+2. Extend the measured eight-child template to 16–64 under the existing resource
+   guards. Measure main trace, PCS and Keccak memory before adding another
+   recursion layer.
 3. Complete the joint privacy and security analysis: simulation, abort
    probabilities, adaptive Fiat–Shamir composition and lifetime error budgets.
    Keep binary fields, Keccak and Johnson bounds. Conditional algebraic budgets

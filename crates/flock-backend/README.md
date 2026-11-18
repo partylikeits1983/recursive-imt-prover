@@ -4,9 +4,10 @@ Final, non-hiding proof backend. Uses the official Plonky3
 [PR #2582](https://github.com/Plonky3/Plonky3/pull/2582) at
 `708900d7a730d6ce4d5421d43e2193f2301920fa` (package version 0.8.0).
 This is an open experimental upstream change, not a released recursion backend.
-Two narrow upstream prover patches avoid retaining all temporary bus blocks and
-restrict deferred opening sweeps to their nonzero support. Their proof equations
-and verifier are unchanged; see [sumcheck](../../vendor/p3-sumcheck/LOCAL_CHANGES.md)
+Local prover patches reduce temporary allocations and repeated AIR/bus evaluation.
+Their proof equations and verifier are unchanged; see
+[bus](../../vendor/p3-bus/LOCAL_CHANGES.md),
+[sumcheck](../../vendor/p3-sumcheck/LOCAL_CHANGES.md)
 and [multi-STARK](../../vendor/p3-multi-stark/LOCAL_CHANGES.md).
 
 The application and native circuit compiler stay on 0.9.0-rc.2. `air.rs` imports
@@ -67,7 +68,8 @@ Local adaptations:
   byte storage for fixed preprocessing expands losslessly before proving.
   Preprocessing columns that are identically zero are substituted with zero;
   bus entries are removed only when their activation is provably zero from
-  that fixed preprocessing. No witness-dependent entry is pruned.
+  that fixed preprocessing. Constraint expressions are simplified once during
+  import, preserving their number and order. No witness-dependent entry is pruned.
 - The native fanout table's successor read is an extra current-row column.
   A product bus matches `(next row address, next value)` to the following row's
   `(row address, value)`; the final value repeats locally. Public row addresses

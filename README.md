@@ -89,17 +89,16 @@ are warm medians; fresh verification includes authenticated verifier-key loading
 
 | Backend / children | Aggregation | Proof size | Fresh verification |
 |---|---:|---:|---:|
-| Flock / 2 | 30.9 s | 1.42 MB | 144 ms |
-| Checkpoint / 2 | 25.1 s | 1.82 MB | 156 ms |
-| Checkpoint / 8 | 202.2 s | 1.91 MB | 187 ms |
+| Flock / 2 | 27.8 s | 1.42 MB | 133 ms |
+| Checkpoint / 2 | 22.5 s | 1.82 MB | 144 ms |
+| Checkpoint / 8 | 121.3 s | 2.55 MB | 175 ms |
 
 Batches through eight have verified end to end. Scaling to 16–64 children remains
-a research target. The eight-child result predates the shared-template
-optimization; it has not been remeasured with that change.
+a research target.
 
 Aggregation remains expensive. Peak physical footprint ranges from about 6.4 GB
-to 35.7 GB, including compressed/swapped memory. Filesystem caches were not reset.
-[Raw measurements, ranges and optimization history](docs/binary-veil.md#shared-child-verifier-template).
+to 16.3 GB, including compressed/swapped memory. Filesystem caches were not reset.
+[Raw measurements, ranges and optimization history](docs/binary-veil.md#specialized-air-evaluation).
 
 ## Running locally
 

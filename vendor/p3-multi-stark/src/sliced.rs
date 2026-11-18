@@ -860,6 +860,8 @@ where
     S: Field,
     R: Field,
 {
+    const RECORDS_BUS_INTERACTIONS: bool = false;
+
     fn record_bus_interaction<E: Into<Self::Expr>>(
         &mut self,
         _token: RecordToken,
