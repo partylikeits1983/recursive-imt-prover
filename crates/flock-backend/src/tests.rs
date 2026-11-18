@@ -425,10 +425,10 @@ fn check_split_fanout(commit_public_ids: bool) {
         let full = shard.preprocessing();
         let compact = shard.compact_preprocessing();
         let retained: Vec<_> = shard
-            .zero_columns
+            .preprocessing_widths
             .iter()
             .enumerate()
-            .filter_map(|(column, &zero)| (!zero).then_some(column))
+            .filter_map(|(column, &width)| (width != 0).then_some(column))
             .collect();
         assert_eq!(compact.width, retained.len());
         for (original, reduced) in full
@@ -437,7 +437,7 @@ fn check_split_fanout(commit_public_ids: bool) {
             .zip(compact.values.chunks_exact(compact.width))
         {
             for (column, &value) in original.iter().enumerate() {
-                if shard.zero_columns[column] {
+                if shard.preprocessing_widths[column] == 0 {
                     assert_eq!(value, F::ZERO);
                 }
             }
@@ -465,7 +465,7 @@ fn check_split_fanout(commit_public_ids: bool) {
                 values[r * width + c] = convert(original[1].column(c).value(source_row as usize));
             }
         }
-        airs.push(Chip::import_gates(bus.airs()[1].clone(), shard).unwrap());
+        airs.push(Chip::import_gates(bus.airs()[1].clone(), shard, false).unwrap());
         rows.push(RowMajorMatrix::new(values, width));
         publics.push(vec![]);
     }

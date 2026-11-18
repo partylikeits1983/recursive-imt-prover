@@ -1,94 +1,54 @@
 # recursive-imt-prover
 
-**Binary-field Keccak IMT proofs, with experimental statistical ZK and tree aggregation.**
+This prototype aggregates depth-32 Keccak-256 incremental Merkle tree (IMT)
+membership proofs over binary fields. One proof authenticates an ordered list
+of public Merkle roots and nullifier hashes. Clients keep their witnesses and
+send the aggregator only their proofs and public statements.
 
-A research proof of concept for aggregating Keccak-256 incremental Merkle tree
-(IMT) membership proofs into one proof authenticating an ordered list of public
-roots and nullifier hashes. Each child proves a private note-preimage and membership
-relation. The aggregator receives child proofs and public statements, never the
-original private witnesses.
-
-**Status:** Experimental. Child statistical zero knowledge and end-to-end
-128-bit security have not been established. Not suitable for production or
-real funds. No on-chain verifier.
+**Research status.** The child uses experimental statistical zero-knowledge
+masking. Its privacy proof and the end-to-end 128-bit security analysis remain
+open. Verification runs natively. This prototype is unsuitable for real funds.
 
 ## Three-circuit design
 
-| Circuit | Role | Status |
-|---|---|---|
-| IMT child | Prove private membership in a depth-32 Keccak IMT | Implemented with experimental masking |
-| First aggregation | Verify two child proofs and produce a standard aggregate | Implemented in the common recursive format |
-| Recursive merge | Verify two aggregates and produce another aggregate | One circuit/key verified across all five levels of a 64-child tree |
+| Circuit | Statement |
+|---|---|
+| IMT child | I know a leaf preimage and a path to the public root. The nullifier in the leaf hashes to the public nullifier hash. |
+| First aggregation | Two masked child proofs verify under the pinned child key. |
+| Recursive merge | Two aggregate proofs verify under the first-aggregation key at the base level or the merge key at higher levels. |
 
 ```text
-64 IMT children → 32 first aggregates → 16 → 8 → 4 → 2 → 1
-                                       same merge circuit/key
+64 children → 32 first aggregates → 16 → 8 → 4 → 2 → 1
+                                    one merge circuit and key
 ```
 
-The design requires **one merge circuit and verifier key at every higher level**.
-First aggregation and merge now share a fixed proof shape and verifier layout.
-The cyclic circuit carries the merge authority, selects the pinned first authority
-at the base level, and authenticates its own authority during final verification.
-Final native verification needs no fourth circuit.
-
-Every aggregate authenticates a fixed-size Keccak digest and child count. Final
-verification recomputes that digest from the complete ordered `(root, nullifier_hash)`
-list and checks the proof using independently trusted verifier data. It needs
-neither child proofs nor intermediate aggregates. Roots may differ; repeated
-statements are valid. Spending, spent-nullifier tracking and accepted-root history are outside
-scope.
-
-The tree is designed for balanced batches of 2, 4, 8, 16, 32 or 64 children.
-The 64-child integration test passed: 64 children, 32 first aggregates and 31
-merges, with one merge circuit/key across all five higher levels. Independent
-final verification and statement, proof and authority rejection checks passed.
-The eight- and 64-child runs used byte-identical merge keys.
-See the [architecture and acceptance test](docs/aggregation-tree.md).
-
-Aggregates are intentionally non-ZK. Their inputs are child proofs and public
-statements; they add no privacy guarantee beyond the child construction.
+First aggregation and merge produce the same proof format. Each aggregate
+binds a child count and a Keccak digest of its ordered statements. A fresh
+verifier recomputes the digest from the public list and checks the final proof
+against its trusted key. Aggregates are non-ZK. The integration test used
+the same merge key across all five levels and rejected tampered proofs,
+statements and verifier data. [Architecture and acceptance test](docs/aggregation-tree.md)
 
 ## Child relation
 
-Given a public root and nullifier hash, the child proves knowledge of a secret
-number, nullifier and authentication path satisfying:
-
 ```text
-leaf = Keccak256(
-    "IMT-KECCAK-LEAF2" || secret_num[32] || nullifier[32]
-)
-
+leaf           = Keccak256("IMT-KECCAK-LEAF2" || secret_num[32] || nullifier[32])
 nullifier_hash = Keccak256("IMT-KECCAK-NULL1" || nullifier[32])
-
-parent = Keccak256(
-    "IMT-KECCAK-NODE1" || left[32] || right[32]
-)
-
-MerkleRoot(leaf, path, leaf_index) == root
+parent         = Keccak256("IMT-KECCAK-NODE1" || left[32] || right[32])
+root           = MerkleRoot(leaf, siblings, leaf_index)
 ```
 
-Domain tags are fixed ASCII bytes, without a terminator. `secret_num` is a
-32-byte little-endian unsigned integer; the nullifier is 32 private bytes.
-The same nullifier is constrained in both hashes. The tree is binary and
-append-only; child proofs support depth 32 only.
+The tags are ASCII bytes without a terminator. The secret number is a 32-byte
+little-endian unsigned integer. The nullifier, siblings and leaf index are
+private. Children can use different roots, and a batch may repeat a valid
+statement. The protocol covers membership only. A ledger would track accepted
+roots and spent nullifiers separately.
 
-| Public inputs | Private witness |
-|---|---|
-| Merkle root (32 bytes) | Secret number (32 bytes) |
-| Nullifier hash (32 bytes) | Nullifier (32 bytes) |
-| | Merkle siblings |
-| | Leaf index / path directions |
-
-Children use Poly64/Poly192 binary fields, Keccak-256, additive WHIR and
-VEIL-inspired masking. The first aggregation constrains the complete child
-verifier, including transcripts, PCS openings, sumcheck, AIR and consistency
-checks. A native verifier result is not a substitute for these constraints.
-The [protocol architecture](docs/protocol.md) describes the relation, masking,
-aggregation, serialization and research contributions.
-
-Checkpoint is the backend for `tree-demo`: a native product bus linked to a
-committed Keccak GKR argument. The older `masked-demo` also supports Flock and
-flat batches as diagnostic baselines.
+Children use Poly64/Poly192, additive WHIR and VEIL-inspired masking. The
+first aggregation circuit checks the child transcript, polynomial openings,
+sumcheck, AIR constraints and masking consistency proofs. The tree uses
+Plonky3's product bus linked to a committed Keccak GKR argument.
+[Protocol architecture](docs/protocol.md)
 
 ## Security parameters
 
@@ -116,8 +76,9 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-The 64-child test ran on an Apple M2 Pro with eight Rayon workers and one
-active proving node. Times are per-proof medians and ranges within that run.
+The previous 64-child benchmark (revision `5667011`) ran on an Apple M2 Pro
+with eight Rayon workers and one active proving node. Each median and range
+covers all proofs of that type within one run.
 
 | Operation | Median | Range |
 |---|---:|---:|
@@ -136,21 +97,16 @@ was 20.2 GB, including compressed or swapped memory.
 The proof meets the 1.5 MB size target. The targets of 1 MB, 10 seconds per
 merge and 60 seconds for the full aggregation remain open.
 
-With eight children and eight workers on both versions, the seven aggregation
-nodes took 210.2 s on the previous version and 163.6 s on this one, a 22.1%
-reduction in one run per version. Median merge time fell from 31.28 s to 24.41 s.
-The original 64-child run used four workers, so its 48.9-minute aggregation time
-also reflects a thread-count difference.
-[Matched eight-child measurements](benchmarks/binary/tree-merge/compact-sixty-four.json) ·
-[Original 64-child run](benchmarks/binary/tree-merge/cyclic-sixty-four.json).
-
-Running two nodes concurrently on the M2 Pro increased eight-child aggregation
-wall time from 164.0 s to 230.3 s. Compilation overlapped part of the two-node
-run. [Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json).
+The new fixed gate tables halve the preprocessing codeword to 67,108,864
+cells. Benchmarks above use the previous layout. A separate sibling concurrency
+test on this machine found that two active proving nodes took longer than one.
+[Fixed layout](docs/aggregation-tree.md#fixed-layout) ·
+[Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json).
 
 ## Running locally
 
-Requires Rust 1.98.1. The default is four threads. Use fresh output directories.
+Requires Rust 1.98.1. The tree prover uses the available CPU count, up to 64
+workers. Use `--threads 8` to reproduce the benchmark. Use fresh output directories.
 The full tree test is expensive and is excluded from routine CI.
 
 ```sh

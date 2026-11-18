@@ -4,9 +4,9 @@ use p3_binary_field::TowerLevel as NewTowerLevel;
 use super::{GateLayout, partition};
 
 const LAYOUT: [GateLayout; 3] = [
-    ([64, 64, 64, 0, 64], 4),
-    ([64, 64, 64, 0, 64], 4),
-    ([16, 0, 16, 0, 16], 4),
+    GateLayout::new([64, 64, 64, 0, 64], 4, [64; 14]),
+    GateLayout::new([64, 64, 64, 0, 64], 4, [64; 14]),
+    GateLayout::new([16, 0, 16, 0, 16], 4, [64; 14]),
 ];
 
 fn rows(count: usize) -> Vec<F> {
@@ -34,10 +34,11 @@ fn fixed_layout_preserves_empty_tables_and_every_source_row() {
                 .collect::<Vec<_>>(),
             (0..count as u32).collect::<Vec<_>>()
         );
-        for (shard, (widths, log)) in shards.iter().zip(LAYOUT) {
+        for (shard, layout) in shards.iter().zip(LAYOUT) {
+            let (widths, log) = (layout.main, layout.log_height);
             assert_eq!(shard.coordinate_widths, widths);
             assert_eq!(shard.log_height, log);
-            assert_eq!(shard.zero_columns, [false; 14]);
+            assert_eq!(shard.preprocessing_widths, layout.preprocessing);
             let pp = shard.preprocessing();
             assert_eq!(pp.width, 14);
             assert_eq!(pp.values.len(), 14 << log);
@@ -76,4 +77,53 @@ fn fixed_layout_rejects_overflow_and_invalid_sources() {
     assert!(partition(&widths, &source, 14, 3, &[], Some(&LAYOUT)).is_err());
     assert!(partition(&widths, &source, 14, 5, &[], Some(&LAYOUT[2..])).is_err());
     assert!(partition(&widths, &source, 14, 5, &[], Some(&[])).is_err());
+}
+
+#[test]
+fn fixed_gate_columns_must_be_zero_before_they_are_omitted() {
+    let omitted = [3, 5, 11];
+    let layout = [GateLayout::new(
+        [64; 5],
+        4,
+        core::array::from_fn(|i| if omitted.contains(&i) { 0 } else { 64 }),
+    )];
+    let mut source = rows(5);
+    let widths = [0, 64, 64, 64];
+    let shards = partition(&widths, &source, 14, 5, &[], Some(&layout)).unwrap();
+    let pp = shards[0].compact_preprocessing();
+    assert_eq!(pp.width, 11);
+    let live: Vec<_> = source[..14]
+        .iter()
+        .enumerate()
+        .filter(|(column, _)| !omitted.contains(column))
+        .map(|(_, v)| v.to_repr())
+        .collect();
+    assert!(pp.values[..11].iter().map(|v| v.to_repr()).eq(live));
+    for column in omitted {
+        source[column] = F::from_repr(1);
+        assert!(partition(&widths, &source, 14, 5, &[], Some(&layout)).is_err());
+        source[column] = F::from_repr(0);
+    }
+}
+
+#[test]
+fn wide_coefficients_use_the_general_gate_table() {
+    let mut narrow = [64; 14];
+    narrow[5] = 1;
+    let layout = [
+        GateLayout::new([16, 0, 16, 0, 16], 4, narrow),
+        GateLayout::new([64, 0, 64, 0, 64], 4, [64; 14]),
+    ];
+    let mut rows = [F::from_repr(0); 28];
+    for (row, coefficient) in rows.as_chunks_mut::<14>().0.iter_mut().zip([1, 2]) {
+        row[0] = F::from_repr(1);
+        row[2] = F::from_repr(2);
+        row[4] = F::from_repr(3);
+        row[5] = F::from_repr(coefficient);
+        row[12] = F::from_repr(1);
+    }
+    let groups = partition(&[0, 16, 16, 16], &rows, 14, 5, &[], Some(&layout)).unwrap();
+    assert_eq!(groups[0].source_rows, [0]);
+    assert_eq!(groups[1].source_rows, [1]);
+    assert_eq!(groups[1].preprocessing().values[5].to_repr(), 2);
 }

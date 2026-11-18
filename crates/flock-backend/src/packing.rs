@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Reverse, sync::Arc};
 
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
@@ -6,7 +6,7 @@ use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 
-use crate::{F, recursive_layout::PACKED_ROWS_LOG};
+use crate::F;
 
 #[cfg(test)]
 mod tests;
@@ -40,12 +40,18 @@ impl Packing {
         pp_width: usize,
         main_width: usize,
         fanout: &[OldF],
-        recursive: bool,
+        fixed_log_height: Option<usize>,
     ) -> Result<Self> {
         ensure!(
             pp_width != 0 && gates.len().is_multiple_of(pp_width) && fanout.len().is_multiple_of(3),
             "invalid packing source shape"
         );
+        ensure!(
+            fixed_log_height.is_none_or(|log| log < usize::BITS as usize),
+            "invalid packed table height"
+        );
+        let geometric = fixed_log_height.is_some();
+        let row_limit = fixed_log_height.map_or(usize::MAX, |log| 1usize << log);
         let mut result = Self {
             shard: None,
             removed_rows: vec![false; gates.len() / pp_width],
@@ -54,7 +60,7 @@ impl Packing {
         // The pinned full native gate schema has five IDs, a constant and eight selectors.
         // Other compact schemas keep their original rows.
         if main_width != 5 || pp_width != 14 {
-            ensure!(!recursive, "unexpected recursive gate schema");
+            ensure!(!geometric, "unexpected recursive gate schema");
             return Ok(result);
         }
         let mut counts = vec![0u32; widths.len()];
@@ -102,7 +108,7 @@ impl Packing {
                     || next <= current
                     || next >= rows.len()
                     || result.removed_rows[next]
-                    || (recursive && rows[next][5] != rows[current][5] * OldF::from_repr(2))
+                    || (geometric && rows[next][5] != rows[current][5] * OldF::from_repr(2))
                 {
                     break;
                 }
@@ -124,26 +130,30 @@ impl Packing {
                 row.ids[term] = u32::try_from(rows[source][0].to_repr())?;
                 row.coefficients[term] = rows[source][5].to_repr();
                 result.removed_rows[source] = true;
-                if term + 1 < row.sources.len() {
-                    result.removed_ids[rows[source][4].to_repr() as usize] = true;
-                }
             }
             packed.push(row);
         }
-        if recursive || !packed.is_empty() {
-            let log_height = if recursive {
-                ensure!(
-                    packed.len() <= 1 << PACKED_ROWS_LOG,
-                    "recursive packing capacity exceeded"
-                );
-                PACKED_ROWS_LOG
-            } else {
+        if packed.len() > row_limit {
+            packed.sort_by_key(|row| Reverse(row.sources.len()));
+            for row in packed.drain(row_limit..) {
+                for source in row.sources {
+                    result.removed_rows[source as usize] = false;
+                }
+            }
+        }
+        for row in &packed {
+            for &source in &row.sources[..row.sources.len() - 1] {
+                result.removed_ids[rows[source as usize][4].to_repr() as usize] = true;
+            }
+        }
+        if geometric || !packed.is_empty() {
+            let log_height = fixed_log_height.unwrap_or_else(|| {
                 packed.len().next_power_of_two().trailing_zeros().max(4) as usize
-            };
+            });
             result.shard = Some(Arc::new(PackedShard {
                 rows: packed,
                 log_height,
-                geometric: recursive,
+                geometric,
             }));
         }
         Ok(result)

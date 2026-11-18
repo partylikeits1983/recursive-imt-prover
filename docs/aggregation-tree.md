@@ -49,15 +49,20 @@ shape. Gate constants, wire IDs and selectors remain committed preprocessing.
 Table capacities are fixed; construction rejects overflow. It also compares the
 complete serialized verifier equations and layout before accepting the merge.
 
-For a run of up to 16 input bits with coefficients `s, sX, sX², ...`, where
-`X` is the Poly64 polynomial-basis element encoded as `0b10`, the packed
-row stores the first coefficient `s`.
-It constrains the output to equal the incoming accumulator plus `s` times
-the packed word. Active inputs must be bits and unused slots must be zero.
-All other coefficients use native arithmetic gates. This reduced the
-preprocessing codeword from 268,435,456 to 134,217,728 cells and the combined
-initial codewords from 553,648,128 to 419,430,400 cells.
-[Layout comparison](../benchmarks/binary/tree-merge/geometric-packing.json).
+The packing table reserves 262,144 rows. Each row replaces up to 16 additions
+with coefficients `s, sX, sX², ...`, where `X` is the Poly64 basis element
+encoded as `0b10`. The row commits one scale `s` and constrains the output to
+the previous accumulator plus `s` times the packed word. Active inputs are
+bits and unused inputs are zero. If the table fills, the longest chains take
+priority. The remaining operations and their copy constraints use native gates.
+
+Each arithmetic table declares which wire IDs, selectors and coefficient bits it
+needs. Setup checks every source row against the table's bounds and capacity.
+Multiplication tables omit the constant and unused selectors. Constant gates use
+17-bit or 64-bit coefficient columns. First aggregation and merge share these
+definitions. This reduces the preprocessing codeword from 134,217,728 to
+67,108,864 cells and the three initial codewords together from 419,430,400 to
+352,321,536 cells.
 
 ## Authenticated cyclic authority
 

@@ -215,7 +215,7 @@ impl Prepared {
             gates_pp.width,
             bus.airs()[1].width(),
             &fanout_pp.values,
-            recursive,
+            recursive.then_some(recursive_layout::PACKED_ROWS_LOG),
         )?;
         let packed_rows = packing.shard.as_ref().map_or(0, |s| s.rows.len());
         let packed_geometric_rows = if recursive {
@@ -325,7 +325,11 @@ impl Prepared {
             });
         }
         for shard in gates {
-            airs.push(Chip::import_gates(bus.airs()[1].clone(), shard.clone())?);
+            airs.push(Chip::import_gates(
+                bus.airs()[1].clone(),
+                shard.clone(),
+                recursive,
+            )?);
             log_heights.push(shard.log_height);
             sources.push(TableSource {
                 index: 1,

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::check_all_constraints;
@@ -18,14 +16,19 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn pack(&self, pp_width: usize, main_width: usize, recursive: bool) -> Result<Packing> {
+    fn pack(
+        &self,
+        pp_width: usize,
+        main_width: usize,
+        fixed_log_height: Option<usize>,
+    ) -> Result<Packing> {
         Packing::new(
             &self.widths,
             &self.gates,
             pp_width,
             main_width,
             &self.fanout,
-            recursive,
+            fixed_log_height,
         )
     }
 }
@@ -87,7 +90,7 @@ fn trace(shard: &PackedShard, values: &[F]) -> RowMajorMatrix<F> {
 #[test]
 fn packed_chains_preserve_equations_and_every_retained_copy() -> Result<()> {
     let fixture = fixture(37);
-    let packing = fixture.pack(14, 5, false)?;
+    let packing = fixture.pack(14, 5, None)?;
     let shard = packing.shard.as_ref().unwrap();
     assert_eq!(
         shard
@@ -147,7 +150,7 @@ fn shared_intermediates_and_other_gate_shapes_are_preserved() -> Result<()> {
     fixture
         .fanout
         .extend([live as u64, 1, 0].map(OldF::from_repr));
-    let packing = fixture.pack(14, 5, false)?;
+    let packing = fixture.pack(14, 5, None)?;
     assert!(!packing.removed_ids[live]);
     assert!(
         packing
@@ -158,11 +161,11 @@ fn shared_intermediates_and_other_gate_shapes_are_preserved() -> Result<()> {
             .any(|r| r.ids[TERMS + 1] as usize == live)
     );
     fixture.widths[1..=37].fill(64);
-    let packing = fixture.pack(14, 5, false)?;
+    let packing = fixture.pack(14, 5, None)?;
     assert!(packing.shard.is_none());
     assert!(!packing.removed_rows.iter().any(|&v| v));
-    assert!(fixture.pack(14, 3, false)?.shard.is_none());
-    assert!(fixture.pack(0, 5, false).is_err());
+    assert!(fixture.pack(14, 3, None)?.shard.is_none());
+    assert!(fixture.pack(0, 5, None).is_err());
     Ok(())
 }
 
@@ -180,8 +183,17 @@ fn scaled_bit_words_preserve_partial_rows_and_general_coefficients() -> Result<(
         f.values[end] = f.values[start] + f.values[bit] * F::from_repr(row[5].to_repr());
         scale *= F::from_repr(2);
     }
-    let mut packing = f.pack(14, 5, true)?;
-    let compact = packing.shard.as_mut().unwrap();
+    let limited = f.pack(14, 5, Some(0))?;
+    assert_eq!(limited.shard.as_ref().unwrap().rows.len(), 1);
+    assert!(limited.removed_rows[..16].iter().all(|v| *v));
+    assert!(limited.removed_rows[16..].iter().all(|v| !v));
+    for row in &f.gates.as_chunks::<14>().0[16..37] {
+        for column in [0, 2, 4] {
+            assert!(!limited.removed_ids[row[column].to_repr() as usize]);
+        }
+    }
+    let packing = f.pack(14, 5, Some(4))?;
+    let compact = packing.shard.as_ref().unwrap();
     assert_eq!(
         compact
             .rows
@@ -199,7 +211,6 @@ fn scaled_bit_words_preserve_partial_rows_and_general_coefficients() -> Result<(
             }
         }
     }
-    Arc::get_mut(compact).unwrap().log_height = 4;
     let air = Chip::packed(compact.clone());
     assert!(check_all_constraints(&air, &trace(compact, &f.values), &[], Some(1)).is_ok());
     let mut bad = trace(compact, &f.values);
@@ -207,5 +218,23 @@ fn scaled_bit_words_preserve_partial_rows_and_general_coefficients() -> Result<(
     bad.values[WIDTH + TERMS + 1] +=
         F::from_repr(compact.rows[1].coefficients[0]) * F::from_repr(1 << 5);
     assert!(!check_all_constraints(&air, &bad, &[], Some(1)).is_ok());
+    Ok(())
+}
+
+#[test]
+fn a_full_packing_table_keeps_the_longer_chain() -> Result<()> {
+    let mut f = fixture(20);
+    for (i, row) in f.gates.as_chunks_mut::<14>().0[..20].iter_mut().enumerate() {
+        row[5] = OldF::from_repr(1 << if i < 4 { i } else { i - 4 });
+    }
+    let packed = f.pack(14, 5, Some(0))?;
+    assert_eq!(
+        packed.shard.unwrap().rows[0].sources,
+        (4..20).collect::<Vec<_>>()
+    );
+    assert!(packed.removed_rows[..4].iter().all(|removed| !removed));
+    for row in &f.gates.as_chunks::<14>().0[..4] {
+        assert!(!packed.removed_ids[row[4].to_repr() as usize]);
+    }
     Ok(())
 }

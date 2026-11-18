@@ -2,6 +2,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    thread::available_parallelism,
     time::Instant,
 };
 
@@ -45,7 +46,7 @@ static ALLOCATOR: MiMalloc = MiMalloc;
 struct Args {
     #[arg(long, default_value_t = 64)]
     batch_size: usize,
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = available_parallelism().map_or(1, usize::from).min(64))]
     threads: usize,
     /// Maximum number of sibling pairs proved concurrently in the shared thread pool.
     #[arg(long, default_value_t = 1)]

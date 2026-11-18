@@ -1,5 +1,5 @@
 //! Independent arithmetic rows grouped by their trusted coordinate widths.
-use crate::F;
+use crate::{F, recursive_layout::WITNESS_ID_BITS as ID};
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_binary_field::TowerLevel;
@@ -10,27 +10,50 @@ use std::sync::Arc;
 #[cfg(test)]
 mod tests;
 
-pub type GateLayout = ([usize; 5], usize);
-
-pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
-    ([16, 64, 64, 0, 16], 20),
-    ([64, 64, 64, 0, 64], 21),
-    ([64, 64, 64, 0, 64], 19),
-    ([64, 0, 64, 0, 64], 20),
-    ([64, 0, 64, 0, 64], 18),
-    ([64, 64, 64, 64, 64], 18),
-];
+#[derive(Clone, Copy, Debug)]
+pub struct GateLayout {
+    main: [usize; 5],
+    log_height: usize,
+    preprocessing: [usize; 14],
+}
 
 pub struct GateShard {
     pub coordinate_widths: Vec<usize>,
     pub source_rows: Vec<u32>,
     pub log_height: usize,
-    pub zero_columns: Vec<bool>,
+    pub preprocessing_widths: Vec<usize>,
     // Fixed preprocessing is stored compactly in memory, then expanded exactly
     // for the upstream AIR/PCS. This is lossless storage, not a proof encoding.
     column_bytes: Arc<[usize]>,
     preprocessing_bytes: Vec<u8>,
 }
+
+impl GateLayout {
+    const fn new(main: [usize; 5], log_height: usize, preprocessing: [usize; 14]) -> Self {
+        Self {
+            main,
+            log_height,
+            preprocessing,
+        }
+    }
+}
+
+// Five wire IDs, one field coefficient, then eight native operation selectors.
+const SMALL_OUTPUT: [usize; 14] = [ID, ID, ID, 0, ID, 1, 1, 1, 1, 1, 1, 0, 1, 1];
+const MUL_OR_MUL_ADD: [usize; 14] = [ID, ID, ID, 0, ID, 0, 0, 0, 1, 0, 1, 0, 0, 0];
+const fn constant_gates(coefficient_bits: usize) -> [usize; 14] {
+    [ID, 0, ID, 0, ID, coefficient_bits, 1, 0, 0, 0, 0, 0, 1, 1]
+}
+const FIVE_WIRE_GATES: [usize; 14] = [ID, ID, ID, ID, ID, 0, 0, 0, 0, 0, 0, 1, 0, 0];
+
+pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
+    GateLayout::new([16, 64, 64, 0, 16], 20, SMALL_OUTPUT),
+    GateLayout::new([64, 64, 64, 0, 64], 21, MUL_OR_MUL_ADD),
+    GateLayout::new([64, 64, 64, 0, 64], 19, MUL_OR_MUL_ADD),
+    GateLayout::new([64, 0, 64, 0, 64], 20, constant_gates(17)),
+    GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(64)),
+    GateLayout::new([64, 64, 64, 64, 64], 18, FIVE_WIRE_GATES),
+];
 
 impl GateShard {
     #[cfg(test)]
@@ -40,10 +63,10 @@ impl GateShard {
 
     pub fn compact_preprocessing(&self) -> RowMajorMatrix<F> {
         let columns: Vec<_> = self
-            .zero_columns
+            .preprocessing_widths
             .iter()
             .enumerate()
-            .filter_map(|(column, &zero)| (!zero).then_some(column))
+            .filter_map(|(column, &width)| (width != 0).then_some(column))
             .collect();
         assert!(
             !columns.is_empty(),
@@ -139,17 +162,17 @@ pub fn partition(
                 .collect(),
             source_rows: vec![],
             log_height: 0,
-            zero_columns: vec![true; pp_width],
+            preprocessing_widths: vec![0; pp_width],
             column_bytes: column_bytes.clone(),
             preprocessing_bytes: vec![],
         });
         shard.source_rows.push(u32::try_from(source_row)?);
-        for ((value, &bytes), zero) in row
+        for ((value, &bytes), width) in row
             .iter()
             .zip(column_bytes.iter())
-            .zip(&mut shard.zero_columns)
+            .zip(&mut shard.preprocessing_widths)
         {
-            *zero &= value.to_repr() == 0;
+            *width = (*width).max((64 - value.to_repr().leading_zeros()) as usize);
             shard
                 .preprocessing_bytes
                 .extend_from_slice(&value.to_repr().to_le_bytes()[..bytes]);
@@ -168,7 +191,7 @@ pub fn partition(
                 coordinate_widths: shard.coordinate_widths.clone(),
                 source_rows: shard.source_rows.split_off(half),
                 log_height: 0,
-                zero_columns: shard.zero_columns.clone(),
+                preprocessing_widths: shard.preprocessing_widths.clone(),
                 column_bytes: shard.column_bytes.clone(),
                 preprocessing_bytes: shard.preprocessing_bytes.split_off(half * row_bytes),
             };
@@ -190,22 +213,31 @@ fn partition_fixed(
 ) -> Result<Vec<Arc<GateShard>>> {
     ensure!(
         !layout.is_empty()
-            && layout
-                .iter()
-                .all(|(widths, log)| (4..=26).contains(log) && widths.iter().all(|&w| w <= 64)),
+            && layout.iter().all(|g| (4..=26).contains(&g.log_height)
+                && g.main
+                    .iter()
+                    .chain(&g.preprocessing)
+                    .all(|&width| width <= 64)),
         "invalid fixed gate layout"
     );
     let mut shards: Vec<_> = layout
         .iter()
-        .map(|(widths, log)| GateShard {
-            coordinate_widths: widths.to_vec(),
+        .map(|g| GateShard {
+            coordinate_widths: g.main.to_vec(),
             source_rows: vec![],
-            log_height: *log,
-            zero_columns: vec![false; 14],
+            log_height: g.log_height,
+            preprocessing_widths: g.preprocessing.to_vec(),
             column_bytes: column_bytes.clone(),
             preprocessing_bytes: vec![],
         })
         .collect();
+    let mut order: Vec<_> = (0..layout.len()).collect();
+    order.sort_by_key(|&i| {
+        (
+            layout[i].main.iter().sum::<usize>(),
+            layout[i].preprocessing[5],
+        )
+    });
     let mut padding = false;
     for (index, row) in preprocessing.as_chunks::<14>().0.iter().enumerate() {
         if row.iter().all(|v| v.to_repr() == 0) {
@@ -224,16 +256,22 @@ fn partition_fixed(
                     .ok_or_else(|| anyhow::anyhow!("gate witness ID out of range"))?,
             );
         }
-        let class = layout
-            .iter()
-            .map(|(w, _)| w)
-            .filter(|w| w.iter().zip(required).all(|(&bound, width)| bound >= width))
-            .min_by_key(|w| w.iter().sum::<usize>())
-            .ok_or_else(|| anyhow::anyhow!("gate does not fit fixed coordinate widths"))?;
-        let shard = shards
-            .iter_mut()
-            .find(|s| s.coordinate_widths == *class && s.source_rows.len() < 1 << s.log_height)
-            .ok_or_else(|| anyhow::anyhow!("fixed gate capacity exceeded for {class:?}"))?;
+        let observed = row.map(|v| (64 - v.to_repr().leading_zeros()) as usize);
+        let candidate = order.iter().copied().find(|&i| {
+            let g = &layout[i];
+            shards[i].source_rows.len() < 1 << g.log_height
+                && g.main.iter().zip(required).all(|(&max, w)| w <= max)
+                && g.preprocessing
+                    .iter()
+                    .zip(observed)
+                    .all(|(&max, w)| w <= max)
+        });
+        let group = candidate.ok_or_else(|| {
+            anyhow::anyhow!(
+                "no fixed gate table has capacity for wires {required:?} and preprocessing {observed:?}"
+            )
+        })?;
+        let shard = &mut shards[group];
         shard.source_rows.push(u32::try_from(index)?);
         for (value, &bytes) in row.iter().zip(column_bytes.iter()) {
             shard
@@ -306,8 +344,12 @@ fn coalesce(mut groups: Vec<GateShard>) -> Vec<GateShard> {
         {
             *width = (*width).max(other);
         }
-        for (zero, other) in group.zero_columns.iter_mut().zip(other.zero_columns) {
-            *zero &= other;
+        for (width, other) in group
+            .preprocessing_widths
+            .iter_mut()
+            .zip(other.preprocessing_widths)
+        {
+            *width = (*width).max(other);
         }
         group.source_rows.append(&mut other.source_rows);
         group

@@ -36,7 +36,7 @@ elapsed time. Keep aggregate proofs below 1.5 MB and work toward 1 MB. The
 Optimize in this order:
 
 1. Reduce committed linear intermediates and fixed-layout padding. The current
-   format uses 419,430,400 initial codeword cells. Preserve one merge key.
+   format uses 352,321,536 initial codeword cells. Preserve one merge key.
 2. Improve the measured arithmetic, bus and coordinate-conversion hot loops;
    reduce large copies and keep working sets within memory.
 3. Run independent pairs concurrently with an explicit memory budget and shared

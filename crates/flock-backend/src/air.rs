@@ -290,26 +290,25 @@ impl Chip {
             ]);
         };
         ensure!(
-            a.preprocessed_map
-                .iter()
-                .enumerate()
-                .all(|(i, &column)| column == Some(i)),
-            "recursive preprocessing must retain every column"
+            a.gates.is_some()
+                || a.preprocessed_map
+                    .iter()
+                    .enumerate()
+                    .all(|(i, &column)| column == Some(i)),
+            "unexpected recursive preprocessing map"
         );
         let id = recursive_layout::WITNESS_ID_BITS;
         let mut widths = if let Some(shard) = &a.shard {
             let mut widths = vec![1; shard.preprocessed_width()];
             widths[0] = id;
             widths
-        } else if a.gates.is_some() {
-            ensure!(
-                a.preprocessed_map.len() == 14,
-                "unexpected recursive gate schema"
-            );
-            let mut widths = vec![1; 14];
-            widths[..5].fill(id);
-            widths[5] = 64;
-            widths
+        } else if let Some(gates) = &a.gates {
+            gates
+                .preprocessing_widths
+                .iter()
+                .copied()
+                .filter(|&width| width != 0)
+                .collect()
         } else if a.public_table {
             ensure!(
                 a.public_ids.is_some(),
@@ -341,7 +340,11 @@ impl Chip {
     pub fn import(source: NativeBusCircuitAir<OldF>, log_height: usize) -> Result<Self> {
         Self::import_shard(source, log_height, None)
     }
-    pub fn import_gates(source: NativeBusCircuitAir<OldF>, shard: Arc<GateShard>) -> Result<Self> {
+    pub fn import_gates(
+        source: NativeBusCircuitAir<OldF>,
+        shard: Arc<GateShard>,
+        recursive: bool,
+    ) -> Result<Self> {
         ensure!(
             source.main_next_row_columns().is_empty(),
             "arithmetic partition has successor access"
@@ -350,12 +353,12 @@ impl Chip {
             unreachable!()
         };
         ensure!(
-            shard.zero_columns.len() == air.preprocessed_map.len(),
+            shard.preprocessing_widths.len() == air.preprocessed_map.len(),
             "gate preprocessing width mismatch"
         );
         let mut next = 0;
-        air.preprocessed_map = shard
-            .zero_columns
+        let zero_columns: Vec<_> = shard.preprocessing_widths.iter().map(|&w| w == 0).collect();
+        air.preprocessed_map = zero_columns
             .iter()
             .map(|&zero| {
                 if zero {
@@ -371,11 +374,15 @@ impl Chip {
         air.constraints = air
             .constraints
             .iter()
-            .map(|c| specialize(c, &shard.zero_columns))
+            .map(|c| specialize(c, &zero_columns))
+            .filter(|c| {
+                !recursive
+                    || !matches!(c, SymbolicExpr::Leaf(BaseLeaf::Constant(v)) if v.to_repr() == 0)
+            })
             .collect();
         air.interactions.retain(|i| {
             !matches!(&i.activation, OldActivation::Boolean(v)
-            if is_fixed_zero(v, &shard.zero_columns))
+            if is_fixed_zero(v, &zero_columns))
         });
         air.gates = Some(shard);
         Ok(Self::Native(air))
@@ -830,8 +837,7 @@ pub(crate) fn successor_values<EF: ExtensionField<F>>(point: &[EF]) -> Vec<EF> {
     vec![current, next]
 }
 
-// Substitute only trusted zero preprocessing columns. Keep the ordered constraint
-// list intact, including zero equations, so sumcheck weights remain unchanged.
+// Replace the preprocessing columns fixed to zero by the trusted gate layout.
 fn specialize(e: &SymbolicExpression<OldF>, zero_columns: &[bool]) -> SymbolicExpression<OldF> {
     match e {
         SymbolicExpr::Leaf(BaseLeaf::Variable(v))
