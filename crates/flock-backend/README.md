@@ -88,3 +88,9 @@ separately. These figures do not establish ROM/knowledge/recursive composition,
 post-quantum security or child privacy.
 
 Adapted upstream code retains its MIT / Apache-2.0 licenses beside this file.
+
+Product-bus leaves are regenerated in bounded chunks through the pinned
+[GKR](../../vendor/p3-gkr/LOCAL_CHANGES.md),
+[bus](../../vendor/p3-bus/LOCAL_CHANGES.md) and
+[multi-STARK](../../vendor/p3-multi-stark/LOCAL_CHANGES.md) patches. Complete-proof
+and transcript differential tests preserve the original verifier relation.

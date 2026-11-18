@@ -574,7 +574,6 @@ dependencies = [
 [[package]]
 name = "p3-bus"
 version = "0.8.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
 dependencies = [
  "hashbrown",
  "num-bigint",
@@ -675,7 +674,6 @@ dependencies = [
 [[package]]
 name = "p3-gkr"
 version = "0.8.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
 dependencies = [
  "p3-challenger",
  "p3-field",
@@ -822,6 +820,7 @@ dependencies = [
  "p3-dft",
  "p3-field",
  "p3-flock",
+ "p3-gkr",
  "p3-keccak",
  "p3-keccak-air",
  "p3-lookup",

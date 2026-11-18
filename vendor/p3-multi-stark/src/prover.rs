@@ -488,9 +488,9 @@ where
             let periodic = context.periodic_tables(&airs, &instances.num_variables());
             context
                 .plan()
-                .prove::<C::Val, C::Challenge, _>(
+                .prove_with_leaves::<C::Val, C::Challenge, _, _>(
                     |challenges| {
-                        context.materialize(
+                        context.leaf_sources(
                             &bus_tables,
                             &preprocessed_tables,
                             &periodic,

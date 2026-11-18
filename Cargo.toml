@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/flock-backend"]
-exclude = ["vendor/p3-recursion", "vendor/p3-sumcheck", "vendor/p3-multi-stark"]
+exclude = ["vendor/p3-recursion", "vendor/p3-sumcheck", "vendor/p3-multi-stark", "vendor/p3-gkr", "vendor/p3-bus"]
 resolver = "2"
 
 [package]
@@ -84,3 +84,5 @@ path = "vendor/p3-recursion/examples/native_binary_recursion.rs"
 [patch."https://github.com/Plonky3/Plonky3"]
 p3-sumcheck = { path = "vendor/p3-sumcheck" }
 p3-multi-stark = { path = "vendor/p3-multi-stark" }
+p3-gkr = { path = "vendor/p3-gkr" }
+p3-bus = { path = "vendor/p3-bus" }

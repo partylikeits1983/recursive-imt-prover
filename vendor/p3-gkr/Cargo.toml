@@ -1,0 +1,45 @@
+# Pinned upstream crate; see LOCAL_CHANGES.md.
+[package]
+name = "p3-gkr"
+description = "Batched product-tree GKR reductions over any extension field."
+version = "0.8.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Plonky3/Plonky3"
+homepage = "https://github.com/Plonky3/Plonky3"
+keywords = ["cryptography", "SNARK", "PLONK", "FRI", "plonky3"]
+categories = ["cryptography::cryptocurrencies"]
+publish = false
+autobenches = false
+autoexamples = false
+
+[features]
+parallel = ["p3-maybe-rayon/parallel"]
+
+[dependencies]
+p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-maybe-rayon = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-multilinear-util = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-security = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-sumcheck = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+thiserror = { version = "2.0", default-features = false }
+
+[dev-dependencies]
+p3-baby-bear = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-binary-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-challenger = { features = ["test-utils"], git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-keccak = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-symmetric = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+postcard = { version = "1.1.3", default-features = false, features = ["alloc"] }
+rand = { version = "0.10.1", default-features = false }
+rand_xoshiro = { version = "0.8.1" }
+
+[profile.release]
+codegen-units = 16
+lto = "thin"
+
+[patch."https://github.com/Plonky3/Plonky3"]
+p3-sumcheck = { path = "../p3-sumcheck" }
+p3-gkr = { path = "../p3-gkr" }

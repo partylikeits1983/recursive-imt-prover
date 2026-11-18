@@ -17,6 +17,7 @@ autoexamples = false
 parallel = ["p3-bus/parallel", "p3-maybe-rayon/parallel", "p3-multilinear-util/parallel", "p3-sumcheck/parallel"]
 
 [dependencies]
+p3-gkr = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 hashbrown = { version = "0.17.1" }
 itertools = { version = "0.15.0", default-features = false, features = ["use_alloc"] }
 p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
@@ -65,3 +66,5 @@ lto = "thin"
 
 [patch."https://github.com/Plonky3/Plonky3"]
 p3-sumcheck = { path = "../p3-sumcheck" }
+p3-gkr = { path = "../p3-gkr" }
+p3-bus = { path = "../p3-bus" }

@@ -22,3 +22,14 @@ Boolean storage, activations and boundary selectors.
 ```sh
 cargo test --locked --release --manifest-path vendor/p3-multi-stark/Cargo.toml --target-dir target --lib bus::context::tests
 ```
+
+The production bus prover now uses `leaf_sources`, backed by deterministic range
+reads from the same committed tables. `materialize_block_range` keeps the original
+full block height for boundary and periodic selectors, while evaluating only
+the requested rows. The packed Boolean affine path also respects that range.
+The old full-prefix materializer remains a differential-test reference.
+Range tests compare chunk sizes 1/3/7/64 with independent dense AIR rows.
+
+This selects the [GKR regeneration adapter](../p3-gkr/LOCAL_CHANGES.md) through the
+[bus compact-source API](../p3-bus/LOCAL_CHANGES.md). Only prover allocation and
+computation change; proof serialization and verifier logic are unchanged.

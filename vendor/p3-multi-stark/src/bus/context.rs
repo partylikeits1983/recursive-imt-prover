@@ -7,6 +7,7 @@
 //! A periodic column is never opened; the verifier evaluates it at that point instead.
 
 use alloc::vec::Vec;
+use core::ops::Range;
 
 use p3_air::symbolic::{AirLayout, BaseEntry, BaseLeaf, SymbolicExpr};
 use p3_air::{Air, BaseAir};
@@ -16,6 +17,7 @@ use p3_bus::{
     SymbolicBusInteraction,
 };
 use p3_field::{ExtensionField, Field};
+use p3_gkr::RegeneratedLeaves;
 use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::point::Point;
 use p3_sumcheck::layout::{ColumnView, Table};
@@ -456,9 +458,65 @@ where
         Ok(terminal)
     }
 
+    /// Regenerate product leaves from the committed tables in bounded ranges.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn leaf_sources<'a>(
+        &'a self,
+        tables: &'a [&'a Table<F>],
+        preprocessed: &'a [Option<&'a Table<F>>],
+        periodic: &'a [Option<Vec<Vec<F>>>],
+        public_values: &'a [&'a [F]],
+        challenges: &p3_bus::BusChallenges<EF>,
+    ) -> (
+        [RegeneratedLeaves<F, EF, impl Fn(Range<usize>) -> Vec<EF> + Sync + 'a + use<'a, F, EF>>;
+            2],
+        [usize; 2],
+    ) {
+        let lengths = BusDirection::ALL.map(|direction| {
+            self.plan
+                .security_geometry()
+                .non_padding_leaf_count(direction)
+        });
+        let sources = BusDirection::ALL.map(|direction| {
+            let weights = challenges.fingerprint_weights();
+            let offset = challenges.offset;
+            let len = self
+                .plan
+                .security_geometry()
+                .non_padding_leaf_count(direction);
+            RegeneratedLeaves::new(
+                self.plan.product_shape().log_height(),
+                len,
+                move |range: Range<usize>| {
+                    let mut leaves = Vec::with_capacity(range.len());
+                    for block in self.plan.blocks(direction) {
+                        let start = range.start.max(block.offset);
+                        let end = range.end.min(block.offset + (1usize << block.log_height));
+                        if start < end {
+                            leaves.extend(self.materialize_block_range(
+                                block,
+                                start - block.offset..end - block.offset,
+                                tables,
+                                preprocessed,
+                                periodic,
+                                public_values,
+                                &weights,
+                                offset,
+                            ));
+                        }
+                    }
+                    assert_eq!(leaves.len(), range.len());
+                    leaves
+                },
+            )
+        });
+        (sources, lengths)
+    }
+
     /// Materialize both direction-specific product prefixes from committed tables.
     ///
     /// `periodic` holds the tables [`Self::periodic_tables`] returns.
+    #[cfg(test)]
     pub(crate) fn materialize(
         &self,
         tables: &[&Table<F>],
@@ -478,8 +536,9 @@ where
                 .non_padding_leaf_count(direction);
             let mut leaves = Vec::with_capacity(len);
             for block in self.plan.blocks(direction) {
-                leaves.extend(self.materialize_block(
+                leaves.extend(self.materialize_block_range(
                     block,
+                    0..1usize << block.log_height,
                     tables,
                     preprocessed,
                     periodic,
@@ -501,6 +560,7 @@ where
         sources: [(&[usize], &[SourceColumn<'_, F>]); 3],
         selector: &RowSelector<'_, F>,
         height: usize,
+        range: Range<usize>,
     ) -> Option<Vec<EF>> {
         if height < 8 || matches!(selector, RowSelector::Boundary(_)) {
             return None;
@@ -524,7 +584,8 @@ where
             return None;
         }
         if let RowSelector::Column(column) = selector
-            && (0..height)
+            && range
+                .clone()
                 .map(|row| column.value(row))
                 .filter(|value| !value.is_zero())
                 .take(8)
@@ -540,7 +601,8 @@ where
             None => None,
         };
         Some(
-            (0..height)
+            range
+                .clone()
                 .into_par_iter()
                 .map(|row| {
                     if selector.is_inactive(row, height) {
@@ -558,9 +620,10 @@ where
 
     /// Materialize one aligned block from the exact tables committed by this proof.
     #[allow(clippy::too_many_arguments)]
-    fn materialize_block(
+    fn materialize_block_range(
         &self,
         block: &BusBlock,
+        range: Range<usize>,
         tables: &[&Table<F>],
         preprocessed: &[Option<&Table<F>>],
         periodic: &[Option<Vec<Vec<F>>>],
@@ -607,6 +670,7 @@ where
         let periodic_width = self.periodic_widths[air];
         let public = public_values[air];
         let height = 1usize << block.log_height;
+        assert!(range.start <= range.end && range.end <= height);
 
         // Resolve this after compiling the factor and its source views. Only exact zero
         // suppresses a row; a non-Boolean nonzero value keeps its original interpolation.
@@ -644,6 +708,7 @@ where
                 ],
                 &selector,
                 height,
+                range.clone(),
             )
         {
             return leaves;
@@ -698,13 +763,15 @@ where
                 BusBoundary::First => 0,
                 BusBoundary::Last => height - 1,
             };
-            let mut leaves = alloc::vec![EF::ONE; height];
-            leaves[row] = evaluate(&mut initialize(), row);
+            let mut leaves = alloc::vec![EF::ONE; range.len()];
+            if range.contains(&row) {
+                leaves[row - range.start] = evaluate(&mut initialize(), row);
+            }
             return leaves;
         }
 
         // Boolean rows stay in the base field, so every tuple term is a cheap mixed product.
-        (0..height)
+        range
             .into_par_iter()
             .map_init(initialize, evaluate)
             .collect()
@@ -1196,6 +1263,27 @@ mod tests {
                 &challenges,
             );
             for (direction, actual) in BusDirection::ALL.into_iter().zip(actual) {
+                // Arbitrary range boundaries must preserve selectors, periodic
+                // coordinates and the exact planned leaf order.
+                for chunk_size in [1, 3, 7, 64] {
+                    let mut ranged = Vec::new();
+                    for block in context.plan().blocks(direction) {
+                        let height = 1usize << block.log_height;
+                        for start in (0..height).step_by(chunk_size) {
+                            ranged.extend(context.materialize_block_range(
+                                block,
+                                start..(start + chunk_size).min(height),
+                                &table_refs,
+                                &fixed_refs,
+                                &periodic,
+                                &public_values,
+                                &weights,
+                                challenges.offset,
+                            ));
+                        }
+                    }
+                    assert_eq!(ranged, actual);
+                }
                 let mut expected = Vec::new();
                 for block in context.plan().blocks(direction) {
                     let air = block.owner.air;
@@ -1626,6 +1714,7 @@ mod tests {
                             [(&main_indices, views), (&fixed_indices, &fixed), (&[], &[])],
                             &selector,
                             8,
+                            0..8,
                         );
                         assert_eq!(
                             result.is_some(),

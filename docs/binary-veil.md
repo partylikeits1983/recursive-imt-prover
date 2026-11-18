@@ -829,6 +829,58 @@ is insufficient to predict working memory. See the
 [incomplete diagnostic report](../benchmarks/binary/masked-aggregate/flock-public-d32-n4-failure.json).
 No successful four- or 64-child aggregate is claimed.
 
+
+## Regenerated product-bus leaves (same v5 proof format)
+
+The pinned GKR `ProductLeaves` interface now also handles separate trees. The bus
+prover regenerates 16,384-leaf chunks directly from committed tables, retains the
+quarter-size product level, and regenerates the bottom sumcheck layer before
+handing its half-size folded prefix to the upstream dense kernel. Boundary and
+periodic selectors retain their original full-block coordinates. This changes
+prover storage and work; no hash, field, security parameter, verifier equation,
+proof encoding or transcript message changes.
+
+Differential tests compare complete proofs and subsequent transcript challenges
+against the dense prover, including Poly64/Poly192, odd/even heights, empty and
+partial prefixes, identity tails and chunk boundaries. Bus tests preserve the
+same rejection transcripts for unequal products and incorrect prefix lengths.
+The implementation and exact upstream differences are documented in
+[GKR](../vendor/p3-gkr/LOCAL_CHANGES.md),
+[bus](../vendor/p3-bus/LOCAL_CHANGES.md) and
+[multi-STARK](../vendor/p3-multi-stark/LOCAL_CHANGES.md).
+
+Depth-32 N=2, three samples on the same M2 Pro with four threads:
+
+| Measurement | Regenerated-leaf result |
+|---|---:|
+| Cold aggregation | 61.88 s |
+| Warm aggregation | 61.62 s median; 61.46–61.78 s |
+| Warm verification including decoding | 119.04 ms median; 117.51–120.58 ms |
+| Aggregate size | 1,286,316–1,287,712 bytes |
+| Fresh verifier setup / decode and verification | 13.43 s / 118.26 ms |
+| Observed lifetime physical-footprint peak | 26,273,029,760 bytes |
+
+All samples and independent verification passed. This does **not** improve the
+whole-prover memory peak at N=2: the prior v5 run was about 26.29 GB. Warm proving
+is slightly slower in this small comparison. The compact product representation
+has a smaller retained leaf layer, but another live allocation can dominate the
+process peak. Physical footprint includes compressed/swapped memory and differs
+from the report's resident-memory metric. Compilation and profiling are excluded.
+[Raw report](../benchmarks/binary/masked-aggregate/flock-streaming-d32-n2.json).
+
+The N=4 diagnostic reached the AIR sumcheck after completing the regenerated GKR
+reduction, then crossed the same 40 GiB stop budget. Its observed physical peak
+was 45,801,471,424 bytes. The one-second profile now shows
+`AirZerocheck::prove_with_lookup_and_bus -> RoundStateExt::round_poly_packed -> Chip::eval`,
+in place of the prior product-layer construction. The controller sent SIGINT;
+no aggregate was produced. This identifies the next memory bottleneck, rather
+than establishing successful four-child aggregation.
+[Incomplete diagnostic](../benchmarks/binary/masked-aggregate/flock-streaming-d32-n4-failure.json).
+
+A separate retry with `MIMALLOC_PURGE_DELAY=0` and allocator statistics enabled
+also stopped at the AIR sumcheck, with an observed 45,793,918,400-byte peak.
+Immediate purging did not remove the bottleneck; allocator defaults are unchanged.
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

@@ -739,7 +739,6 @@ dependencies = [
 [[package]]
 name = "p3-bus"
 version = "0.8.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
 dependencies = [
  "hashbrown",
  "num-bigint",
@@ -1042,7 +1041,6 @@ dependencies = [
 [[package]]
 name = "p3-gkr"
 version = "0.8.0"
-source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
 dependencies = [
  "p3-challenger 0.8.0",
  "p3-field 0.8.0",
@@ -1295,6 +1293,7 @@ dependencies = [
  "p3-commit 0.8.0",
  "p3-field 0.8.0",
  "p3-flock",
+ "p3-gkr",
  "p3-lookup 0.8.0",
  "p3-matrix 0.8.0",
  "p3-maybe-rayon 0.8.0",

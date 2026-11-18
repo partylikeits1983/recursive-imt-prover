@@ -23,7 +23,7 @@ These requirements do not change when inspecting other implementations.
 | `scripts/` | Reproducible benchmark drivers |
 | `benchmarks/` | Recorded measurements; no proof or private witness files |
 | `vendor/p3-recursion/` | Pinned upstream code and documented patches |
-| `vendor/p3-sumcheck/`, `vendor/p3-multi-stark/` | Narrow Flock prover memory/work optimizations; documented upstream diffs |
+| `vendor/p3-sumcheck/`, `vendor/p3-multi-stark/`, `vendor/p3-gkr/`, `vendor/p3-bus/` | Narrow Flock prover memory/work optimizations; documented upstream diffs |
 
 ## Next milestones
 
@@ -65,9 +65,11 @@ These requirements do not change when inspecting other implementations.
    does not bound total prover memory: initial attempts were killed under swap
    pressure. Deferred opening sweeps and product-bus materialization now have
    narrow upstream optimizations. A v5 four-child profile still reaches the
-   memory limit while building product-bus GKR layers. Reduce retained bus leaves
-   and layer storage before increasing batch limits; also reduce the number of
-   AIR opening reductions to recover verification speed. Checkpointed Keccak
+   memory limit while building product-bus GKR layers. Regenerating those leaves
+   gets N=4 through that stage, but its AIR sumcheck still crosses the 40 GiB
+   diagnostic budget. Reduce simultaneous sumcheck storage and verify allocator
+   retention before increasing batch limits; also reduce the number of AIR
+   opening reductions to recover verification speed. Checkpointed Keccak
    GKR remains a research lead
    (`binary-veil.md`), retaining the 128-bit target and existing hash.
 
