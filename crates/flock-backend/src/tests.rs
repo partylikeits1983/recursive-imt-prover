@@ -334,6 +334,33 @@ fn split_fanout_preserves_copy_constraints_and_zero_sentinel() {
         .count();
     assert_eq!(gate_rows, (0..live_gates as u32).collect::<Vec<_>>());
     for shard in gate_shards {
+        let full = shard.preprocessing();
+        let compact = shard.compact_preprocessing();
+        let retained: Vec<_> = shard
+            .zero_columns
+            .iter()
+            .enumerate()
+            .filter_map(|(column, &zero)| (!zero).then_some(column))
+            .collect();
+        assert_eq!(compact.width, retained.len());
+        for (original, reduced) in full
+            .values
+            .chunks_exact(full.width)
+            .zip(compact.values.chunks_exact(compact.width))
+        {
+            for (column, &value) in original.iter().enumerate() {
+                if shard.zero_columns[column] {
+                    assert_eq!(value, F::ZERO);
+                }
+            }
+            assert_eq!(
+                reduced,
+                retained
+                    .iter()
+                    .map(|&column| original[column])
+                    .collect::<Vec<_>>()
+            );
+        }
         let pp = shard.preprocessing();
         for (r, &source_row) in shard.source_rows.iter().enumerate() {
             for c in 0..gate_pp.width {

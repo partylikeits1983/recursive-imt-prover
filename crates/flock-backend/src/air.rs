@@ -29,7 +29,7 @@ pub struct ImportedAir {
     shard: Option<Arc<FanoutShard>>,
     gates: Option<Arc<GateShard>>,
     successor_bus: String,
-    zero_columns: Vec<bool>,
+    preprocessed_map: Vec<Option<usize>>,
     log_height: usize,
     constraints: Vec<SymbolicExpression<OldF>>,
     interactions: Vec<SymbolicBusInteraction<OldF>>,
@@ -53,10 +53,28 @@ impl Chip {
         let Self::Native(mut air) = Self::import(source, shard.log_height)? else {
             unreachable!()
         };
-        air.zero_columns = shard.zero_columns.clone();
+        ensure!(
+            shard.zero_columns.len() == air.preprocessed_map.len(),
+            "gate preprocessing width mismatch"
+        );
+        let mut next = 0;
+        air.preprocessed_map = shard
+            .zero_columns
+            .iter()
+            .map(|&zero| {
+                if zero {
+                    None
+                } else {
+                    let column = next;
+                    next += 1;
+                    Some(column)
+                }
+            })
+            .collect();
+        ensure!(next > 0, "empty arithmetic preprocessing");
         air.interactions.retain(|i| {
             !matches!(&i.activation, OldActivation::Boolean(v)
-            if fixed_value(v, &air.zero_columns) == Some(OldF::from_repr(0)))
+            if fixed_value(v, &shard.zero_columns) == Some(OldF::from_repr(0)))
         });
         air.gates = Some(shard);
         Ok(Self::Native(air))
@@ -110,7 +128,7 @@ impl Chip {
             ),
             shard,
             gates: None,
-            zero_columns: vec![],
+            preprocessed_map: (0..source.preprocessed_width()).map(Some).collect(),
             log_height,
             source,
             constraints,
@@ -129,13 +147,15 @@ impl BaseAir<F> for Chip {
     }
     fn preprocessed_width(&self) -> usize {
         match self {
-            Self::Native(a) => a.source.preprocessed_width(),
+            Self::Native(a) => a.preprocessed_map.iter().filter(|c| c.is_some()).count(),
             Self::Keccak { .. } => 3,
         }
     }
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
         match self {
-            Self::Native(a) if a.gates.is_some() => Some(a.gates.as_ref().unwrap().preprocessing()),
+            Self::Native(a) if a.gates.is_some() => {
+                Some(a.gates.as_ref().unwrap().compact_preprocessing())
+            }
             Self::Native(a) if a.shard.is_some() => Some(a.shard.as_ref().unwrap().preprocessing()),
             Self::Native(a) => a
                 .source
@@ -234,14 +254,14 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                     b.assert_zero(b.main().current(0).unwrap());
                 }
                 for c in &a.constraints {
-                    let value = resolve(c, b, a.successor, &a.zero_columns, a.public_table);
+                    let value = resolve(c, b, a.successor, &a.preprocessed_map, a.public_table);
                     b.assert_zero(value);
                 }
                 for i in &a.interactions {
                     let fields: Vec<_> = i
                         .fields
                         .iter()
-                        .map(|v| resolve(v, b, a.successor, &a.zero_columns, a.public_table))
+                        .map(|v| resolve(v, b, a.successor, &a.preprocessed_map, a.public_table))
                         .collect();
                     let activation = match &i.activation {
                         OldActivation::Always => BusActivation::Always,
@@ -253,7 +273,7 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                             v,
                             b,
                             a.successor,
-                            &a.zero_columns,
+                            &a.preprocessed_map,
                             a.public_table,
                         )),
                     };
@@ -303,7 +323,7 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
     e: &SymbolicExpression<OldF>,
     b: &AB,
     successor: bool,
-    zero_columns: &[bool],
+    preprocessed_map: &[Option<usize>],
     public_table: bool,
 ) -> AB::Expr {
     match e {
@@ -324,33 +344,31 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
                     assert!(successor && v.index == 0);
                     b.main().current(1).unwrap().into()
                 }
-                BaseEntry::Preprocessed { offset: 0 } => {
-                    if zero_columns.get(v.index) == Some(&true) {
-                        AB::Expr::ZERO
-                    } else {
-                        b.preprocessed().current(v.index).unwrap().into()
-                    }
-                }
-                BaseEntry::Preprocessed { offset: 1 } => {
-                    b.preprocessed().next(v.index).unwrap().into()
-                }
+                BaseEntry::Preprocessed { offset: 0 } => match preprocessed_map[v.index] {
+                    Some(column) => b.preprocessed().current(column).unwrap().into(),
+                    None => AB::Expr::ZERO,
+                },
+                BaseEntry::Preprocessed { offset: 1 } => match preprocessed_map[v.index] {
+                    Some(column) => b.preprocessed().next(column).unwrap().into(),
+                    None => AB::Expr::ZERO,
+                },
                 BaseEntry::Public => b.public_values()[v.index].into(),
                 _ => panic!("unsupported trusted AIR variable"),
             },
         },
         SymbolicExpr::Add { x, y, .. } => {
-            resolve(x, b, successor, zero_columns, public_table)
-                + resolve(y, b, successor, zero_columns, public_table)
+            resolve(x, b, successor, preprocessed_map, public_table)
+                + resolve(y, b, successor, preprocessed_map, public_table)
         }
         SymbolicExpr::Sub { x, y, .. } => {
-            resolve(x, b, successor, zero_columns, public_table)
-                - resolve(y, b, successor, zero_columns, public_table)
+            resolve(x, b, successor, preprocessed_map, public_table)
+                - resolve(y, b, successor, preprocessed_map, public_table)
         }
         SymbolicExpr::Mul { x, y, .. } => {
-            resolve(x, b, successor, zero_columns, public_table)
-                * resolve(y, b, successor, zero_columns, public_table)
+            resolve(x, b, successor, preprocessed_map, public_table)
+                * resolve(y, b, successor, preprocessed_map, public_table)
         }
-        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor, zero_columns, public_table),
+        SymbolicExpr::Neg { x, .. } => -resolve(x, b, successor, preprocessed_map, public_table),
     }
 }
 

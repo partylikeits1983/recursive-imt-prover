@@ -1,0 +1,754 @@
+{
+  "acceptance_pass": false,
+  "aggregate": true,
+  "batch_size": 4,
+  "bound": "Johnson",
+  "child_parameters": {
+    "log_inv_rate": 4,
+    "max_message_len": 2097152,
+    "min_algebraic_bits": 144,
+    "query_bits": 160
+  },
+  "complete": false,
+  "component_proof_count": 1,
+  "depth": 32,
+  "end_to_end_security_bits": null,
+  "environment": {
+    "compile_time_included": false,
+    "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+    "hardware": "Apple M2 Pro",
+    "legacy_prime_enabled": false,
+    "memory_bytes": "17179869184",
+    "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+    "os": "Darwin MacBook-Pro-4.local 24.2.0 Darwin Kernel Version 24.2.0: Fri Dec  6 18:56:34 PST 2024; root:xnu-11215.61.5~2/RELEASE_ARM64_T6020 arm64",
+    "plonky3_crates": "0.9.0-rc.2",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "profile": "release",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "release_profile": {
+      "codegen_units": 16,
+      "lto": "thin"
+    },
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "rustflags_runtime": "",
+    "source_keccak256": "f19585c921d83bd4f0919de720d45fc81cbdb9921592d7ddbc41d77e3158a6b2",
+    "threads": 4
+  },
+  "experimental_statistical_zk_candidate": true,
+  "field": "Poly64/Poly192",
+  "full_zk_established": false,
+  "geometry": {
+    "aggregate": {
+      "algebraic_bits": 146.42971505555636,
+      "fanout_rows_by_width": [
+        [
+          1,
+          9600378
+        ],
+        [
+          16,
+          23761355
+        ],
+        [
+          64,
+          32813914
+        ]
+      ],
+      "gate_rows_by_width": [
+        [
+          [
+            1,
+            0,
+            16,
+            0,
+            16
+          ],
+          1048576
+        ],
+        [
+          [
+            1,
+            0,
+            16,
+            0,
+            16
+          ],
+          236477
+        ],
+        [
+          [
+            64,
+            64,
+            64,
+            0,
+            64
+          ],
+          4194304
+        ],
+        [
+          [
+            64,
+            64,
+            64,
+            0,
+            64
+          ],
+          191664
+        ],
+        [
+          [
+            16,
+            16,
+            64,
+            0,
+            16
+          ],
+          1745312
+        ],
+        [
+          [
+            1,
+            64,
+            16,
+            0,
+            16
+          ],
+          1048576
+        ],
+        [
+          [
+            1,
+            64,
+            16,
+            0,
+            16
+          ],
+          181952
+        ],
+        [
+          [
+            64,
+            64,
+            64,
+            64,
+            64
+          ],
+          260144
+        ],
+        [
+          [
+            64,
+            0,
+            64,
+            0,
+            64
+          ],
+          4194304
+        ],
+        [
+          [
+            64,
+            0,
+            64,
+            0,
+            64
+          ],
+          286450
+        ]
+      ],
+      "initial_codeword_cells": 805306368,
+      "keccak_permutations": 102752,
+      "log_heights": [
+        24,
+        25,
+        25,
+        20,
+        18,
+        22,
+        18,
+        21,
+        20,
+        18,
+        18,
+        22,
+        19,
+        4,
+        17,
+        18
+      ],
+      "main_codeword_cells": 536870912,
+      "main_coordinate_widths": [
+        [
+          1,
+          1
+        ],
+        [
+          16,
+          16
+        ],
+        [
+          64,
+          64
+        ],
+        [
+          1,
+          0,
+          16,
+          0,
+          16
+        ],
+        [
+          1,
+          0,
+          16,
+          0,
+          16
+        ],
+        [
+          64,
+          64,
+          64,
+          0,
+          64
+        ],
+        [
+          64,
+          64,
+          64,
+          0,
+          64
+        ],
+        [
+          16,
+          16,
+          64,
+          0,
+          16
+        ],
+        [
+          1,
+          64,
+          16,
+          0,
+          16
+        ],
+        [
+          1,
+          64,
+          16,
+          0,
+          16
+        ],
+        [
+          64,
+          64,
+          64,
+          64,
+          64
+        ],
+        [
+          64,
+          0,
+          64,
+          0,
+          64
+        ],
+        [
+          64,
+          0,
+          64,
+          0,
+          64
+        ],
+        [
+          0
+        ],
+        [
+          1
+        ],
+        [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ]
+      ],
+      "preprocessed_codeword_cells": 268435456,
+      "preprocessed_coordinate_widths": [
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          1,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          16,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          16,
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          25,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          25,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          25,
+          25,
+          25,
+          25,
+          49,
+          1,
+          1
+        ],
+        [
+          25,
+          21,
+          25,
+          25,
+          1
+        ],
+        [
+          25,
+          21,
+          25,
+          25,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          25,
+          25,
+          64,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          64,
+          1,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          64,
+          0,
+          1
+        ],
+        [
+          18,
+          18,
+          1
+        ],
+        [
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          18,
+          1,
+          1,
+          1
+        ]
+      ],
+      "security_terms": [
+        [
+          "constraint-batching",
+          175.49195766557102
+        ],
+        [
+          "air-batching",
+          179.44925321461676
+        ],
+        [
+          "zerocheck",
+          177.71228762045052
+        ],
+        [
+          "constraint-sumcheck",
+          176.71228762045052
+        ],
+        [
+          "binary-bus",
+          153.22460717389185
+        ],
+        [
+          "binary-bus-batching",
+          182.35614381022526
+        ],
+        [
+          "flock-zerocheck",
+          175.70509211904636
+        ],
+        [
+          "flock-lincheck",
+          176.66964328304203
+        ],
+        [
+          "circuit-word-batching",
+          180.35614381022526
+        ],
+        [
+          "whir-opening",
+          147.43569307630693
+        ],
+        [
+          "bit-ring-switch",
+          181.67807190511263
+        ],
+        [
+          "bit-ring-switch-claim-batching",
+          181.52832478560794
+        ],
+        [
+          "column-batching",
+          178.08935726953035
+        ],
+        [
+          "whir-opening",
+          147.44987555632363
+        ],
+        [
+          "bit-ring-switch",
+          181.72387559472577
+        ],
+        [
+          "bit-ring-switch-claim-batching",
+          181.1389130940046
+        ],
+        [
+          "column-batching",
+          177.53852055271383
+        ],
+        [
+          "commitment-and-transcript-collision",
+          128.0
+        ]
+      ],
+      "table_widths": [
+        2,
+        2,
+        2,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        1,
+        232,
+        116
+      ],
+      "witnesses": 28824623
+    }
+  },
+  "hash": "Keccak-256",
+  "outer_parameters": {
+    "fold": 4,
+    "log_inv_rate": 1,
+    "max_initial_codeword_cells": 1073741824,
+    "pcs_bits": 152,
+    "pow_bits": 16
+  },
+  "protocol": "experimental-binary-masked-flock-aggregate-v6",
+  "samples": [],
+  "settings": {
+    "batch_size": 4,
+    "depth": 32,
+    "fold": 4,
+    "log_inv_rate": 1,
+    "max_codeword_cells": 536870912,
+    "min_algebraic_bits": 144,
+    "min_security_bits": 127,
+    "packed_log_inv_rate": 3,
+    "pcs_bits": 152,
+    "pow_bits": 16
+  },
+  "setup_ms": 28832.308416,
+  "succinct": true,
+  "failure": {
+    "exit_code": -2,
+    "profiled": true,
+    "memory_budget_stop": true,
+    "physical_footprint_budget_bytes": 42949672960,
+    "memory_method": "proc_pid_rusage RUSAGE_INFO_V4; compressed and swapped footprint, not resident RAM",
+    "reason": "Diagnostic controller sent SIGINT after current footprint exceeded 40 GiB during AIR sumcheck; no aggregate produced",
+    "completed_samples": 0,
+    "peak_physical_footprint_bytes_observed": 44081802816,
+    "profile_duration_seconds": 1
+  }
+}

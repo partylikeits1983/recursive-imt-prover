@@ -895,6 +895,40 @@ The same N=4 diagnostic still exceeded its 40 GiB budget, now at an observed
 run. No aggregate was completed. The remaining AIR-sumcheck storage is still a
 scaling blocker. [Raw diagnostic](../benchmarks/binary/masked-aggregate/flock-factored-d32-n4-failure.json).
 
+## Compact arithmetic preprocessing (aggregate v6)
+
+Arithmetic partitions now omit every preprocessing column that is identically
+zero. A trusted original-to-compact map replaces those references by zero in
+all AIR constraints and bus fields. Every retained cell is unchanged. Tests
+compare retained and omitted cells with the original native tables, then check
+the actual constraints and complete bus multisets. This is a projection of fixed
+public preprocessing, not a new witness assumption. Aggregate protocol v6 and
+backend identity v8 bind the changed layout; child format v5 is unchanged.
+
+At depth 32, N=4, the ten arithmetic partitions now have 5–10 preprocessing
+columns each, instead of 14. Initial codeword storage is still 6 GiB: zero
+columns already used zero bit coordinates in the PCS. The saving is in native
+table and sumcheck allocations. This retry still crossed the 40 GiB diagnostic
+budget during the AIR sumcheck and was interrupted without an aggregate; the
+observed physical peak was 44,081,802,816 bytes. Stopped-run peaks occur at different
+moments, so their ordering is not a comparison of completed prover peaks.
+[Raw diagnostic](../benchmarks/binary/masked-aggregate/flock-compact-pp-d32-n4-failure.json).
+
+Depth-32 N=2 completed three samples and independent verification with v6.
+Cold aggregation took 57.80 s; the two warm samples took 58.24–59.05 s
+(median 58.64 s). Warm decoding and verification took 113.21–113.85 ms
+(median 113.53 ms). Fresh verifier setup took 12.05 s, followed by 114.12 ms
+for decoding and verification. Observed lifetime physical footprint peaked at
+24,105,094,528 bytes, compared with 26,273,029,760 bytes in the regenerated-leaf
+checkpoint. Physical footprint includes compressed/swapped pages; it is not
+resident RAM. These are small local samples, not a statistical performance claim.
+[Raw report](../benchmarks/binary/masked-aggregate/flock-compact-pp-d32-n2.json).
+
+The depth-16 N=2 cold run also passed independent verification: 56.15 s
+aggregation, 101.38 ms decoding and verification, and 1,235,297 proof bytes.
+Its observed lifetime physical-footprint peak was 23,752,411,776 bytes.
+[Raw report](../benchmarks/binary/masked-aggregate/flock-compact-pp-d16-n2.json).
+
 ## Reuse and source pins
 
 Plonky3 and recursion pins are listed in the main README; the Flock outer prover

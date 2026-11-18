@@ -210,7 +210,7 @@ impl Prepared {
         }
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
-        identity.update(b"imt-flock-backend-v7/708900d7a730d6ce4d5421d43e2193f2301920fa");
+        identity.update(b"imt-flock-backend-v8/708900d7a730d6ce4d5421d43e2193f2301920fa");
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());

@@ -66,9 +66,11 @@ These requirements do not change when inspecting other implementations.
    narrow upstream optimizations. A v5 four-child profile still reaches the
    memory limit while building product-bus GKR layers. Regenerating those leaves
    gets N=4 through that stage, but its AIR sumcheck still crosses the 40 GiB
-   diagnostic budget. Reduce simultaneous sumcheck storage and verify allocator
-   retention before increasing batch limits; also reduce the number of AIR
-   opening reductions to recover verification speed. Checkpointed Keccak
+   diagnostic budget. Factored bus equality weights save about 2.3 GB at N=4;
+   redundant zero preprocessing columns are now omitted from arithmetic AIRs.
+   Measure the remaining simultaneous sumcheck storage before increasing batch
+   limits; also reduce the number of AIR opening reductions to recover
+   verification speed. Checkpointed Keccak
    GKR remains a research lead
    (`binary-veil.md`), retaining the 128-bit target and existing hash.
 

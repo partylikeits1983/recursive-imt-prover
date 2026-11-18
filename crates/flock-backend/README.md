@@ -77,9 +77,16 @@ including successor rows, and reject high-bit values and altered coordinates.
 This is a local encoding argument, not a full proof-system security theorem.
 Tests check exact occurrence preservation, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
-swap across partitions. Aggregate protocol v5 / backend identity v7 reject
+swap across partitions. Aggregate protocol v6 / backend identity v8 reject
 previous aggregate artifacts. Child proof formats and security parameters are
 unchanged.
+
+Arithmetic partitions omit preprocessing columns that are identically zero.
+The trusted compiler records the original-to-compact column map, substitutes
+zero into every affected constraint and bus expression, and serializes only the
+remaining columns into the preprocessing commitment. Tests compare every retained
+cell and omitted zero against the original native table, then check the imported
+constraints and complete bus multisets. No witness-dependent column is removed.
 
 Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/2,
 folding factor 4, Poly192 challenges, Keccak-256, and a required 144-bit conditional

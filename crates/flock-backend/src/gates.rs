@@ -19,17 +19,42 @@ pub struct GateShard {
 }
 
 impl GateShard {
+    #[cfg(test)]
     pub fn preprocessing(&self) -> RowMajorMatrix<F> {
-        let width = self.column_bytes.len();
+        self.selected_preprocessing(&(0..self.column_bytes.len()).collect::<Vec<_>>())
+    }
+
+    pub fn compact_preprocessing(&self) -> RowMajorMatrix<F> {
+        let columns: Vec<_> = self
+            .zero_columns
+            .iter()
+            .enumerate()
+            .filter_map(|(column, &zero)| (!zero).then_some(column))
+            .collect();
+        assert!(
+            !columns.is_empty(),
+            "arithmetic preprocessing needs a live column"
+        );
+        self.selected_preprocessing(&columns)
+    }
+
+    fn selected_preprocessing(&self, columns: &[usize]) -> RowMajorMatrix<F> {
+        let width = columns.len();
         let mut values = vec![F::ZERO; width * (1 << self.log_height)];
         let mut offset = 0;
         for row in values.chunks_exact_mut(width).take(self.source_rows.len()) {
-            for (value, &bytes) in row.iter_mut().zip(self.column_bytes.iter()) {
-                let mut repr = [0u8; 8];
-                repr[..bytes].copy_from_slice(&self.preprocessing_bytes[offset..offset + bytes]);
-                *value = F::from_repr(u64::from_le_bytes(repr));
+            let mut kept = 0;
+            for (column, &bytes) in self.column_bytes.iter().enumerate() {
+                if columns.get(kept) == Some(&column) {
+                    let mut repr = [0u8; 8];
+                    repr[..bytes]
+                        .copy_from_slice(&self.preprocessing_bytes[offset..offset + bytes]);
+                    row[kept] = F::from_repr(u64::from_le_bytes(repr));
+                    kept += 1;
+                }
                 offset += bytes;
             }
+            assert_eq!(kept, width);
         }
         debug_assert_eq!(offset, self.preprocessing_bytes.len());
         RowMajorMatrix::new(values, width)

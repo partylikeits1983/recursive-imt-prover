@@ -19,7 +19,7 @@ use crate::{
     },
 };
 
-pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v5";
+pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v6";
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MaskedChildInput {

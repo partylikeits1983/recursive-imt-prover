@@ -31,8 +31,8 @@ limits apply. Large batches are a scaling target, not a measured capability.
 Reports record per-child timings, aggregation, verification, proof sizes and RSS.
 Cold verification currently rebuilds trusted preprocessing; its time is separate
 from cryptographic verification. Aggregation remains well above the latency target.
-Measured depth-32, N=2: **60.1 s warm aggregation, 118.2 ms verification, 1.29 MB
-aggregate** on an M2 Pro with four threads. Cold verifier setup adds about 13 s.
+Measured depth-32, N=2: **58.6 s warm aggregation, 113.5 ms verification, 1.29 MB
+aggregate** on an M2 Pro with four threads. Cold verifier setup adds about 12 s.
 N=4 passes the codeword guard but has exceeded working memory;
 64 children remain a research target.
 
