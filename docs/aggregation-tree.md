@@ -62,11 +62,25 @@ fit within the wider of the two output bounds. Constant multiply-add rows
 also bound the addend through the equation `addend = output + coefficient * input`.
 The prover omits columns whose wire ID and value are both fixed to zero.
 
-The prover reads the circuit witness directly into the committed tables. For
-each Keccak call it computes the boundary states and checks the supplied output
-limbs. The linked GKR argument verifies the permutation. The initial codewords
-contain 268,435,456 arithmetic cells, 67,108,864 preprocessing cells and
-16,777,216 Keccak cells.
+The arithmetic proof commits the circuit's Keccak wire table once. Each
+template contributes 116 columns. For each permutation, consecutive rows hold
+the input and output, including 16 byte-swapped limbs. Each template is padded
+separately with permutations of the zero state. The committed copy selectors
+identify the live circuit wires.
+
+Let `g` select the template, `x` select a call, and `d` select input or
+output. These coordinates come from the arithmetic sumcheck. Each limb satisfies
+
+```text
+(1 - g) B0(x,d) + g B1(x,d) = (1 - d) Input(g,x) + d Output(g,x)
+```
+
+The arithmetic PCS authenticates the left side. The Keccak proof checks a random
+combination of the 116 right sides using seven fresh port coordinates. Both
+commitments precede the row challenges. The extra row coordinate and one fewer
+port coordinate preserve the degree bound used for the linkage check. Snapshot
+version 6 selects this layout and its transcript domain. Earlier snapshots keep
+their original verification rules.
 
 ## Authenticated cyclic authority
 

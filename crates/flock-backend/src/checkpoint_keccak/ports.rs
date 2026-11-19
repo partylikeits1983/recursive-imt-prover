@@ -8,7 +8,8 @@ use p3_sumcheck::layout::Table;
 
 use super::{E, F, POSITIONS, State, linked::PortOpening};
 
-pub(super) const PORTS: usize = 232;
+pub(crate) const BRIDGE_LIMBS: usize = 116;
+pub(super) const PORTS: usize = 2 * BRIDGE_LIMBS;
 pub(super) const PORT_LOG: usize = 8;
 
 pub(super) fn table(inputs: &[State], outputs: &[State]) -> Table<F> {
@@ -26,16 +27,32 @@ pub(super) fn table(inputs: &[State], outputs: &[State]) -> Table<F> {
     Table::new(RowMajorMatrix::new(columns, inputs.len()))
 }
 
-pub(super) fn claim<C: FieldChallenger<F>>(opening: &PortOpening, ch: &mut C) -> (Vec<E>, E) {
+pub(super) fn claim<C: FieldChallenger<F>>(
+    opening: &PortOpening,
+    direct: bool,
+    ch: &mut C,
+) -> (Vec<E>, E) {
     let point = Point::new(
-        (0..PORT_LOG)
+        (0..PORT_LOG - usize::from(direct))
             .map(|_| ch.sample_algebra_element())
             .collect::<Vec<E>>(),
     );
     let coefficients = point.equality_weights_msb();
     let mut weights = E::zero_vec(2 * POSITIONS);
-    for (port, &coefficient) in coefficients.iter().take(PORTS).enumerate() {
+    for port in 0..PORTS {
         let (side, start, swapped) = location(port);
+        let coefficient = if direct {
+            let direction = opening.instance[opening.instance.len() - 1];
+            let limb = start / 16 + if swapped { 100 } else { 0 };
+            coefficients[limb]
+                * if side == 0 {
+                    E::ONE - direction
+                } else {
+                    direction
+                }
+        } else {
+            coefficients[port]
+        };
         for bit in 0..16 {
             weights[side * POSITIONS + start + if swapped { bit ^ 8 } else { bit }] +=
                 coefficient * E::from(F::from_repr(1 << bit));

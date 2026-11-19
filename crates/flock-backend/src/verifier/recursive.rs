@@ -79,7 +79,7 @@ impl Verifier {
             .filter(|(a, _)| a.preprocessed_width() > 0)
             .map(|(a, &h)| TableShape::new(h, a.preprocessed_width()))
             .collect();
-        let fold = self.data.format == super::WORD_FORMAT;
+        let fold = self.data.format != super::FORMAT;
         let main = plan(&shapes, &self.data.main_coordinates, fold)?;
         let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates, false)?;
         let configs = [config(main.num_variables())?, config(pp.num_variables())?];

@@ -11,7 +11,7 @@ mod closing;
 pub(crate) mod committed;
 mod linear;
 pub mod linked;
-mod ports;
+pub(crate) mod ports;
 pub mod recursive;
 mod rounds;
 #[cfg(test)]

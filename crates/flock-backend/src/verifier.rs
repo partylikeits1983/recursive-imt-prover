@@ -28,6 +28,7 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const BRIDGE_FORMAT: &str = "imt-binary-trusted-verifier-v6";
 const WORD_FORMAT: &str = "imt-binary-trusted-verifier-v5";
 const FORMAT: &str = "imt-binary-trusted-verifier-v4";
 
@@ -71,8 +72,8 @@ impl Prepared {
             .collect::<Result<Vec<_>>>()?;
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
-            format: if self.word_openings {
-                WORD_FORMAT
+            format: if self.direct_bridge {
+                BRIDGE_FORMAT
             } else {
                 FORMAT
             }
@@ -103,7 +104,12 @@ impl Verifier {
     pub fn require_same_layout(&self, output: &Prepared) -> Result<()> {
         ensure!(
             self.data.backend == output.backend
-                && (self.data.format == WORD_FORMAT) == output.word_openings
+                && self.data.format
+                    == if output.direct_bridge {
+                        BRIDGE_FORMAT
+                    } else {
+                        FORMAT
+                    }
                 && self.data.hash_index == output.hash_index
                 && self.data.main_coordinates == output.geometry.main_coordinate_widths
                 && self.data.preprocessed_coordinates
@@ -148,7 +154,8 @@ impl Verifier {
         ensure!(rest.is_empty(), "trailing trusted verifier data");
         ensure!(
             (data.format == FORMAT
-                || (data.format == WORD_FORMAT && data.backend == HashBackend::Checkpoint))
+                || (matches!(data.format.as_str(), WORD_FORMAT | BRIDGE_FORMAT)
+                    && data.backend == HashBackend::Checkpoint))
                 && data.binding == binding,
             "trusted verifier configuration mismatch"
         );
@@ -208,7 +215,7 @@ impl Verifier {
             data.main_coordinates
                 .iter()
                 .cloned()
-                .map(|w| TableEncoding::with_word_openings(w, data.format == WORD_FORMAT))
+                .map(|w| TableEncoding::with_word_openings(w, data.format != FORMAT))
                 .collect::<Result<_>>()?,
             &pp,
             data.preprocessed_coordinates
@@ -229,9 +236,10 @@ impl Verifier {
                 data.airs[data.hash_index].width == 232,
                 "invalid native Keccak port count"
             );
-            let scheme = LinkedBatch::for_recursion(
+            let scheme = LinkedBatch::with_bridge(
                 data.airs[data.hash_index].log_height,
                 config.main_log2_candidates,
+                data.format == BRIDGE_FORMAT,
             )?;
             ensure!(
                 config.initial_codeword_cells + scheme.initial_codeword_cells <= 1 << 30,

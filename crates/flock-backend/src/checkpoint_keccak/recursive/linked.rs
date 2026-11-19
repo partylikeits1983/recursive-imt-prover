@@ -8,8 +8,8 @@ use super::{
     equality_weights, observe, sample,
 };
 use crate::checkpoint_keccak::{
-    linked::FIXED_DOMAIN,
-    ports::{PORT_LOG, PORTS, location},
+    linked::port_domain,
+    ports::{BRIDGE_LIMBS, PORT_LOG, PORTS, location},
 };
 use anyhow::ensure;
 
@@ -31,6 +31,7 @@ pub struct LinkedTargets {
 
 /// The caller must authenticate the port inputs through the arithmetic proof.
 pub struct PreparedLinkedVerifier {
+    direct_bridge: bool,
     log_batch: usize,
     boundary: PreparedCommittedVerifier,
     closing: BinaryPolyGenericSumcheckVerifier,
@@ -48,7 +49,12 @@ pub struct LinkedReduction {
 
 impl PreparedLinkedVerifier {
     pub fn new(log_batch: usize) -> Result<Self> {
+        Self::with_bridge(log_batch, false)
+    }
+
+    pub(crate) fn with_bridge(log_batch: usize, direct_bridge: bool) -> Result<Self> {
         Ok(Self {
+            direct_bridge,
             log_batch,
             boundary: PreparedCommittedVerifier::new(log_batch)?,
             closing: BinaryPolyGenericSumcheckVerifier::new(POSITION_LOG + 1, 2, 0)?,
@@ -67,7 +73,11 @@ impl PreparedLinkedVerifier {
             !cap.is_empty() && cap.len().is_power_of_two() && cap.iter().all(|r| r.len() == 16),
             "incorrect boundary cap shape"
         );
-        let prefix = [FIXED_DOMAIN, &(authority.len() as u64).to_le_bytes()].concat();
+        let prefix = [
+            port_domain(self.direct_bridge),
+            &(authority.len() as u64).to_le_bytes(),
+        ]
+        .concat();
         let suffix = [
             (self.log_batch as u64).to_le_bytes(),
             (cap.len() as u64).to_le_bytes(),
@@ -96,7 +106,11 @@ impl PreparedLinkedVerifier {
             authority.len() == 32,
             "incorrect recursive authority length"
         );
-        let prefix = [FIXED_DOMAIN, &(self.log_batch as u64).to_le_bytes()].concat();
+        let prefix = [
+            port_domain(self.direct_bridge),
+            &(self.log_batch as u64).to_le_bytes(),
+        ]
+        .concat();
         let mut bytes: Vec<_> = prefix
             .iter()
             .map(|&byte| b.define_const(CF::new(u64::from(byte))))
@@ -121,7 +135,13 @@ impl PreparedLinkedVerifier {
         proof: &LinkedTargets,
     ) -> Result<LinkedReduction> {
         ensure!(
-            ports.instance.len() == self.log_batch && ports.values.len() == PORTS,
+            ports.instance.len() == self.log_batch + usize::from(self.direct_bridge)
+                && ports.values.len()
+                    == if self.direct_bridge {
+                        BRIDGE_LIMBS
+                    } else {
+                        PORTS
+                    },
             "incorrect port input shape"
         );
         for value in ports.instance.iter().chain(&ports.values) {
@@ -129,7 +149,7 @@ impl PreparedLinkedVerifier {
         }
         let boundary = self.boundary.verify_reduction(b, ch, &proof.boundary)?;
         let mut ch = boundary.challenger.clone();
-        let port_point = (0..PORT_LOG)
+        let port_point = (0..PORT_LOG - usize::from(self.direct_bridge))
             .map(|_| sample(b, &mut ch))
             .collect::<Result<Vec<_>>>()?;
         let coefficients = equality_weights(b, &port_point);
@@ -141,8 +161,9 @@ impl PreparedLinkedVerifier {
         let link = self
             .closing
             .verify_reduction_native(b, ch, &value, &proof.ports)?;
-        let weight = port_weight(b, &coefficients, &link.point);
-        let mut point = ports.instance.clone();
+        let direction = ports.instance.get(self.log_batch);
+        let weight = port_weight(b, &coefficients, &link.point, direction);
+        let mut point = ports.instance[..self.log_batch].to_vec();
         point.extend_from_slice(&link.point[1..]);
         Ok(LinkedReduction {
             points: [
@@ -175,8 +196,9 @@ fn port_weight(
     b: &mut CircuitBuilder<CF>,
     coefficients: &[NativePoly192Target],
     point: &[NativePoly192Target],
+    direction: Option<&NativePoly192Target>,
 ) -> NativePoly192Target {
-    let high = equality_weights(b, &point[..8]);
+    let high = equality_weights(b, &point[usize::from(direction.is_some())..8]);
     let low = equality_weights(b, &point[8..]);
     let zero = b.native_poly192_constant([0; 3]);
     let mut words = [zero.clone(), zero.clone()];
@@ -188,15 +210,34 @@ fn port_weight(
         }
     }
     let mut sums = [zero.clone(), zero];
-    for (port, coefficient) in coefficients.iter().take(PORTS).enumerate() {
-        let (side, start, swapped) = location(port);
-        let term = b.native_poly192_mul(coefficient, &high[side * 128 + start / 16]);
+    let count = if direction.is_some() {
+        BRIDGE_LIMBS
+    } else {
+        PORTS
+    };
+    for (port, coefficient) in coefficients.iter().take(count).enumerate() {
+        let (word, swapped) = if direction.is_some() {
+            (if port < 100 { port } else { port - 100 }, port >= 100)
+        } else {
+            let (side, start, swapped) = location(port);
+            (side * 128 + start / 16, swapped)
+        };
+        let term = b.native_poly192_mul(coefficient, &high[word]);
         let sum = &mut sums[usize::from(swapped)];
         *sum = b.native_poly192_add(sum, &term);
     }
     let a = b.native_poly192_mul(&sums[0], &words[0]);
     let c = b.native_poly192_mul(&sums[1], &words[1]);
-    b.native_poly192_add(&a, &c)
+    let weight = b.native_poly192_add(&a, &c);
+    if let Some(direction) = direction {
+        // eq(direction, point[0]) = 1 + direction + point[0] in characteristic two.
+        let one = b.native_poly192_constant([1, 0, 0]);
+        let delta = b.native_poly192_add(direction, &point[0]);
+        let equality = b.native_poly192_add(&one, &delta);
+        b.native_poly192_mul(&weight, &equality)
+    } else {
+        weight
+    }
 }
 
 #[cfg(test)]

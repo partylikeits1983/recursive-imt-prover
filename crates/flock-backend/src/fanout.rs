@@ -20,7 +20,7 @@ pub const RECURSIVE_LAYOUT: [(usize, usize, usize, bool); 10] = [
     (16, 4, 19, false),
     (16, 8, 11, false),
     (16, 16, 15, true),
-    (64, 4, 21, false),
+    (64, 4, 20, false),
     (64, 8, 18, false),
     (64, 16, 18, true),
 ];
@@ -251,12 +251,24 @@ fn fixed(mut shards: Vec<FanoutShard>) -> Result<Vec<Arc<FanoutShard>>> {
     );
     shards[1].rows.append(&mut zero);
     let mut result = Vec::new();
+    let mut spill = Vec::new();
     for (width, copies, log, successor) in RECURSIVE_LAYOUT {
         let index = shards
             .iter()
             .position(|s| s.coordinate_width == width && s.copies_per_row == copies)
             .ok_or_else(|| anyhow::anyhow!("missing fixed fanout shard"))?;
         let mut shard = shards.remove(index);
+        let capacity = (1 << log) - 1;
+        if width == 64 && copies == 4 && shard.rows.len() > capacity {
+            // Every three- or four-use ID occupies exactly one row. Move whole
+            // IDs to unused slots in the wider tables with their exact counts.
+            spill = shard.rows.split_off(capacity);
+        } else if width == 64 && copies > 4 {
+            let available = capacity.saturating_sub(shard.rows.len());
+            shard
+                .rows
+                .extend(spill.drain(spill.len().saturating_sub(available)..));
+        }
         ensure!(
             shard.rows.len() < 1 << log,
             "fixed fanout capacity exceeded: width {width}, copies {copies}, rows {}, log height {log}",
@@ -273,7 +285,7 @@ fn fixed(mut shards: Vec<FanoutShard>) -> Result<Vec<Arc<FanoutShard>>> {
         result.push(Arc::new(shard));
     }
     ensure!(
-        shards.iter().all(|s| s.rows.is_empty()),
+        spill.is_empty() && shards.iter().all(|s| s.rows.is_empty()),
         "unassigned fixed fanout"
     );
     Ok(result)

@@ -29,11 +29,18 @@ use crate::{
 };
 
 const DOMAIN: &[u8] = b"imt-checkpoint-keccak-native-ports-v1";
-pub(super) const FIXED_DOMAIN: &[u8] = b"imt-checkpoint-keccak-native-ports-fixed-v2";
+pub(super) fn port_domain(direct_bridge: bool) -> &'static [u8] {
+    if direct_bridge {
+        b"imt-checkpoint-keccak-bridge-rows-v1"
+    } else {
+        b"imt-checkpoint-keccak-native-ports-fixed-v2"
+    }
+}
 pub const PORTS: usize = ports::PORTS;
 
 pub struct LinkedBatch {
     pub(crate) log_batch: usize,
+    pub(crate) direct_bridge: bool,
     transcript: Transcript,
     pcs: Pcs,
     protocol: OpeningProtocol,
@@ -65,6 +72,7 @@ pub struct LinkedProof {
 /// Created by the enclosing verifier from a fully authenticated AIR opening.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PortOpening {
+    /// Direct bridge openings append the input/output selector to the batch point.
     pub instance: Vec<E>,
     pub values: Vec<E>,
 }
@@ -106,19 +114,42 @@ impl BoundaryWitness {
 }
 
 impl LinkedBatch {
+    pub(crate) fn with_bridge(
+        log_batch: usize,
+        main_candidate_log2: f64,
+        direct_bridge: bool,
+    ) -> Result<Self> {
+        Self::with_transcript(
+            log_batch,
+            main_candidate_log2,
+            Transcript::FixedV2,
+            direct_bridge,
+        )
+    }
+
     pub fn new(log_batch: usize, main_candidate_log2: f64) -> Result<Self> {
-        Self::with_transcript(log_batch, main_candidate_log2, Transcript::PostcardV1)
+        Self::with_transcript(
+            log_batch,
+            main_candidate_log2,
+            Transcript::PostcardV1,
+            false,
+        )
     }
 
     pub fn for_recursion(log_batch: usize, main_candidate_log2: f64) -> Result<Self> {
-        Self::with_transcript(log_batch, main_candidate_log2, Transcript::FixedV2)
+        Self::with_bridge(log_batch, main_candidate_log2, false)
     }
 
     fn with_transcript(
         log_batch: usize,
         main_candidate_log2: f64,
         transcript: Transcript,
+        direct_bridge: bool,
     ) -> Result<Self> {
+        ensure!(
+            !direct_bridge || log_batch >= 1,
+            "bridge needs two template instances"
+        );
         let degree = algebraic_error_degree(log_batch)?;
         ensure!(
             main_candidate_log2.is_finite() && main_candidate_log2 >= 0.0,
@@ -143,11 +174,13 @@ impl LinkedBatch {
             ErrorBits::from_numerator(192, (degree + log_batch + 3 * POSITION_LOG) as u128),
         ));
         // A mismatched port survives only at a zero of a polynomial in the
-        // AIR row challenges and eight fresh port coordinates. Charge both
+        // AIR row challenges and fresh port coordinates. Charge both
         // commitment candidate sets conservatively, also for the link closing.
         let candidates =
             CandidateSet::from_log2(main_candidate_log2 + security.log2_max_candidates)
                 .ok_or_else(|| anyhow::anyhow!("invalid joint candidate bound"))?;
+        // The bridge uses one extra row challenge for the input/output side
+        // and one fewer port-coordinate challenge (116 limbs instead of 232).
         let link_degree = log_batch + ports::PORT_LOG + 2 * (POSITION_LOG + 1);
         security.terms.push(
             SecurityTerm::new(
@@ -163,6 +196,7 @@ impl LinkedBatch {
         );
         Ok(Self {
             log_batch,
+            direct_bridge,
             transcript,
             pcs,
             protocol,
@@ -218,9 +252,10 @@ impl LinkedBatch {
             super::prove_using(&witness.inputs, &output, &mut challenger, self.transcript)?;
         let (input_closing, input_point, input_value) =
             closing::prove(&witness.inputs, &input, &mut challenger);
-        let (weights, value) = ports::claim(ports, &mut challenger);
-        let folded_input = closing::fold_states(&witness.inputs, &ports.instance);
-        let folded_output = closing::fold_states(&witness.outputs, &ports.instance);
+        let (weights, value) = ports::claim(ports, self.direct_bridge, &mut challenger);
+        let folded_input = closing::fold_states(&witness.inputs, &ports.instance[..self.log_batch]);
+        let folded_output =
+            closing::fold_states(&witness.outputs, &ports.instance[..self.log_batch]);
         let mut values = folded_input.clone();
         values.resize(POSITIONS, E::ZERO);
         values.extend_from_slice(&folded_output);
@@ -229,7 +264,7 @@ impl LinkedBatch {
             closing::prove_functional(weights, values, value, &mut challenger);
         let link_input = closing::evaluate_folded(&folded_input, &port_point.as_slice()[1..]);
         let link_output = closing::evaluate_folded(&folded_output, &port_point.as_slice()[1..]);
-        let link_point = link_point(ports, &port_point);
+        let link_point = link_point(&ports.instance[..self.log_batch], &port_point);
         let opening = self.pcs.open_at_known(
             data,
             &self.protocol,
@@ -271,10 +306,10 @@ impl LinkedBatch {
             self.transcript,
         )?;
         let input = closing::verify(&proof.input_closing, &input, &mut ch)?;
-        let (weights, value) = ports::claim(ports, &mut ch);
+        let (weights, value) = ports::claim(ports, self.direct_bridge, &mut ch);
         let link = closing::verify_functional(&proof.port_closing, &weights, value, &mut ch)?;
         let selector = link.point.as_slice()[0];
-        let link_point = link_point(ports, &link.point);
+        let link_point = link_point(&ports.instance[..self.log_batch], &link.point);
         let evals = self.pcs.verify_at(
             &statement.commitment,
             &proof.opening,
@@ -329,9 +364,9 @@ impl LinkedBatch {
             self.transcript,
         )?;
         let input = closing::verify(&proof.input_closing, &input, &mut ch)?;
-        let (weights, value) = ports::claim(ports, &mut ch);
+        let (weights, value) = ports::claim(ports, self.direct_bridge, &mut ch);
         let link = closing::verify_functional(&proof.port_closing, &weights, value, &mut ch)?;
-        let link_point = link_point(ports, &link.point);
+        let link_point = link_point(&ports.instance[..self.log_batch], &link.point);
         let mut private_values = recursive_values(
             self.log_batch,
             proof.output,
@@ -365,7 +400,7 @@ impl LinkedBatch {
             return arithmetic_seed(authority, statement);
         }
         let mut hash = Keccak256::new();
-        hash.update(FIXED_DOMAIN);
+        hash.update(port_domain(self.direct_bridge));
         hash.update((authority.len() as u64).to_le_bytes());
         hash.update(authority);
         hash.update((self.log_batch as u64).to_le_bytes());
@@ -384,7 +419,7 @@ impl LinkedBatch {
         let mut hash = Keccak256::new();
         hash.update(match self.transcript {
             Transcript::PostcardV1 => DOMAIN,
-            Transcript::FixedV2 => FIXED_DOMAIN,
+            Transcript::FixedV2 => port_domain(self.direct_bridge),
         });
         hash.update((self.log_batch as u64).to_le_bytes());
         hash.update(authority);
@@ -393,7 +428,13 @@ impl LinkedBatch {
 
     fn bind_ports<C: FieldChallenger<F>>(&self, ports: &PortOpening, ch: &mut C) -> Result<()> {
         ensure!(
-            ports.instance.len() == self.log_batch && ports.values.len() == ports::PORTS,
+            ports.instance.len() == self.log_batch + usize::from(self.direct_bridge)
+                && ports.values.len()
+                    == if self.direct_bridge {
+                        ports::BRIDGE_LIMBS
+                    } else {
+                        ports::PORTS
+                    },
             "incorrect native Keccak port opening shape"
         );
         if matches!(self.transcript, Transcript::FixedV2) {
@@ -440,8 +481,8 @@ pub(crate) fn arithmetic_seed(authority: &[u8], statement: &Statement) -> Result
     Ok(Keccak256::digest(postcard::to_allocvec(&(DOMAIN, authority, statement))?).to_vec())
 }
 
-fn link_point(ports: &PortOpening, low: &Point<E>) -> Point<E> {
-    let mut point = ports.instance.clone();
+fn link_point(batch_point: &[E], low: &Point<E>) -> Point<E> {
+    let mut point = batch_point.to_vec();
     point.extend_from_slice(&low.as_slice()[1..]);
     Point::new(point)
 }
@@ -490,6 +531,62 @@ mod tests {
             assert!(
                 scheme
                     .verify(&statement, &false_proof, b"port-test", &false_ports)
+                    .is_err()
+            );
+        }
+    }
+    #[test]
+    fn direct_bridge_rejects_false_limb_and_side_claims() {
+        let batch = inputs(8);
+        let scheme = LinkedBatch::with_bridge(3, 0.0, true).unwrap();
+        let old = LinkedBatch::for_recursion(3, 0.0).unwrap();
+        let witness = BoundaryWitness::new(batch.clone());
+        let table = witness.ports();
+        let pending = scheme.commit(witness, b"bridge").unwrap();
+        let statement = pending.statement.clone();
+        let mut ch = challenger(&scheme.arithmetic_seed(b"bridge", &statement).unwrap());
+        let coordinates: Vec<E> = (0..4).map(|_| ch.sample_algebra_element()).collect();
+        let point = Point::new(coordinates[..3].to_vec());
+        let direction = coordinates[3];
+        let value = |c| Poly::new(table.poly(c).as_slice().to_vec()).eval_base(&point);
+        let ports = PortOpening {
+            values: (0..116)
+                .map(|limb| {
+                    let (i, o) = if limb < 100 {
+                        (limb, 100 + limb)
+                    } else {
+                        (100 + limb, 116 + limb)
+                    };
+                    let input = value(i);
+                    input + direction * (value(o) - input)
+                })
+                .collect(),
+            instance: coordinates,
+        };
+        let valid = scheme.prove(pending, &ports).unwrap();
+        scheme
+            .verify(&statement, &valid, b"bridge", &ports)
+            .unwrap();
+        assert!(old.verify(&statement, &valid, b"bridge", &ports).is_err());
+        assert!(
+            scheme.arithmetic_seed(b"bridge", &statement).unwrap()
+                != old.arithmetic_seed(b"bridge", &statement).unwrap()
+        );
+        for mutation in 0..4 {
+            let mut altered = ports.clone();
+            match mutation {
+                0 => altered.values[99] += E::ONE,
+                1 => altered.values[115] += E::ONE,
+                2 => altered.instance[0] += E::ONE,
+                _ => altered.instance[3] += E::ONE,
+            }
+            let pending = scheme
+                .commit(BoundaryWitness::new(batch.clone()), b"bridge")
+                .unwrap();
+            let forged = scheme.prove(pending, &altered).unwrap();
+            assert!(
+                scheme
+                    .verify(&statement, &forged, b"bridge", &altered)
                     .is_err()
             );
         }

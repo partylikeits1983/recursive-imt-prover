@@ -12,6 +12,7 @@ use crate::{
     HashBackend, Prepared,
     air::convert,
     checkpoint::{self, AggregateProof},
+    checkpoint_keccak::ports::BRIDGE_LIMBS,
     checkpoint_keccak::recursive::{
         PortTargets, PreparedLinkedVerifier,
         closed::{BoundaryPcs, builder},
@@ -82,7 +83,7 @@ impl RecursiveAggregate {
         let scheme = authority.checkpoint.as_ref().unwrap();
         let arithmetic = authority.recursive_arithmetic()?;
         let boundary = BoundaryPcs::new(scheme.log_batch, 2, scheme.recursive_pcs_seed())?;
-        let linked = PreparedLinkedVerifier::new(scheme.log_batch)?;
+        let linked = PreparedLinkedVerifier::with_bridge(scheme.log_batch, scheme.direct_bridge)?;
         Ok(Self {
             authority,
             arithmetic,
@@ -140,16 +141,31 @@ impl RecursiveAggregate {
             &arithmetic_proof,
             &preprocessing,
         )?;
+        let arity = scheme.log_batch + usize::from(scheme.direct_bridge);
         ensure!(
-            authenticated.point.len() >= scheme.log_batch,
+            authenticated.point.len() >= arity,
             "incorrect recursive port point"
         );
-        let ports = PortTargets {
-            instance: authenticated.point[authenticated.point.len() - scheme.log_batch..].to_vec(),
-            values: authenticated.main[self.authority.data.hash_index]
-                .current()
-                .to_vec(),
+        let instance = authenticated.point[authenticated.point.len() - arity..].to_vec();
+        let opened = authenticated.main[self.authority.data.hash_index].current();
+        let values = if scheme.direct_bridge {
+            ensure!(
+                opened.len() == 2 * BRIDGE_LIMBS,
+                "invalid recursive Keccak bridge"
+            );
+            opened[..BRIDGE_LIMBS]
+                .iter()
+                .zip(&opened[BRIDGE_LIMBS..])
+                .map(|(left, right)| {
+                    let diff = b.native_poly192_add(left, right);
+                    let product = b.native_poly192_mul(&instance[0], &diff);
+                    b.native_poly192_add(left, &product)
+                })
+                .collect()
+        } else {
+            opened.to_vec()
         };
+        let ports = PortTargets { instance, values };
         let seed = self.linked.transcript_seed(b, identity)?;
         let ch = self.boundary.challenger_with_seed(b, &seed, &cap)?;
         let reduced = self.linked.verify_reduction(b, ch, &ports, &keccak_proof)?;

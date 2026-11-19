@@ -119,7 +119,7 @@ impl Prepared {
             .zip(&self.log_heights)
             .enumerate()
             .map(|(i, (air, &log))| {
-                let width = if i == self.hash_index {
+                let width = if i == self.hash_index && !self.direct_bridge {
                     0
                 } else if air.is_public_table() {
                     1
@@ -167,11 +167,27 @@ impl Prepared {
                     WitnessSource::Gates(shard) => shard.fill_witness(output, read),
                     WitnessSource::Bridge => {
                         ensure!(
-                            i == self.hash_index + 1 && 2 * self.keccak_wires.len() <= height,
+                            i == self.hash_index + usize::from(!self.direct_bridge)
+                                && 2 * self.keccak_wires.len() <= height,
                             "invalid Keccak bridge table"
                         );
                         for (r, call) in self.keccak_wires.iter().enumerate() {
                             rows.push(call.fill(&read, output, height, 2 * r)?);
+                        }
+                        if self.direct_bridge {
+                            let count = self.keccak_wires.len();
+                            let zero_output = keccak_state_to_limbs(&KeccakF.permute([0; 25]));
+                            for (column, words) in output.chunks_exact_mut(height).enumerate() {
+                                let value = if column < 100 {
+                                    zero_output[column]
+                                } else {
+                                    zero_output[column - 100].swap_bytes()
+                                };
+                                for pair in words[2 * count..].as_chunks_mut::<2>().0 {
+                                    pair[1] = F::from_repr(u64::from(value));
+                                }
+                            }
+                            rows.resize((instance + 1) * (height / 2), [0; 100]);
                         }
                     }
                 }
@@ -186,7 +202,7 @@ impl Prepared {
             .into_iter()
             .enumerate()
             .map(|(i, values)| {
-                (i != self.hash_index)
+                (i != self.hash_index || self.direct_bridge)
                     .then(|| Table::new(RowMajorMatrix::new(values, 1 << self.log_heights[i])))
             })
             .collect();

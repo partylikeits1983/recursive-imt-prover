@@ -10,6 +10,7 @@ use crate::{
     checkpoint_keccak::{
         Statement,
         linked::{LinkedBatch, LinkedProof, PortOpening},
+        ports::BRIDGE_LIMBS,
     },
     config::{Config, challenger},
 };
@@ -38,7 +39,7 @@ pub(crate) fn arithmetic_opening<'a, A: VerifierAir<F, Poly192>>(
     let opening =
         verify_with_trace_openings(config, instances, arithmetic, 0, &mut challenger(&seed))?;
     ensure!(
-        opening.point.num_variables() >= scheme.log_batch,
+        opening.point.num_variables() >= scheme.log_batch + usize::from(scheme.direct_bridge),
         "invalid port opening arity"
     );
     let values = opening
@@ -46,11 +47,24 @@ pub(crate) fn arithmetic_opening<'a, A: VerifierAir<F, Poly192>>(
         .get(hash_index)
         .ok_or_else(|| anyhow::anyhow!("missing authenticated Keccak ports"))?
         .clone();
-    Ok(PortOpening {
-        instance: opening.point.as_slice()[opening.point.num_variables() - scheme.log_batch..]
-            .to_vec(),
-        values,
-    })
+    let arity = scheme.log_batch + usize::from(scheme.direct_bridge);
+    let instance = opening.point.as_slice()[opening.point.num_variables() - arity..].to_vec();
+    let values = if scheme.direct_bridge {
+        ensure!(
+            values.len() == 2 * BRIDGE_LIMBS,
+            "invalid authenticated Keccak bridge"
+        );
+        // The first coordinate selects the template. The last selects its
+        // input/output row. Both come from the arithmetic sumcheck.
+        values[..BRIDGE_LIMBS]
+            .iter()
+            .zip(&values[BRIDGE_LIMBS..])
+            .map(|(&l, &r)| l + instance[0] * (r - l))
+            .collect()
+    } else {
+        values
+    };
+    Ok(PortOpening { instance, values })
 }
 
 pub(crate) fn verify<'a, A: VerifierAir<F, Poly192>>(

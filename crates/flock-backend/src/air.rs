@@ -291,6 +291,33 @@ impl Chip {
         Ok(())
     }
 
+    pub fn link_keccak_bridge(&mut self, log_height: usize) -> Result<()> {
+        self.pad_keccak_bridge(log_height)?;
+        let Self::Native(a) = self else {
+            unreachable!()
+        };
+        let tuple = a
+            .interactions
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("missing Keccak bus"))?;
+        ensure!(
+            tuple.bus_name == "imt.keccak"
+                && tuple.direction == OldDirection::Pull
+                && tuple.fields.len() == 117
+                && is_column(&tuple.fields[0], BaseEntry::Preprocessed { offset: 0 }, 116)
+                && tuple.fields[1..].iter().enumerate().all(|(i, v)| is_column(
+                    v,
+                    BaseEntry::Main { offset: 0 },
+                    i
+                ))
+                && matches!(&tuple.activation, OldActivation::Boolean(v) if is_column(v, BaseEntry::Preprocessed { offset: 0 }, 117))
+                && a.interactions.len() == 116
+                && a.interactions.iter().all(|i| i.bus_name == "imt.witness"),
+            "unexpected native Keccak bus declaration"
+        );
+        Ok(())
+    }
+
     pub fn pad_keccak_bridge(&mut self, log_height: usize) -> Result<()> {
         let Self::Native(a) = self else {
             anyhow::bail!("expected a native Keccak bridge");

@@ -9,6 +9,14 @@ use crate::config::challenger;
 
 #[test]
 fn port_weight_matches_native_at_boolean_and_extension_points() -> Result<()> {
+    for direct in [false, true] {
+        check_weight(direct)?;
+    }
+    Ok(())
+}
+
+fn check_weight(direct: bool) -> Result<()> {
+    let log = ports::PORT_LOG - usize::from(direct);
     let mut b = CircuitBuilder::<CF>::new();
     let point: Vec<_> = (0..20)
         .map(|_| {
@@ -16,20 +24,21 @@ fn port_weight_matches_native_at_boolean_and_extension_points() -> Result<()> {
             b.native_poly192_from_coefficients(coefficients)
         })
         .collect();
-    let coefficients = equality_weights(&mut b, &point[..8]);
-    let actual = port_weight(&mut b, &coefficients, &point[8..]);
+    let coefficients = equality_weights(&mut b, &point[..log]);
+    let actual = port_weight(
+        &mut b,
+        &coefficients,
+        &point[8..],
+        direct.then_some(&point[7]),
+    );
     let expected = b.alloc_public_input_array::<3>("native weight");
     let expected = b.native_poly192_from_coefficients(expected);
     connect(&mut b, &actual, &expected);
     let circuit = b.build()?;
-    let ports = PortOpening {
-        instance: vec![],
-        values: E::zero_vec(ports::PORTS),
-    };
     let mut source = challenger(b"linked-port-weight-reference");
     for case in 0..8 {
         let mut ch = challenger(&[case]);
-        let port_point: Vec<E> = (0..8).map(|_| ch.sample_algebra_element()).collect();
+        let mut port_point: Vec<E> = (0..log).map(|_| ch.sample_algebra_element()).collect();
         let low: Vec<E> = (0..12)
             .map(|i| match case {
                 0 => E::ZERO,
@@ -39,7 +48,23 @@ fn port_weight_matches_native_at_boolean_and_extension_points() -> Result<()> {
                 _ => source.sample_algebra_element(),
             })
             .collect();
-        let (weights, _) = ports::claim(&ports, &mut challenger(&[case]));
+        let direction = match case {
+            0 => E::ZERO,
+            1 => E::ONE,
+            _ => source.sample_algebra_element(),
+        };
+        if direct {
+            port_point.push(direction);
+        }
+        let ports = PortOpening {
+            instance: vec![direction],
+            values: E::zero_vec(if direct {
+                ports::BRIDGE_LIMBS
+            } else {
+                ports::PORTS
+            }),
+        };
+        let (weights, _) = ports::claim(&ports, direct, &mut challenger(&[case]));
         let value: E = weights
             .iter()
             .zip(Point::new(low.as_slice()).equality_weights_msb())

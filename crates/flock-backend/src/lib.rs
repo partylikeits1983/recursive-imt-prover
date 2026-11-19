@@ -70,7 +70,7 @@ pub enum HashBackend {
 }
 
 pub struct Prepared {
-    word_openings: bool,
+    direct_bridge: bool,
     backend: HashBackend,
     checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
@@ -290,7 +290,11 @@ impl Prepared {
         } else {
             (calls.next_power_of_two().trailing_zeros() as usize).max(4)
         };
-        let mut preprocessing = vec![F::ZERO; 3 * (1 << log_calls)];
+        let mut preprocessing = if recursive {
+            Vec::new()
+        } else {
+            vec![F::ZERO; 3 << log_calls]
+        };
         for (i, row) in preprocessing
             .as_chunks_mut::<3>()
             .0
@@ -331,6 +335,9 @@ impl Prepared {
         }
         let hash_index = source_hash_index + airs.len() - 2;
         for (i, air) in bus.airs().iter().enumerate().skip(2) {
+            if recursive && i == source_hash_index {
+                continue;
+            }
             let mut imported = if i == source_hash_index {
                 Chip::Keccak {
                     preprocessing: RowMajorMatrix::new(preprocessing.clone(), 3),
@@ -343,7 +350,7 @@ impl Prepared {
                 "unexpected native witness table"
             );
             if recursive && i == source_hash_index + 1 {
-                imported.pad_keccak_bridge(log_calls)?;
+                imported.link_keccak_bridge(log_calls)?;
             }
             airs.push(imported);
             log_heights.push(
@@ -379,7 +386,7 @@ impl Prepared {
             }
         });
         if recursive {
-            identity.update(b"/poly64-word-openings-v1");
+            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1");
         }
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
@@ -478,9 +485,10 @@ impl Prepared {
         );
         let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
         let checkpoint = if backend == HashBackend::Checkpoint {
-            Some(LinkedBatch::for_recursion(
+            Some(LinkedBatch::with_bridge(
                 log_calls,
                 config.main_log2_candidates,
+                recursive,
             )?)
         } else {
             None
@@ -561,7 +569,7 @@ impl Prepared {
             security_terms: terms,
         };
         Ok(Self {
-            word_openings: recursive,
+            direct_bridge: recursive,
             backend,
             checkpoint,
             circuit,
@@ -610,7 +618,9 @@ impl Prepared {
         } else {
             None
         };
-        tables[self.hash_index] = boundaries.as_ref().map(BoundaryWitness::ports);
+        if !self.direct_bridge {
+            tables[self.hash_index] = boundaries.as_ref().map(BoundaryWitness::ports);
+        }
         drop(rows);
         let public = self.public(public)?;
         let instances = ProverInstances::new(
