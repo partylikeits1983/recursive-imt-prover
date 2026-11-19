@@ -76,32 +76,28 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-One 64-child release run on an Apple M2 Pro with 16 GiB of memory, eight Rayon
-workers and one active aggregation node. Each range covers every node of that type.
+Two depth-32, 64-child release runs on an Apple M2 Pro with 16 GiB of memory,
+eight Rayon workers and one aggregation node at a time. Child, pair and merge
+times are per-proof medians. Fresh verification includes process startup and
+trusted-key loading.
 
-| Operation | Median | Range |
-|---|---:|---:|
-| Child proving (64 proofs) | 2.69 s | 2.29–3.45 s |
-| First aggregation (32 proofs) | 16.77 s | 16.11–18.01 s |
-| Recursive merge (31 proofs) | 17.58 s | 16.24–20.54 s |
+| Final encoding | Child proving | First pair | Recursive merge | All 63 aggregations | Final file | Fresh verification |
+|---|---:|---:|---:|---:|---:|---:|
+| Uncompressed | 2.65 s | 16.51 s | 16.54 s | 17 min 36 s | 1,142,244 B | 114 ms |
+| zlib | 2.98 s | 16.50 s | 16.36 s | 17 min 27 s | 996,198 B | 119 ms |
 
-Aggregation took **18 min 6 s**. Setup, child proving and verification,
-aggregation and final verification took **21 min 52 s**
-in total, excluding negative tests. The final proof occupied **1,398,055 bytes**.
-Fresh verification took **127 ms**, including startup and key loading.
-The longest chain of dependent aggregation nodes took 108.1 s
-when summing their measured latencies. Actual throughput was 0.059 child proofs per second.
-For a merge, median witness generation took 0.71 s and median proof generation
-took 16.47 s. Peak process-tree physical footprint was 16.9 GB, including
-compressed or swapped memory.
-[Raw measurements](benchmarks/binary/tree-merge/selector-sixty-four.json)
+The final proof in the second run occupied 1,141,892 bytes before compression.
+Encoding the 996,198-byte file took 26 ms.
+Both runs reused the same merge key at all five levels and verified the
+ordered list in a fresh process. The second run took 21 min 26 s
+from setup through final verification, excluding negative tests. Peak process-tree
+physical footprint was 17.2 GB, including compressed or swapped memory.
+[Raw timings, proof sizes and verification results](benchmarks/binary/tree-merge/word-openings-sixty-four.json)
 
-Aggregation time was 4.2% lower than the previous 18 min 53 s run on
-the same machine and worker count. Each version was measured once. The proof
-meets the 1.5 MB target. The goals of 1 MB, 10 seconds per merge and 60 seconds
-for all 63 aggregation operations remain open.
-[Previous measurements](benchmarks/binary/tree-merge/direct-witness-sixty-four.json) ·
-[Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json)
+The previous coordinate encoding took 17.58 s per merge and produced a
+1,398,055-byte proof. The targets of 10 s per merge and 60 s for the full tree
+remain open.
+[Previous run](benchmarks/binary/tree-merge/selector-sixty-four.json)
 
 ## Running locally
 
