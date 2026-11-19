@@ -468,6 +468,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "blake3",
  "hex",
  "miniz_oxide",
  "p3-air 0.8.0",
@@ -476,6 +477,9 @@ dependencies = [
  "p3-binary-field 0.9.0-rc.2",
  "p3-binary-pcs 0.8.0",
  "p3-binary-pcs 0.9.0-rc.2",
+ "p3-blake3 0.8.0",
+ "p3-blake3 0.9.0-rc.2",
+ "p3-blake3-air",
  "p3-bus 0.8.0",
  "p3-bus 0.9.0-rc.2",
  "p3-challenger 0.8.0",
@@ -838,6 +842,17 @@ dependencies = [
  "serde",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "p3-blake3"
+version = "0.8.0"
+source = "git+https://github.com/Plonky3/Plonky3?rev=708900d7a730d6ce4d5421d43e2193f2301920fa#708900d7a730d6ce4d5421d43e2193f2301920fa"
+dependencies = [
+ "blake3",
+ "cpufeatures 0.3.1",
+ "p3-symmetric 0.8.0",
+ "p3-util 0.8.0",
 ]
 
 [[package]]
@@ -1616,7 +1631,7 @@ dependencies = [
  "p3-binary-dft 0.9.0-rc.2",
  "p3-binary-field 0.9.0-rc.2",
  "p3-binary-pcs 0.9.0-rc.2",
- "p3-blake3",
+ "p3-blake3 0.9.0-rc.2",
  "p3-bus 0.9.0-rc.2",
  "p3-challenger 0.9.0-rc.2",
  "p3-circuit",
@@ -1955,6 +1970,7 @@ name = "recursive-imt-prover"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "clap",
  "ctrlc",
  "hex",
@@ -1965,6 +1981,8 @@ dependencies = [
  "p3-binary-dft 0.9.0-rc.2",
  "p3-binary-field 0.9.0-rc.2",
  "p3-binary-pcs 0.9.0-rc.2",
+ "p3-blake3 0.9.0-rc.2",
+ "p3-blake3-air",
  "p3-bus 0.9.0-rc.2",
  "p3-challenger 0.9.0-rc.2",
  "p3-circuit",
@@ -1987,7 +2005,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "sha3",
  "tempfile",
 ]
 

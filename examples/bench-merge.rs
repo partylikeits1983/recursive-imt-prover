@@ -18,7 +18,6 @@ use recursive_imt_prover::{
     files::{read_bounded, read_json},
 };
 use serde_json::json;
-use sha3::{Digest, Keccak256};
 
 #[global_allocator]
 static ALLOCATOR: MiMalloc = MiMalloc;
@@ -54,7 +53,7 @@ fn main() -> Result<()> {
     let first = PreparedMaskedAggregate::with_format(
         &settings,
         Parameters::default(),
-        HashBackend::Checkpoint,
+        HashBackend::Blake3,
         StatementFormat::CyclicPair,
     )?;
     let first_verifier = first.cyclic_verifier()?;
@@ -67,7 +66,7 @@ fn main() -> Result<()> {
             json!({
                 "metrics": metrics,
                 "threads": rayon::current_num_threads(),
-                "proof_keccak256": hex::encode(Keccak256::digest(&parent.proof)),
+                "proof_blake3": blake3::hash(&parent.proof).to_hex().to_string(),
             })
         );
     }

@@ -9,7 +9,6 @@ use anyhow::{Result, ensure};
 use p3_field::PrimeCharacteristicRing;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 
 use super::{
     E,
@@ -300,7 +299,7 @@ impl Relation {
         // Trusted relation, all parameters and the exact ordered public vector
         // are authenticated before any prover-dependent challenge.
         let encoded = postcard::to_allocvec(&(parameters, self, public))?;
-        Ok(Transcript::new(&Keccak256::digest(encoded)))
+        Ok(Transcript::new(blake3::hash(&encoded).as_bytes()))
     }
 
     pub(super) fn padded_products(&self) -> Vec<[Linear; 3]> {

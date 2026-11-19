@@ -1,6 +1,6 @@
 # Protocol architecture
 
-This prototype proves private membership in a depth-32 Keccak IMT and aggregates
+This prototype proves private membership in a depth-32 BLAKE3 IMT and aggregates
 the resulting proofs over Poly64/Poly192 binary fields. Children use experimental
 statistical masking. Aggregates are non-ZK. Joint child ZK and end-to-end 128-bit
 security remain unestablished; this is research code.
@@ -15,24 +15,25 @@ little-endian bytes. The nullifier is a 32-byte string. Fixtures generate both
 independently with fresh cryptographic randomness. There is no reduction modulo
 a prime, variable-length integer encoding, amount or additional nonce.
 
-With `K = Keccak256` and concatenation `||`, prove:
+With `H` the first 32 output bytes of unkeyed BLAKE3 and concatenation `||`, prove:
 
 ```text
-leaf = K("IMT-KECCAK-LEAF2" || secret_num || nullifier)
-nullifier_hash = K("IMT-KECCAK-NULL1" || nullifier)
+leaf = H("IMT-BLAKE3-LEAF2" || secret_num || nullifier)
+nullifier_hash = H("IMT-BLAKE3-NULL1" || nullifier)
 
 current = leaf
 for level in 0..32:
     (left, right) = (current, sibling[level]) if index_bit[level] == 0
                     else (sibling[level], current)
-    current = K("IMT-KECCAK-NODE1" || left || right)
+    current = H("IMT-BLAKE3-NODE1" || left || right)
 current == root
 ```
 
-The three tags are distinct 16-byte ASCII strings without terminators. Keccak
-uses its original `0x01` suffix, not SHA3's suffix. All preimages fit one rate
-block. The index bits are Boolean and private. No insertion root is required:
-the fixtures use populated trees and later appends before choosing proof roots.
+The three tags are distinct 16-byte ASCII strings without terminators. The
+80-byte leaf and node messages each use two compression blocks. The 48-byte
+nullifier message uses one block. The Boolean index bits stay private. The
+fixtures populate the tree and append additional notes before choosing roots.
+The BLAKE3 protocol uses new roots, nullifier hashes, and proof identities.
 
 The public nullifier hash identifies repeated uses of the same nullifier.
 The proof authenticates that hash but does not check whether it was used before.
@@ -42,28 +43,27 @@ future application. No on-chain verifier is implemented.
 
 ## Small membership AIR
 
-The AIR reuses Plonky3's binary Keccak permutation constraints. It schedules the
-leaf hash, 32 parent hashes and the nullifier hash consecutively: 34 permutations,
-850 active rows, padded to 1,024. Trusted preprocessing fixes the schedule, domain
-tags, padding and output rows. Ordinary next-row constraints link the Merkle path.
+The AIR reuses Plonky3's binary BLAKE3 compression constraints. It schedules
+two rows each for the leaf and 32 parents, then one row for the nullifier hash.
+The 67 active rows pad to 128. Trusted preprocessing fixes the compression
+schedule, tags, flags, and padding. Next-row constraints bind consecutive
+chaining values and link the Merkle path, including the final 16 bytes of a
+right child when its digest crosses the block boundary.
 
 Four extra private Poly64 columns carry the nullifier across rows. Each represents
 eight consecutive nullifier bytes in the polynomial basis. At the leaf input and
 the nullifier-hash input, a linear constraint packs the corresponding 64 Boolean
-Keccak input bits into the same carried value. Transition constraints keep that
+BLAKE3 message bits into the same carried value. Transition constraints keep that
 value constant. Packing is injective because these are exactly the 64 basis
 coordinates of Poly64; integer embedding into characteristic two would be wrong.
 
-This binds both hashes to one nullifier with four columns, without a copy bus or
-another proof. The existing 128-column stacking still fits the enlarged trace
-in the same number of stacks. The extra Keccak permutation does not increase
-the padded trace height. All four carry columns remain private and masked.
+All four carry columns remain private and masked.
 
 ## Child masking
 
 The child compiler applies VEIL-inspired masking to the verifier's algebraic
 messages and proves their consistency. The trace oracle adds independent random
-coefficients before committing with Keccak and additive WHIR. Mask commitments
+coefficients before committing with BLAKE3 and additive WHIR. Mask commitments
 precede online challenges; masked claims and the required product/linear checks
 are authenticated together. The original trace and native AIR proof are not
 published. Every child uses fresh randomness.

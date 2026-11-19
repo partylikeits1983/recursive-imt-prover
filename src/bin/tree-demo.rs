@@ -25,7 +25,7 @@ use imt_flock_backend::{
     verifier_key_digest,
 };
 use mimalloc::MiMalloc;
-use rayon::ThreadPoolBuilder;
+use rayon::{ThreadPoolBuilder, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -39,7 +39,7 @@ use recursive_imt_prover::{
         },
         cli::fixtures,
         engine::Settings,
-        relation::{AggregatePublic, ClientPublic},
+        relation::{AggregatePublic, ClientPublic, ClientWitness},
         veil::{
             aggregate::{
                 AggregationMetrics, MaskedChildInput, PreparedMaskedAggregate, StatementFormat,
@@ -97,6 +97,12 @@ struct Args {
     /// Prepare the circuits and exit before generating proofs.
     #[arg(long, conflicts_with = "verify")]
     setup_only: bool,
+    /// Generate and verify child proofs in a fresh directory for later replay.
+    #[arg(long, conflicts_with_all = ["from_children", "verify", "setup_only", "out", "keep"])]
+    prepare_children: Option<PathBuf>,
+    /// Aggregate a prepared directory of child proofs without proving any children.
+    #[arg(long, conflicts_with_all = ["verify", "setup_only"])]
+    from_children: Option<PathBuf>,
 }
 
 impl Args {
@@ -130,8 +136,13 @@ struct ChildMetrics {
 }
 
 enum Proof {
-    Leaf(StoredProof<ClientPublic>, ChildMetrics),
+    Leaf(StoredProof<ClientPublic>, Option<ChildMetrics>),
     Aggregate(StoredProof<AggregatePublic>, AggregationMetrics),
+}
+
+enum Leaf {
+    Generate(ClientPublic, ClientWitness),
+    Saved(StoredProof<ClientPublic>),
 }
 
 struct NodeMetrics {
@@ -171,6 +182,9 @@ fn main() -> Result<()> {
         args.batch_size.is_power_of_two() && (4..=MAX_CHILDREN).contains(&args.batch_size),
         "tree batch size must be 4, 8, 16, 32 or 64"
     );
+    if let Some(path) = &args.prepare_children {
+        return prepare_children(&args, path);
+    }
     let destination = args.out.as_deref().filter(|_| args.keep);
     if let Some(path) = destination {
         ensure!(!path.exists(), "--keep requires a fresh output directory");
@@ -195,8 +209,12 @@ fn main() -> Result<()> {
     let monitor = ProcessMonitor::start(move |peaks| display.update_peaks(peaks));
     let start = Instant::now();
     let parameters = Parameters::default();
-    let child = PreparedMembership::new(IMT_DEPTH, parameters.clone())?;
-    let child_setup_ms = ms(start);
+    let child = args
+        .from_children
+        .is_none()
+        .then(|| PreparedMembership::new(IMT_DEPTH, parameters.clone()))
+        .transpose()?;
+    let child_setup_ms = child.as_ref().map(|_| ms(start));
     let settings = Settings {
         depth: IMT_DEPTH,
         batch_size: 2,
@@ -209,7 +227,7 @@ fn main() -> Result<()> {
     let first = PreparedMaskedAggregate::with_format(
         &settings,
         parameters.clone(),
-        HashBackend::Checkpoint,
+        HashBackend::Blake3,
         StatementFormat::CyclicPair,
     )?;
     let first_setup_ms = ms(t);
@@ -227,10 +245,11 @@ fn main() -> Result<()> {
     let mut report = json!({
         "protocol": PROTOCOL, "environment": environment, "depth": IMT_DEPTH,
         "batch_size": args.batch_size, "jobs": limits.jobs, "parallel_children": limits.leaves, "parallel_nodes": limits.aggregates,
-        "field": "Poly64/Poly192", "hash": "Keccak-256", "bound": "Johnson",
-        "child_parameters": parameters, "child_identity": child.identity(),
+        "field": "Poly64/Poly192", "hash": "BLAKE3", "bound": "Johnson",
+        "child_parameters": parameters, "child_identity": child.as_ref().map(PreparedMembership::identity),
+        "precomputed_children": args.from_children.is_some(),
         "first_verifier_digest": verifier_key_digest(&first_key), "merge_verifier_digest": trusted.verifier_digest,
-        "circuit_constructions": {"child":1, "first_aggregation":1, "merge":1},
+        "circuit_constructions": {"child":usize::from(child.is_some()), "first_aggregation":1, "merge":1},
         "setup_ms": {"child":child_setup_ms, "first_aggregation":first_setup_ms, "merge":merge_setup_ms},
         "geometry": {"first_aggregation":first.geometry(), "merge":merge.geometry()},
         "children": [], "first_aggregates": [], "merge_levels": [],
@@ -253,44 +272,59 @@ fn main() -> Result<()> {
     write_json(&out.join("report.json"), &report)?;
     let node_dir = out.join("nodes");
     fs::create_dir(&node_dir)?;
-    let t = Instant::now();
-    let notes = fixtures(IMT_DEPTH, args.batch_size)?;
-    report["fixture_ms"] = json!(ms(t));
-    let expected = AggregatePublic {
-        children: notes.iter().map(|(public, _)| public.clone()).collect(),
+    let input_start = Instant::now();
+    let (leaves, expected) = if let Some(path) = &args.from_children {
+        let public: AggregatePublic = read_json(&path.join("statement.json"))?;
+        ensure!(
+            public.children.len() == args.batch_size,
+            "saved child count does not match --batch-size"
+        );
+        let leaves = public
+            .children
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(index, public)| Leaf::Saved(StoredProof::at(path, 0, index, public)))
+            .collect();
+        (leaves, public)
+    } else {
+        let notes = fixtures(IMT_DEPTH, args.batch_size)?;
+        report["fixture_ms"] = json!(ms(input_start));
+        let public = AggregatePublic {
+            children: notes.iter().map(|(public, _)| public.clone()).collect(),
+        };
+        let leaves = notes
+            .into_iter()
+            .map(|(public, witness)| Leaf::Generate(public, witness))
+            .collect();
+        (leaves, public)
     };
     let mut timings: Vec<Vec<NodeMetrics>> =
         (0..=args.batch_size.ilog2()).map(|_| Vec::new()).collect();
     let mut sample_leaves = [None, None];
     let mut sample_pair = None;
-    progress.show();
+    progress.show(if args.from_children.is_some() {
+        "Aggregating saved child proofs"
+    } else {
+        "Proving child proofs"
+    });
     let tree_start = Instant::now();
     let root = schedule::run(
-        notes,
+        leaves,
         limits,
         |node, input| {
             progress.track(node.level, node.index, || match input {
-                Input::Leaf((public, witness)) => {
-                    let t = Instant::now();
-                    let trace = child.witness(&public, &witness)?;
-                    drop(witness);
-                    let witness_ms = ms(t);
-                    let t = Instant::now();
-                    let proof = child.prove_trace(&public, trace)?;
-                    let prove_ms = ms(t);
-                    let bytes = proof.to_bytes()?;
-                    let t = Instant::now();
-                    let proof = MaskedMembershipProof::from_bytes(&bytes)?;
-                    child.verify(&public, &proof)?;
-                    let metrics = ChildMetrics {
-                        witness_ms,
-                        prove_ms,
-                        decode_verify_ms: ms(t),
-                        proof_bytes: bytes.len(),
-                    };
-                    let stored = StoredProof::write(&node_dir, 0, node.index, public, &bytes)?;
-                    Ok(Proof::Leaf(stored, metrics))
+                Input::Leaf(Leaf::Generate(public, witness)) => {
+                    let (stored, metrics) = prove_child(
+                        child.as_ref().expect("prepared child circuit"),
+                        &node_dir,
+                        node.index,
+                        public,
+                        witness,
+                    )?;
+                    Ok(Proof::Leaf(stored, Some(metrics)))
                 }
+                Input::Leaf(Leaf::Saved(stored)) => Ok(Proof::Leaf(stored, None)),
                 Input::Pair([Proof::Leaf(left, _), Proof::Leaf(right, _)]) => {
                     let (public, proof, metrics) =
                         first.prove_for_merge(&[left.load()?, right.load()?], merge.authority())?;
@@ -298,8 +332,9 @@ fn main() -> Result<()> {
                     Ok(Proof::Aggregate(stored, metrics))
                 }
                 Input::Pair([Proof::Aggregate(left, _), Proof::Aggregate(right, _)]) => {
+                    // The prepared prover verifies its output. The root is also
+                    // verified from the exported key in a fresh process.
                     let (proof, metrics) = merge.prove(&[left.load()?, right.load()?])?;
-                    verifier.verify(&proof.proof, &proof.public)?;
                     let stored = StoredProof::write(
                         &node_dir,
                         node.level,
@@ -313,12 +348,21 @@ fn main() -> Result<()> {
             })
         },
         |node, proof, started, finished| {
+            let (started, finished) = if node.level == 0 && args.from_children.is_some() {
+                // Saved inputs were available when aggregation started.
+                (tree_start, tree_start)
+            } else {
+                (started, finished)
+            };
             let (proof_ms, mut metrics) = match proof {
                 Proof::Leaf(proof, metrics) => {
                     if node.index < sample_leaves.len() {
                         sample_leaves[node.index] = Some(proof.clone());
                     }
-                    (metrics.witness_ms + metrics.prove_ms, json!(metrics))
+                    metrics.as_ref().map_or_else(
+                        || (0.0, json!({"precomputed": true})),
+                        |metrics| (metrics.witness_ms + metrics.prove_ms, json!(metrics)),
+                    )
                 }
                 Proof::Aggregate(proof, metrics) => {
                     let details = if node.level == 1 {
@@ -383,6 +427,55 @@ fn main() -> Result<()> {
     report["merge_levels"] = json!(levels);
     write_json(&out.join("report.json"), &report)?;
 
+    ensure!(
+        merge.export_verifier_key()? == key,
+        "merge key changed between levels"
+    );
+    let Proof::Aggregate(root, _) = root else {
+        unreachable!("a tree with at least four leaves has an aggregate root");
+    };
+    let mut proof = root.load()?;
+    progress.message("Encoding and checking the final proof");
+    let encoding_start = Instant::now();
+    report["final_uncompressed_proof_bytes"] = json!(proof.proof.len());
+    proof.proof = compact_aggregate_proof(&proof.proof)?;
+    report["final_encoding_ms"] = json!(ms(encoding_start));
+    report["final_proof_bytes"] = json!(proof.proof.len());
+    ensure!(
+        proof.public == expected,
+        "final statement differs from the ordered children"
+    );
+    fs::write(out.join("aggregate.proof"), &proof.proof)?;
+    fs::write(out.join("verifier.key"), &key)?;
+    write_json(&out.join("statement.json"), &proof.public)?;
+    write_json(&out.join("trusted.json"), &trusted)?;
+    let t = Instant::now();
+    progress.message("Verifying the root in a fresh process");
+    let output = Command::new(std::env::current_exe()?)
+        .args(["--verify", "--threads", &args.threads.to_string(), "--out"])
+        .arg(out)
+        .output()?;
+    let wall_ms = ms(t);
+    ensure!(
+        output.status.success(),
+        "fresh verifier failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    report["fresh_verifier"] = serde_json::from_slice::<Value>(&output.stdout)?;
+    let aggregation_start = if args.from_children.is_some() {
+        input_start
+    } else {
+        last_leaf
+    };
+    let aggregation_to_verification_ms = ms(aggregation_start);
+    if args.from_children.is_some() {
+        report["cold_aggregation_to_fresh_verification_ms"] = json!(ms(start));
+        if args.batch_size == MAX_CHILDREN {
+            report["aggregation_target_met"] = json!(aggregation_to_verification_ms < 60_000.0);
+        }
+    }
+    report["fresh_verifier_wall_ms"] = json!(wall_ms);
+    report["prepared_aggregation_to_fresh_verification_ms"] = json!(aggregation_to_verification_ms);
     let t = Instant::now();
     progress.message("Checking child and authority rejection");
     let [left, right] = sample_leaves.map(Option::unwrap);
@@ -394,53 +487,12 @@ fn main() -> Result<()> {
         [left.load()?, right.load()?],
         sample_pair.unwrap().load()?,
     )?;
-    let mut validation_ms = ms(t);
-    drop(first);
-    ensure!(
-        merge.export_verifier_key()? == key,
-        "merge key changed between levels"
-    );
-    let Proof::Aggregate(root, _) = root else {
-        unreachable!("a tree with at least four leaves has an aggregate root");
-    };
-    let mut proof = root.load()?;
-    fs::remove_dir_all(node_dir)?;
-    progress.message("Encoding and checking the final proof");
-    let encoding_start = Instant::now();
-    report["final_uncompressed_proof_bytes"] = json!(proof.proof.len());
-    proof.proof = compact_aggregate_proof(&proof.proof)?;
-    report["final_encoding_ms"] = json!(ms(encoding_start));
-    report["final_proof_bytes"] = json!(proof.proof.len());
-    ensure!(
-        proof.public == expected,
-        "final statement differs from the ordered children"
-    );
-    let t = Instant::now();
     let negative_checks = negative_checks(&verifier, &proof)?;
-    validation_ms += ms(t);
-    fs::write(out.join("aggregate.proof"), &proof.proof)?;
-    fs::write(out.join("verifier.key"), &key)?;
-    write_json(&out.join("statement.json"), &proof.public)?;
-    write_json(&out.join("trusted.json"), &trusted)?;
+    let validation_ms = ms(t);
+    drop(first);
     drop(merge);
     drop(verifier);
-    let t = Instant::now();
-    progress.message("Verifying the root in a fresh process");
-    let output = Command::new(std::env::current_exe()?)
-        .args(["--verify", "--threads", &args.threads.to_string(), "--out"])
-        .arg(out)
-        .output()?;
-    let wall_ms = ms(t);
-    // Rejection checks run after the proof tree completes, outside the scheduler.
-    let aggregation_to_verification_ms = ms(last_leaf) - validation_ms;
-    ensure!(
-        output.status.success(),
-        "fresh verifier failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    report["fresh_verifier"] = serde_json::from_slice::<Value>(&output.stdout)?;
-    report["fresh_verifier_wall_ms"] = json!(wall_ms);
-    report["prepared_aggregation_to_fresh_verification_ms"] = json!(aggregation_to_verification_ms);
+    fs::remove_dir_all(node_dir)?;
     report["negative_checks"] = json!(negative_checks);
     report["invalid_child_statement_rejected"] = json!(true);
     report["invalid_child_proof_rejected"] = json!(true);
@@ -467,7 +519,7 @@ fn main() -> Result<()> {
     eprintln!("\nWall time");
     eprintln!(
         "  Setup       {:.2} s",
-        (child_setup_ms + first_setup_ms + merge_setup_ms) / 1000.0
+        (child_setup_ms.unwrap_or_default() + first_setup_ms + merge_setup_ms) / 1000.0
     );
     eprintln!(
         "  Proof tree  {:.2} s  (up to {} proofs across levels)",
@@ -489,10 +541,14 @@ fn main() -> Result<()> {
         validation_ms / 1000.0
     );
     eprintln!("\nAverage time per proof");
-    eprintln!(
-        "  Client      {:.2} s  ({client_count} leaf proofs, witness + proving)",
-        client_average_ms / 1000.0
-    );
+    if args.from_children.is_some() {
+        eprintln!("  Client      {client_count} precomputed proofs");
+    } else {
+        eprintln!(
+            "  Client      {:.2} s  ({client_count} leaf proofs, witness + proving)",
+            client_average_ms / 1000.0
+        );
+    }
     eprintln!(
         "  Aggregation {:.2} s  ({aggregate_count} proofs across all pairs and merges)",
         aggregate_average_ms / 1000.0
@@ -506,6 +562,9 @@ fn main() -> Result<()> {
             "parallel_children": limits.leaves, "parallel_nodes": limits.aggregates,
             "proof_tree_wall_ms": tree_wall_ms,
             "child_stage_wall_ms": child_wall_ms, "aggregation_to_verification_ms": aggregation_to_verification_ms,
+            "precomputed_children": args.from_children.is_some(),
+            "cold_aggregation_to_verification_ms": report["cold_aggregation_to_fresh_verification_ms"],
+            "aggregation_target_met": report["aggregation_target_met"],
             "run_wall_ms": run_ms, "average_proof_ms": report["average_proof_ms"]
         });
         peaks.record(&mut summary);
@@ -513,6 +572,92 @@ fn main() -> Result<()> {
     } else if let Some(path) = report_path {
         eprintln!("  Report      {}", path.display());
     }
+    Ok(())
+}
+
+fn prove_child(
+    child: &PreparedMembership,
+    directory: &Path,
+    index: usize,
+    public: ClientPublic,
+    witness: ClientWitness,
+) -> Result<(StoredProof<ClientPublic>, ChildMetrics)> {
+    let t = Instant::now();
+    let trace = child.witness(&public, &witness)?;
+    drop(witness);
+    let witness_ms = ms(t);
+    let t = Instant::now();
+    let proof = child.prove_trace(&public, trace)?;
+    let prove_ms = ms(t);
+    let bytes = proof.to_bytes()?;
+    let t = Instant::now();
+    child.verify(&public, &MaskedMembershipProof::from_bytes(&bytes)?)?;
+    let metrics = ChildMetrics {
+        witness_ms,
+        prove_ms,
+        decode_verify_ms: ms(t),
+        proof_bytes: bytes.len(),
+    };
+    let stored = StoredProof::write(directory, 0, index, public, &bytes)?;
+    Ok((stored, metrics))
+}
+
+fn prepare_children(args: &Args, destination: &Path) -> Result<()> {
+    ensure!(
+        !destination.exists(),
+        "--prepare-children requires a fresh directory"
+    );
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let scratch = scratch_directory(parent)?;
+    let out = scratch.path();
+    let limits = args.proof_limits();
+    let monitor = ProcessMonitor::start(|_| {});
+    let t = Instant::now();
+    let child = PreparedMembership::new(IMT_DEPTH, Parameters::default())?;
+    let child_setup_ms = ms(t);
+    let notes = fixtures(IMT_DEPTH, args.batch_size)?;
+    let statement = AggregatePublic {
+        children: notes.iter().map(|(public, _)| public.clone()).collect(),
+    };
+    eprintln!(
+        "Preparing {} child proofs (up to {} at once)",
+        args.batch_size, limits.leaves
+    );
+    let start = Instant::now();
+    let mut notes = notes.into_iter().enumerate();
+    let mut metrics = Vec::with_capacity(args.batch_size);
+    loop {
+        let batch: Vec<_> = notes.by_ref().take(limits.leaves).collect();
+        if batch.is_empty() {
+            break;
+        }
+        let proved = batch
+            .into_par_iter()
+            .map(|(index, (public, witness))| {
+                prove_child(&child, out, index, public, witness).map(|(_, metrics)| metrics)
+            })
+            .collect::<Vec<_>>();
+        for result in proved {
+            metrics.push(result?);
+        }
+    }
+    let mut report = json!({
+        "environment": environment(), "batch_size": args.batch_size, "child_identity": child.identity(),
+        "setup_ms": child_setup_ms, "wall_ms": ms(start), "parallel_children": limits.leaves,
+        "children": metrics,
+    });
+    let peaks = monitor.finish();
+    peaks.record(&mut report);
+    write_json(&out.join("statement.json"), &statement)?;
+    write_json(&out.join("report.json"), &report)?;
+    finish_run(scratch, Some(destination))?;
+    println!(
+        "{}",
+        json!({"children": args.batch_size, "out": destination, "wall_ms": report["wall_ms"]})
+    );
     Ok(())
 }
 

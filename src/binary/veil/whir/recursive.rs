@@ -1,4 +1,4 @@
-//! Native Poly64 circuit verification of the actual prefixed-Keccak WHIR PCS.
+//! Native Poly64 circuit verification of the actual prefixed-BLAKE3 WHIR PCS.
 //! This is the PCS component, not the complete masked membership verifier.
 use anyhow::{Result, ensure};
 use p3_circuit::ops::binary_encoding::NativeBinaryEncoding;
@@ -46,7 +46,7 @@ impl PreparedWhir {
             &pcs,
             protocol,
             VariableOrder::Prefix,
-            ByteHash::Keccak256,
+            ByteHash::Blake3,
             0,
         )?;
         let shape = verifier.input_shape();
@@ -104,7 +104,7 @@ impl PreparedWhir {
         );
         let cap = vec![NativeBinaryEncoding::words_from_bytes(builder, root)?];
         let mut channel =
-            BinaryTower128Challenger::new_with_hash_prefix(ByteHash::Keccak256, TRANSCRIPT_DOMAIN);
+            BinaryTower128Challenger::new_with_hash_prefix(ByteHash::Blake3, TRANSCRIPT_DOMAIN);
         channel.observe_bytes_with_host::<NativeBinaryEncoding, F>(builder, seed)?;
         self.verifier
             .observe_commitment_with_host::<NativeBinaryEncoding, F>(builder, &mut channel, &cap)?;

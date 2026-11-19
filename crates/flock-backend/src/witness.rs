@@ -1,9 +1,10 @@
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel};
+use old_blake3_air::{Blake3CompressionInput, generate_binary_trace_packed};
 use p3_binary_field::TowerLevel as NewTowerLevel;
 use p3_circuit::{
-    WitnessId,
-    ops::{keccak_limbs_to_state, keccak_state_to_limbs},
+    Circuit, Op, WitnessId,
+    ops::{BLAKE3_INPUT_LIMBS, NpoTypeId, keccak_limbs_to_state, keccak_state_to_limbs},
 };
 use p3_field::PrimeCharacteristicRing;
 use p3_keccak::KeccakF;
@@ -97,6 +98,62 @@ impl KeccakWires {
     }
 }
 
+pub(super) struct Blake3Wires([u32; BLAKE3_INPUT_LIMBS]);
+
+impl Blake3Wires {
+    pub fn is_used(circuit: &Circuit<OldF>) -> bool {
+        circuit.ops.iter().any(|op| {
+            matches!(op, Op::NonPrimitiveOpWithExecutor { executor, .. }
+                if executor.op_type() == &NpoTypeId::native_blake3_compress())
+        })
+    }
+
+    pub fn from_circuit(circuit: &Circuit<OldF>) -> Result<Vec<Self>> {
+        circuit
+            .ops
+            .iter()
+            .filter_map(|op| {
+                if let Op::NonPrimitiveOpWithExecutor {
+                    inputs, executor, ..
+                } = op
+                    && executor.op_type() == &NpoTypeId::native_blake3_compress()
+                {
+                    Some((|| {
+                        let [limbs] = inputs.as_slice() else {
+                            anyhow::bail!("unexpected BLAKE3 input groups");
+                        };
+                        let limbs: &[WitnessId; BLAKE3_INPUT_LIMBS] =
+                            limbs.as_slice().try_into()?;
+                        ensure!(
+                            limbs.iter().all(|id| id.0 < circuit.witness_count),
+                            "invalid BLAKE3 witness IDs"
+                        );
+                        Ok(Self(limbs.map(|id| id.0 + 1)))
+                    })())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn input(&self, read: &impl Fn(u32) -> F) -> Result<Blake3CompressionInput> {
+        let mut words = [0u32; BLAKE3_INPUT_LIMBS / 2];
+        for (word, [low, high]) in words.iter_mut().zip(self.0.as_chunks::<2>().0) {
+            let low = u16::try_from(read(*low).to_repr())?;
+            let high = u16::try_from(read(*high).to_repr())?;
+            *word = u32::from(low) | (u32::from(high) << 16);
+        }
+        Ok(Blake3CompressionInput {
+            block: words[..16].try_into()?,
+            chaining_value: words[16..24].try_into()?,
+            counter: u64::from(words[24]) | (u64::from(words[25]) << 32),
+            block_len: words[26],
+            flags: words[27],
+        })
+    }
+}
+
 impl Prepared {
     pub(crate) fn witness_tables(
         &self,
@@ -118,6 +175,7 @@ impl Prepared {
             outputs: Vec::with_capacity(self.calls),
         };
         let zero_output = KeccakF.permute([0; 25]);
+        let mut blake3_words = Vec::new();
         let mut values: Vec<_> = self
             .airs
             .iter()
@@ -157,6 +215,16 @@ impl Prepared {
                 let output = &mut values[i][instance * size..(instance + 1) * size];
                 match air.witness_source() {
                     WitnessSource::Public | WitnessSource::Keccak => continue,
+                    WitnessSource::Blake3 => {
+                        let mut inputs = self
+                            .blake3_wires
+                            .iter()
+                            .map(|wires| wires.input(&read))
+                            .collect::<Result<Vec<_>>>()?;
+                        inputs.resize(height, Blake3CompressionInput::default());
+                        blake3_words.push(generate_binary_trace_packed::<OldF>(inputs).values);
+                        continue;
+                    }
                     WitnessSource::Fanout(shard) => {
                         for (value, row) in output[1..].iter_mut().zip(&shard.rows) {
                             *value = read(row.id);
@@ -216,8 +284,28 @@ impl Prepared {
             .into_iter()
             .enumerate()
             .map(|(i, values)| {
-                (i != self.hash_index || self.direct_bridge)
-                    .then(|| Table::new(RowMajorMatrix::new(values, 1 << self.log_heights[i])))
+                if i == self.hash_index && self.backend == HashBackend::Blake3 {
+                    let width = self.airs[i].instance_width();
+                    let words = if blake3_words.len() == 1 {
+                        blake3_words.pop().expect("BLAKE3 witness")
+                    } else {
+                        let blocks = blake3_words[0].len() / width;
+                        (0..blocks)
+                            .flat_map(|block| {
+                                blake3_words.iter().flat_map(move |columns| {
+                                    columns[block * width..(block + 1) * width].iter().copied()
+                                })
+                            })
+                            .collect()
+                    };
+                    Some(Table::from_packed_bits(
+                        RowMajorMatrix::new(words, width * self.instances),
+                        self.log_heights[i],
+                    ))
+                } else {
+                    (i != self.hash_index || self.direct_bridge)
+                        .then(|| Table::new(RowMajorMatrix::new(values, 1 << self.log_heights[i])))
+                }
             })
             .collect();
         if self.backend == HashBackend::Checkpoint {

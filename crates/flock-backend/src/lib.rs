@@ -37,7 +37,7 @@ mod tests;
 use air::{Chip, WitnessSource, convert};
 use anyhow::{Result, ensure};
 use checkpoint_keccak::linked::{BoundaryWitness, LinkedBatch};
-use config::{Config, challenger};
+use config::{Config, ProofHash};
 use encoding::TableEncoding;
 use old_air::BaseAir as OldBaseAir;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
@@ -59,7 +59,6 @@ use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_sumcheck::TableShape;
 use packing::Packing;
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 use std::time::Instant;
 
 type F = Poly64;
@@ -70,17 +69,29 @@ type Proof = MultiStarkProof<Config>;
 pub enum HashBackend {
     Flock,
     Checkpoint,
+    Blake3,
+}
+
+impl HashBackend {
+    fn proof_hash(self) -> ProofHash {
+        match self {
+            Self::Blake3 => ProofHash::Blake3,
+            Self::Flock | Self::Checkpoint => ProofHash::Keccak,
+        }
+    }
 }
 
 pub struct Prepared {
     direct_bridge: bool,
+    recursive_layout: bool,
     backend: HashBackend,
     checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
     instances: usize,
     keccak_wires: Vec<witness::KeccakWires>,
+    blake3_wires: Vec<witness::Blake3Wires>,
     airs: Vec<Chip>,
-    hash: BooleanCircuit,
+    hash: Option<BooleanCircuit>,
     hash_index: usize,
     calls: usize,
     log_heights: Vec<usize>,
@@ -110,6 +121,7 @@ pub struct Geometry {
     pub fanout_copy_layout: Vec<(usize, usize, usize)>,
     pub gate_rows_by_width: Vec<(Vec<usize>, usize)>,
     pub keccak_permutations: usize,
+    pub blake3_compressions: usize,
     pub table_widths: Vec<usize>,
     pub log_heights: Vec<usize>,
     pub algebraic_bits: f64,
@@ -148,7 +160,12 @@ impl Prepared {
     }
 
     pub fn recursive_pair(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
-        Self::prepare(circuit, 2, domain, HashBackend::Checkpoint, true)
+        let backend = if witness::Blake3Wires::is_used(&circuit) {
+            HashBackend::Blake3
+        } else {
+            HashBackend::Checkpoint
+        };
+        Self::prepare(circuit, 2, domain, backend, true)
     }
 
     fn prepare(
@@ -169,7 +186,13 @@ impl Prepared {
             .witness_count
             .checked_mul(instances as u32)
             .ok_or_else(|| anyhow::anyhow!("witness count overflow"))?;
-        let bus_constructor = if recursive {
+        let blake3 = backend == HashBackend::Blake3;
+        let blake3_wires = if blake3 {
+            witness::Blake3Wires::from_circuit(&circuit)?
+        } else {
+            Vec::new()
+        };
+        let bus_constructor = if recursive || blake3 {
             NativeBusCircuit::with_options
         } else {
             NativeBusCircuit::with_compact_options
@@ -187,22 +210,32 @@ impl Prepared {
         )?;
         let hash_index = bus
             .packed_table_index()
-            .ok_or_else(|| anyhow::anyhow!("missing Keccak table"))?;
-        let bridge = bus.airs()[hash_index + 1].preprocessed_trace().unwrap();
-        ensure!(bridge.width >= 119, "unexpected native bridge layout");
-        let calls = bridge
-            .values
-            .chunks_exact(bridge.width)
-            .filter(|r| r[117].to_repr() == 1)
-            .count()
-            / 2;
+            .ok_or_else(|| anyhow::anyhow!("missing hash table"))?;
+        let bridge = if blake3 {
+            None
+        } else {
+            let bridge = bus.airs()[hash_index + 1].preprocessed_trace().unwrap();
+            ensure!(bridge.width >= 119, "unexpected native bridge layout");
+            Some(bridge)
+        };
+        let calls = bridge.as_ref().map_or(blake3_wires.len(), |bridge| {
+            bridge
+                .values
+                .chunks_exact(bridge.width)
+                .filter(|r| r[117].to_repr() == 1)
+                .count()
+                / 2
+        });
         ensure!(
             bus.airs()[0].width() == 1
                 && bus.airs()[0].preprocessed_width() == 3
                 && bus.airs()[0].main_next_row_columns() == [0],
             "unexpected native fanout layout"
         );
-        let mut widths = fanout::coordinate_widths(&circuit, &bridge.values, bridge.width)?;
+        let mut widths = fanout::coordinate_widths(
+            &circuit,
+            bridge.as_ref().map(|b| (b.values.as_slice(), b.width)),
+        )?;
         let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
         let gates_pp = bus.airs()[1].preprocessed_trace().unwrap();
         if recursive {
@@ -250,12 +283,18 @@ impl Prepared {
             .iter()
             .map(|s| (s.coordinate_widths.clone(), s.source_rows.len()))
             .collect();
-        let keccak_wires = witness::KeccakWires::from_bridge(
-            &bridge.values,
-            bridge.width,
-            calls,
-            circuit.witness_count,
-        )?;
+        let keccak_wires = bridge
+            .as_ref()
+            .map(|bridge| {
+                witness::KeccakWires::from_bridge(
+                    &bridge.values,
+                    bridge.width,
+                    calls,
+                    circuit.witness_count,
+                )
+            })
+            .transpose()?
+            .unwrap_or_default();
         drop(bridge);
         let fanout_copy_layout: Vec<_> = shards
             .iter()
@@ -276,9 +315,11 @@ impl Prepared {
             .collect();
         ensure!(
             calls > 0 && calls * instances <= 1 << 20,
-            "unsupported Keccak call count"
+            "unsupported hash call count"
         );
-        let hash_stride = if recursive {
+        let hash_stride = if blake3 {
+            0
+        } else if recursive {
             ensure!(
                 calls * instances <= 1 << recursive_layout::HASH_ROWS_LOG,
                 "recursive Keccak capacity exceeded"
@@ -289,13 +330,25 @@ impl Prepared {
         };
         let calls_per_instance = calls;
         let calls = calls * instances;
-        let hash = keccak::circuit();
-        let log_calls = if recursive {
+        let hash = (!blake3).then(keccak::circuit);
+        let log_calls = if blake3 {
+            let log = if recursive {
+                recursive_layout::HASH_ROWS_LOG
+            } else {
+                bus.log_heights()[hash_index]
+            };
+            ensure!(
+                bus.log_heights()[hash_index] <= log,
+                "BLAKE3 table needs 2^{} rows, fixed capacity is 2^{log} ({calls_per_instance} calls)",
+                bus.log_heights()[hash_index]
+            );
+            log
+        } else if recursive {
             recursive_layout::HASH_ROWS_LOG
         } else {
             (calls.next_power_of_two().trailing_zeros() as usize).max(4)
         };
-        let mut preprocessing = if recursive {
+        let mut preprocessing = if recursive || blake3 {
             Vec::new()
         } else {
             vec![F::ZERO; 3 << log_calls]
@@ -348,10 +401,12 @@ impl Prepared {
         }
         let hash_index = source_hash_index + airs.len() - 2;
         for (i, air) in bus.airs().iter().enumerate().skip(2) {
-            if recursive && i == source_hash_index {
+            if !blake3 && recursive && i == source_hash_index {
                 continue;
             }
-            let mut imported = if i == source_hash_index {
+            let mut imported = if blake3 && i == source_hash_index {
+                Chip::import_blake3(air.clone(), log_calls)?
+            } else if i == source_hash_index {
                 Chip::Keccak {
                     preprocessing: RowMajorMatrix::new(preprocessing.clone(), 3),
                 }
@@ -362,7 +417,7 @@ impl Prepared {
                 imported.is_public_table() || i == source_hash_index || i == source_hash_index + 1,
                 "unexpected native witness table"
             );
-            if recursive && i == source_hash_index + 1 {
+            if !blake3 && recursive && i == source_hash_index + 1 {
                 imported.link_keccak_bridge(log_calls)?;
             }
             airs.push(imported);
@@ -385,11 +440,12 @@ impl Prepared {
             air.repeat(instances, hash_stride);
         }
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
-        let mut identity = Keccak256::new();
+        let mut identity = blake3::Hasher::new();
         identity.update(match backend {
             HashBackend::Flock => {
                 b"imt-flock-backend-v12/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
+            HashBackend::Blake3 => b"imt-blake3-backend-v1".as_slice(),
             HashBackend::Checkpoint => {
                 b"imt-checkpoint-backend-v6/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
@@ -397,24 +453,26 @@ impl Prepared {
         if recursive {
             identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1");
         }
-        identity.update((domain.len() as u64).to_le_bytes());
+        identity.update(&(domain.len() as u64).to_le_bytes());
         identity.update(domain);
-        identity.update(hash.digest());
+        if let Some(hash) = &hash {
+            identity.update(hash.digest());
+        }
         let mut pp_encoding = Vec::new();
         for a in &airs {
-            identity.update((a.width() as u64).to_le_bytes());
-            identity.update((a.num_public_values() as u64).to_le_bytes());
-            identity.update(a.periodic_statement());
+            identity.update(&(a.width() as u64).to_le_bytes());
+            identity.update(&(a.num_public_values() as u64).to_le_bytes());
+            identity.update(&a.periodic_statement());
             let s = p3_bus::BusSymbolicBuilder::<F, F>::from_air(a, p3_air::AirLayout::from_air(a));
             identity.update(format!("{:?}{:?}", s.base_constraints(), s.interactions()).as_bytes());
             if let Some(pp) = a.preprocessed_trace() {
-                identity.update((pp.width as u64).to_le_bytes());
-                identity.update((pp.values.len() as u64).to_le_bytes());
+                identity.update(&(pp.width as u64).to_le_bytes());
+                identity.update(&(pp.values.len() as u64).to_le_bytes());
                 let mut coordinates = vec![0u64; pp.width];
                 for row in pp.values.chunks_exact(pp.width) {
                     for (column, value) in row.iter().enumerate() {
                         let raw = value.to_repr();
-                        identity.update(raw.to_le_bytes());
+                        identity.update(&raw.to_le_bytes());
                         coordinates[column] |= raw;
                     }
                 }
@@ -439,7 +497,7 @@ impl Prepared {
                     mode,
                 )?);
             } else {
-                identity.update(0u64.to_le_bytes());
+                identity.update(&0u64.to_le_bytes());
             }
         }
         let shapes: Vec<_> = airs
@@ -447,7 +505,7 @@ impl Prepared {
             .enumerate()
             .map(|(i, a)| {
                 if i == hash_index && backend == HashBackend::Flock {
-                    TableShape::new(log_calls + hash.k_log(), 1)
+                    TableShape::new(log_calls + hash.as_ref().unwrap().k_log(), 1)
                 } else {
                     TableShape::new(log_heights[i], a.width())
                 }
@@ -478,6 +536,7 @@ impl Prepared {
                     WitnessSource::Keccak if backend == HashBackend::Flock => {
                         vec![1; shape.width()]
                     }
+                    WitnessSource::Blake3 => vec![1; shape.width()],
                     WitnessSource::Bridge | WitnessSource::Keccak => vec![16; shape.width()],
                 };
                 TableEncoding::with_word_openings(widths, recursive)
@@ -490,16 +549,22 @@ impl Prepared {
         // Encodings are verifier-authorized parts of the statement, including
         // widths inferred from the fixed preprocessing (never from a witness).
         for encodings in [&main_encoding, &pp_encoding] {
-            identity.update((encodings.len() as u64).to_le_bytes());
+            identity.update(&(encodings.len() as u64).to_le_bytes());
             for encoding in encodings {
-                identity.update((encoding.widths.len() as u64).to_le_bytes());
+                identity.update(&(encoding.widths.len() as u64).to_le_bytes());
                 for &width in &encoding.widths {
-                    identity.update((width as u64).to_le_bytes());
+                    identity.update(&(width as u64).to_le_bytes());
                 }
             }
         }
-        let seed = identity.finalize().to_vec();
-        let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
+        let seed = identity.finalize().as_bytes().to_vec();
+        let config = Config::new(
+            &shapes,
+            main_encoding,
+            &pp,
+            pp_encoding,
+            backend.proof_hash(),
+        )?;
         let checkpoint = if backend == HashBackend::Checkpoint {
             Some(LinkedBatch::with_bridge(
                 log_calls,
@@ -517,7 +582,7 @@ impl Prepared {
         let (pk, vk) = setup(
             &config,
             &airs.iter().collect::<Vec<_>>(),
-            &mut challenger(&seed),
+            &mut config.challenger(&seed),
         )?;
         let public: Vec<Vec<F>> = airs
             .iter()
@@ -575,7 +640,8 @@ impl Prepared {
             fanout_rows_by_width,
             fanout_copy_layout,
             gate_rows_by_width,
-            keccak_permutations: calls,
+            keccak_permutations: if blake3 { 0 } else { calls },
+            blake3_compressions: if blake3 { calls } else { 0 },
             table_widths: airs.iter().map(BaseAir::width).collect(),
             log_heights: log_heights.clone(),
             algebraic_bits,
@@ -587,12 +653,14 @@ impl Prepared {
             security_terms: terms,
         };
         Ok(Self {
-            direct_bridge: recursive,
+            direct_bridge: recursive && !blake3,
+            recursive_layout: recursive,
             backend,
             checkpoint,
             circuit,
             instances,
             keccak_wires,
+            blake3_wires,
             airs,
             hash,
             hash_index,
@@ -615,7 +683,7 @@ impl Prepared {
         let (mut tables, states) = self.witness_tables(public, private)?;
         let mut hash_witness = (self.backend == HashBackend::Flock).then(|| {
             Witness::generate(
-                &self.hash,
+                self.hash.as_ref().unwrap(),
                 self.log_heights[self.hash_index],
                 &states.inputs,
                 &[0; 25],
@@ -623,7 +691,7 @@ impl Prepared {
             )
         });
         let boundaries = (self.backend == HashBackend::Checkpoint).then_some(states);
-        if !self.direct_bridge {
+        if self.backend == HashBackend::Checkpoint && !self.direct_bridge {
             tables[self.hash_index] = boundaries.as_ref().map(BoundaryWitness::ports);
         }
         let public = self.public(public)?;
@@ -635,7 +703,7 @@ impl Prepared {
                     Some(t) => ProverInstance::new(&self.airs[i], t, &self.pk, &public[i]),
                     None => ProverInstance::circuit(
                         &self.airs[i],
-                        &self.hash,
+                        self.hash.as_ref().unwrap(),
                         hash_witness.take().unwrap(),
                         &self.pk,
                         &public[i],
@@ -662,7 +730,12 @@ impl Prepared {
                     .arithmetic_seed(&self.seed, &pending.statement)
             },
         )?;
-        let proof = prove(&self.config, instances, 0, &mut challenger(&seed))?;
+        let proof = prove(
+            &self.config,
+            instances,
+            0,
+            &mut self.config.challenger(&seed),
+        )?;
         let bytes = if let Some(pending) = pending {
             let scheme = self.checkpoint.as_ref().unwrap();
             let ports = checkpoint::arithmetic_opening(
@@ -739,7 +812,7 @@ impl Prepared {
             instances,
             &proof,
             0,
-            &mut challenger(&self.seed),
+            &mut self.config.challenger(&self.seed),
         )?;
         Ok(())
     }
@@ -766,7 +839,7 @@ impl Prepared {
 
 fn verifier_instances<'a>(
     airs: &'a [Chip],
-    hash: &'a BooleanCircuit,
+    hash: &'a Option<BooleanCircuit>,
     hash_index: usize,
     logs: &[usize],
     vk: &'a VerifyingKey<Config>,
@@ -778,7 +851,7 @@ fn verifier_instances<'a>(
             .enumerate()
             .map(|(i, a)| {
                 if i == hash_index && backend == HashBackend::Flock {
-                    VerifierInstance::circuit(a, hash, vk, logs[i], &public[i])
+                    VerifierInstance::circuit(a, hash.as_ref().unwrap(), vk, logs[i], &public[i])
                 } else {
                     VerifierInstance::new(a, vk, logs[i], &public[i])
                 }

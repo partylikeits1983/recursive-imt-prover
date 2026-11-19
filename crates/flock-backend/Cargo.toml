@@ -9,11 +9,13 @@ anyhow = "1"
 bincode = { version = "=2.0.1", default-features = false, features = ["std", "serde"] }
 tracing = "0.1"
 sha3 = "0.10"
+blake3 = "1.8"
 postcard = { version = "1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 hex = "0.4"
 p3-air = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-binary-field = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
+p3-blake3 = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-binary-pcs = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-bus = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
 p3-challenger = { git = "https://github.com/Plonky3/Plonky3", rev = "708900d7a730d6ce4d5421d43e2193f2301920fa" }
@@ -38,6 +40,8 @@ p3-circuit = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69
 p3-circuit-prover = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-recursion = { path = "../../vendor/p3-recursion", features = ["parallel"] }
 
+old-blake3 = { package = "p3-blake3", version = "=0.9.0-rc.2" }
+old-blake3-air = { package = "p3-blake3-air", version = "=0.9.0-rc.2" }
 old-binary-pcs = { package = "p3-binary-pcs", version = "=0.9.0-rc.2" }
 old-keccak = { package = "p3-keccak", version = "=0.9.0-rc.2" }
 old-merkle-tree = { package = "p3-merkle-tree", version = "=0.9.0-rc.2" }

@@ -3,7 +3,7 @@ use crate::{F, copies::CopyPruner};
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_binary_field::TowerLevel;
-use p3_circuit::{AluOpKind, Circuit, Op};
+use p3_circuit::{AluOpKind, Circuit, Op, ops::NpoTypeId};
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 use std::sync::Arc;
@@ -72,10 +72,8 @@ impl FanoutShard {
 
 pub fn coordinate_widths(
     circuit: &Circuit<OldF>,
-    bridge: &[OldF],
-    bridge_width: usize,
+    bridge: Option<(&[OldF], usize)>,
 ) -> Result<Vec<u8>> {
-    ensure!(bridge_width >= 119, "unexpected bridge preprocessing");
     let mut widths = vec![64u8; circuit.witness_count as usize + 1];
     widths[0] = 0; // The native bus reserves ID zero for an absent addend.
     for op in &circuit.ops {
@@ -96,12 +94,30 @@ pub fn coordinate_widths(
             _ => {} // Hints never establish a width bound.
         }
     }
-    for row in bridge.chunks_exact(bridge_width) {
-        if row[117] == OldF::from_repr(1) {
-            for id in &row[..116] {
-                let id = usize::try_from(id.to_repr())?;
-                ensure!(id < widths.len(), "bridge witness ID out of range");
-                widths[id] = widths[id].min(16);
+    if let Some((bridge, bridge_width)) = bridge {
+        ensure!(bridge_width >= 119, "unexpected bridge preprocessing");
+        for row in bridge.chunks_exact(bridge_width) {
+            if row[117] == OldF::from_repr(1) {
+                for id in &row[..116] {
+                    let id = usize::try_from(id.to_repr())?;
+                    ensure!(id < widths.len(), "bridge witness ID out of range");
+                    widths[id] = widths[id].min(16);
+                }
+            }
+        }
+    } else {
+        for op in &circuit.ops {
+            if let Op::NonPrimitiveOpWithExecutor {
+                inputs,
+                outputs,
+                executor,
+                ..
+            } = op
+                && executor.op_type() == &NpoTypeId::native_blake3_compress()
+            {
+                for id in inputs.iter().chain(outputs).flatten() {
+                    widths[id.0 as usize + 1] = widths[id.0 as usize + 1].min(16);
+                }
             }
         }
     }

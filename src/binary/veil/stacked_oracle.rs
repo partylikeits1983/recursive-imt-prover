@@ -78,7 +78,7 @@ impl StackedSpec {
     }
     pub fn code(&self, parameters: &Parameters) -> Result<BinaryCode> {
         ensure!(
-            self.variables <= 20 && self.log_stack <= 8 && (1..=2048).contains(&self.columns),
+            self.variables <= 20 && self.log_stack <= 8 && (1..=1 << 14).contains(&self.columns),
             "invalid stacked oracle shape"
         );
         let length = 1usize << (self.variables + self.log_stack);

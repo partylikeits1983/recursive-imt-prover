@@ -15,20 +15,16 @@ use p3_multi_stark::{VerifierInstance, VerifierInstances, VerifyingKey, security
 use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_sumcheck::TableShape;
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 
 use self::air::VerifierAir;
 use crate::{
-    F, HashBackend, Prepared, Proof,
-    air::convert,
-    checkpoint,
-    checkpoint_keccak::linked::LinkedBatch,
-    config::{Config, challenger},
-    encoding::TableEncoding,
-    keccak,
+    F, HashBackend, Prepared, Proof, air::convert, checkpoint,
+    checkpoint_keccak::linked::LinkedBatch, config::Config, encoding::TableEncoding, keccak,
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const BLAKE3_RECURSIVE_FORMAT: &str = "imt-blake3-trusted-verifier-v1";
+const BLAKE3_FORMAT: &str = "imt-blake3-trusted-verifier-v1-ordered";
 const DIGIT_FORMAT: &str = "imt-binary-trusted-verifier-v7";
 const BRIDGE_FORMAT: &str = "imt-binary-trusted-verifier-v6";
 const WORD_FORMAT: &str = "imt-binary-trusted-verifier-v5";
@@ -49,7 +45,7 @@ struct VerifierData<K> {
 
 pub struct Verifier {
     data: VerifierData<VerifyingKey<Config>>,
-    hash: BooleanCircuit,
+    hash: Option<BooleanCircuit>,
     config: Config,
     public_count: usize,
     checkpoint: Option<LinkedBatch>,
@@ -57,14 +53,23 @@ pub struct Verifier {
 
 /// The expected digest must come from trusted verifier data, never from the proof.
 pub fn verifier_key_digest(bytes: &[u8]) -> [u8; 32] {
-    let mut hash = Keccak256::new();
-    hash.update(FORMAT.as_bytes());
-    hash.update((bytes.len() as u64).to_le_bytes());
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"imt-trusted-verifier-digest-v2");
+    hash.update(&(bytes.len() as u64).to_le_bytes());
     hash.update(bytes);
     hash.finalize().into()
 }
 
 impl Prepared {
+    fn verifier_format(&self) -> &'static str {
+        match (self.backend, self.recursive_layout) {
+            (HashBackend::Blake3, true) => BLAKE3_RECURSIVE_FORMAT,
+            (HashBackend::Blake3, false) => BLAKE3_FORMAT,
+            (_, true) => DIGIT_FORMAT,
+            (_, false) => FORMAT,
+        }
+    }
+
     pub fn export_verifier(&self, binding: &[u8]) -> Result<Vec<u8>> {
         let airs = self
             .airs
@@ -74,12 +79,7 @@ impl Prepared {
             .collect::<Result<Vec<_>>>()?;
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
-            format: if self.direct_bridge {
-                DIGIT_FORMAT
-            } else {
-                FORMAT
-            }
-            .to_owned(),
+            format: self.verifier_format().to_owned(),
             backend: self.backend,
             binding: binding.to_vec(),
             seed: self
@@ -106,12 +106,7 @@ impl Verifier {
     pub fn require_same_layout(&self, output: &Prepared) -> Result<()> {
         ensure!(
             self.data.backend == output.backend
-                && self.data.format
-                    == if output.direct_bridge {
-                        DIGIT_FORMAT
-                    } else {
-                        FORMAT
-                    }
+                && self.data.format == output.verifier_format()
                 && self.data.hash_index == output.hash_index
                 && self.data.main_coordinates == output.geometry.main_coordinate_widths
                 && self.data.preprocessed_coordinates
@@ -155,12 +150,17 @@ impl Verifier {
             postcard::take_from_bytes(bytes)?;
         ensure!(rest.is_empty(), "trailing trusted verifier data");
         ensure!(
-            (data.format == FORMAT
-                || (matches!(
+            (match data.backend {
+                HashBackend::Blake3 => matches!(
                     data.format.as_str(),
-                    WORD_FORMAT | BRIDGE_FORMAT | DIGIT_FORMAT
-                ) && data.backend == HashBackend::Checkpoint))
-                && data.binding == binding,
+                    BLAKE3_FORMAT | BLAKE3_RECURSIVE_FORMAT
+                ),
+                HashBackend::Flock => data.format == FORMAT,
+                HashBackend::Checkpoint => matches!(
+                    data.format.as_str(),
+                    FORMAT | WORD_FORMAT | BRIDGE_FORMAT | DIGIT_FORMAT
+                ),
+            }) && data.binding == binding,
             "trusted verifier configuration mismatch"
         );
         ensure!(
@@ -178,20 +178,25 @@ impl Verifier {
         for air in &data.airs {
             ensure!(
                 air.log_height <= 30
-                    && (1..=8192).contains(&air.width)
+                    && (1..=if data.backend == HashBackend::Blake3 {
+                        1 << 15
+                    } else {
+                        8192
+                    })
+                        .contains(&air.width)
                     && air.preprocessed_width <= 1024
                     && air.public_count <= 4096,
                 "invalid trusted AIR shape"
             );
         }
-        let hash = keccak::circuit();
+        let hash = (data.backend != HashBackend::Blake3).then(keccak::circuit);
         let shapes: Vec<_> = data
             .airs
             .iter()
             .enumerate()
             .map(|(i, air)| {
                 if i == data.hash_index && data.backend == HashBackend::Flock {
-                    TableShape::new(air.log_height + hash.k_log(), 1)
+                    TableShape::new(air.log_height + hash.as_ref().unwrap().k_log(), 1)
                 } else {
                     TableShape::new(air.log_height, air.width)
                 }
@@ -219,7 +224,12 @@ impl Verifier {
             data.main_coordinates
                 .iter()
                 .cloned()
-                .map(|w| TableEncoding::with_word_openings(w, data.format != FORMAT))
+                .map(|w| {
+                    TableEncoding::with_word_openings(
+                        w,
+                        !matches!(data.format.as_str(), FORMAT | BLAKE3_FORMAT),
+                    )
+                })
                 .collect::<Result<_>>()?,
             &pp,
             data.preprocessed_coordinates
@@ -230,7 +240,7 @@ impl Verifier {
                     TableEncoding::with_encoding(
                         widths,
                         shape.num_variables(),
-                        if data.format == DIGIT_FORMAT {
+                        if matches!(data.format.as_str(), DIGIT_FORMAT | BLAKE3_RECURSIVE_FORMAT) {
                             CoordinateEncoding::PreprocessedDigits
                         } else {
                             CoordinateEncoding::Bits
@@ -238,6 +248,7 @@ impl Verifier {
                     )
                 })
                 .collect::<Result<_>>()?,
+            data.backend.proof_hash(),
         )?;
         let public_count = data.airs.iter().map(|a| a.public_count).max().unwrap();
         ensure!(
@@ -332,7 +343,7 @@ impl Verifier {
             self.instances(&public),
             &proof,
             0,
-            &mut challenger(&self.data.seed),
+            &mut self.config.challenger(&self.data.seed),
         )?;
         Ok(())
     }
@@ -346,7 +357,7 @@ impl Verifier {
                     if i == self.data.hash_index && self.data.backend == HashBackend::Flock {
                         VerifierInstance::circuit(
                             air,
-                            &self.hash,
+                            self.hash.as_ref().unwrap(),
                             &self.data.key,
                             air.log_height,
                             &public[i],

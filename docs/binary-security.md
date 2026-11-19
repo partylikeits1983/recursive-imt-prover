@@ -1,6 +1,6 @@
 # Security scope
 
-The active relation is depth-32 binary-field Keccak IMT membership. Children use
+The active relation is depth-32 binary-field BLAKE3 IMT membership. Children use
 experimental statistical masking; aggregates are intentionally non-ZK. The goal
 is 128-bit classical security for every proof and efficient recursive merging.
 Joint child ZK and end-to-end security have not been established. Formal ZK
@@ -8,11 +8,11 @@ analysis is deferred, not an implementation gate. No production or real-funds us
 
 ## Relation and trust
 
-The leaf preimage is `"IMT-KECCAK-LEAF2" || secret_num[32] || nullifier[32]`.
-The public nullifier hash is `Keccak256("IMT-KECCAK-NULL1" || nullifier[32])`.
-Nodes hash `"IMT-KECCAK-NODE1" || left[32] || right[32]`. Tags are exactly
-16 ASCII bytes; hashing is Keccak-256, not SHA3-256. The circuit constrains
-bytes, padding, permutations, all 32 private direction bits, the root and the
+The leaf preimage is `"IMT-BLAKE3-LEAF2" || secret_num[32] || nullifier[32]`.
+The public nullifier hash is `BLAKE3("IMT-BLAKE3-NULL1" || nullifier[32])`.
+Nodes hash `"IMT-BLAKE3-NODE1" || left[32] || right[32]`. Tags are exactly
+16 ASCII bytes and the unkeyed BLAKE3 digest uses 32 output bytes. The circuit constrains
+bytes, padding, compression flags, all 32 private direction bits, the root and the
 nullifier hash. Four private Poly64 carry columns bind the exact same nullifier
 in the leaf and nullifier-hash preimages. See [protocol](protocol.md).
 Binary-field bytes use raw coordinates; integer field embedding would lose bits.
@@ -38,7 +38,7 @@ commitment inside the proof. See [tree binding](aggregation-tree.md).
 | Component | Parameters |
 |---|---|
 | Fields | Poly64 values, Poly192 challenges |
-| Hashing | Keccak-256 for commitments and transcripts |
+| Hashing | BLAKE3 for the IMT, commitments, transcripts and verifier identities |
 | Child query target | 160 bits; code rate 1/16 |
 | Outer PCS | 152-bit target, at most 16 grinding bits, rate 1/4, fold 4 |
 | Conditional algebraic floor | 144 bits |
@@ -73,9 +73,9 @@ algebraic union, this estimate and the conventional hash work factor separately;
 adding unlike quantities does not establish end-to-end work security. Explicit
 weak parameters remain confined to native correctness tests and diagnostic runs.
 
-Keccak-256 has generic classical collision work around 2^128, generic quantum
-preimage cost around 2^128 and generic quantum collision query cost around
-2^(256/3). This is not a 128-bit post-quantum proof-system claim.
+For 32-byte outputs, BLAKE3 targets 128-bit classical collision security.
+The generic quantum collision query cost is around 2^(256/3).
+[BLAKE3 specification](https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf)
 
 ## Child privacy
 

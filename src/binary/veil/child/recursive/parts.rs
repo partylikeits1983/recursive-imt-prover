@@ -9,7 +9,6 @@ use p3_circuit::{
     },
 };
 use p3_field::{BasedVectorSpace, RawDataSerializable};
-use sha3::{Digest, Keccak256};
 
 use super::{MaskedMembershipProof, PreparedMaskedVerifier};
 use crate::binary::{
@@ -45,7 +44,7 @@ impl PreparedMaskedVerifier {
     pub fn part_circuit(&self, part: usize) -> Result<Circuit<F>> {
         ensure!(part < 3, "unknown masked verifier part");
         let mut b = CircuitBuilder::<F>::new();
-        b.enable_native_keccak_f1600()?;
+        b.enable_native_blake3_compress()?;
         let public = b.alloc_public_inputs(PUBLIC_COUNTS[part], "linked-verifier-state");
         match part {
             0 => {
@@ -306,11 +305,11 @@ fn fields(values: &[E]) -> Vec<F> {
         .collect()
 }
 fn native_weights_digest(weights: &[E]) -> [u8; 32] {
-    let mut hash = Keccak256::new();
+    let mut hash = blake3::Hasher::new();
     hash.update(WEIGHTS_DOMAIN);
-    hash.update((weights.len() as u64).to_le_bytes());
+    hash.update(&(weights.len() as u64).to_le_bytes());
     for value in weights {
-        hash.update(value.into_bytes().into_iter().collect::<Vec<_>>());
+        hash.update(&value.into_bytes().into_iter().collect::<Vec<_>>());
     }
     hash.finalize().into()
 }
@@ -325,10 +324,10 @@ fn weights_digest(
             words.extend(b.native_poly64_unchecked_words(coefficient, 4)?);
         }
     }
-    let hash = NativeBinaryEncoding::hash_words(b, ByteHash::Keccak256, &words)?;
+    let hash = NativeBinaryEncoding::hash_words(b, ByteHash::Blake3, &words)?;
     Ok(NativeBinaryEncoding::bytes_from_words(b, &hash)?
         .try_into()
-        .expect("Keccak-256 bytes"))
+        .expect("BLAKE3 bytes"))
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use imt_flock_backend::{HashBackend, MAX_VERIFIER_BYTES, verifier_key_digest};
 use mimalloc::MiMalloc;
 use rayon::ThreadPoolBuilder;
@@ -38,17 +38,9 @@ use recursive_imt_prover::{
 #[global_allocator]
 static ALLOCATOR: MiMalloc = MiMalloc;
 
-#[derive(Clone, Copy, Default, Serialize, Deserialize, ValueEnum)]
-#[serde(rename_all = "kebab-case")]
-enum KeccakBackend {
-    #[default]
-    Flock,
-    Checkpoint,
-}
-
 #[derive(Parser)]
 #[command(
-    about = "Experimental statistically masked binary Keccak children and non-ZK aggregation; privacy/security review outstanding"
+    about = "Experimental statistically masked binary BLAKE3 children and non-ZK aggregation; privacy/security review outstanding"
 )]
 struct Args {
     #[arg(long, default_value_t = IMT_DEPTH)]
@@ -66,9 +58,6 @@ struct Args {
     /// Run the three-proof correctness baseline; this is not a compressed aggregate.
     #[arg(long)]
     components: bool,
-    /// Aggregate Keccak prover; checkpoint is an experimental memory/time comparison.
-    #[arg(long, value_enum, default_value_t = KeccakBackend::Flock)]
-    keccak_backend: KeccakBackend,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -82,8 +71,6 @@ struct Trusted {
     identities: Vec<String>,
     #[serde(default)]
     verifier_digest: Option<[u8; 32]>,
-    #[serde(default)]
-    keccak_backend: KeccakBackend,
     #[serde(default)]
     statement_format: StatementFormat,
 }
@@ -112,33 +99,15 @@ enum PreparedBatch {
     Components(Box<PreparedComponentBatch>),
 }
 
-impl From<KeccakBackend> for HashBackend {
-    fn from(backend: KeccakBackend) -> Self {
-        match backend {
-            KeccakBackend::Flock => Self::Flock,
-            KeccakBackend::Checkpoint => Self::Checkpoint,
-        }
-    }
-}
-
 impl PreparedBatch {
-    fn new(
-        settings: &Settings,
-        parameters: Parameters,
-        components: bool,
-        backend: KeccakBackend,
-    ) -> Result<Self> {
+    fn new(settings: &Settings, parameters: Parameters, components: bool) -> Result<Self> {
         if components {
-            ensure!(
-                matches!(backend, KeccakBackend::Flock),
-                "components use the Flock backend"
-            );
             Ok(Self::Components(Box::new(PreparedComponentBatch::new(
                 settings, parameters,
             )?)))
         } else {
             Ok(Self::Recursive(Box::new(
-                PreparedMaskedAggregate::with_backend(settings, parameters, backend.into())?,
+                PreparedMaskedAggregate::with_backend(settings, parameters, HashBackend::Blake3)?,
             )))
         }
     }
@@ -215,13 +184,13 @@ fn main() -> Result<()> {
     let protocol = if args.components {
         COMPONENT_PROTOCOL
     } else {
-        statement_format.protocol(args.keccak_backend.into())
+        statement_format.protocol(HashBackend::Blake3)
     };
     let parameters = Parameters::default();
     let child = PreparedMembership::new(args.depth, parameters.clone())?;
     fs::create_dir_all(&args.out)?;
     let mut report = json!({"protocol":protocol, "statement_format":statement_format, "depth":args.depth, "batch_size":args.batch_size,
-        "field":"Poly64/Poly192", "hash":"Keccak-256", "bound":"Johnson", "child_parameters":parameters,
+        "field":"Poly64/Poly192", "hash":"BLAKE3", "bound":"Johnson", "child_parameters":parameters,
         "settings":settings, "outer_parameters":if args.components {json!(null)} else {json!({"pcs_bits":152,"pow_bits":16,"log_inv_rate":imt_flock_backend::WHIR_LOG_INV_RATE,"fold":imt_flock_backend::WHIR_FOLD,"max_initial_codeword_cells":1usize<<30})},  "environment":environment(),
         "acceptance_pass":false, "experimental_statistical_zk_candidate":true, "full_zk_established":false, "end_to_end_security_bits":null, "aggregate":!args.components, "succinct":!args.components, "complete":false, "component_proof_count":if args.components {3*args.batch_size} else {1}, "samples":[]});
     write_json(&args.out.join("report.json"), &report)?;
@@ -230,22 +199,12 @@ fn main() -> Result<()> {
         if args.components {
             "linked component baseline (not a succinct aggregate)"
         } else {
-            match args.keccak_backend {
-                KeccakBackend::Flock => "Flock aggregate of complete masked verifiers",
-                KeccakBackend::Checkpoint => {
-                    "Binary aggregate of complete masked verifiers with linked Keccak GKR"
-                }
-            }
+            "BLAKE3 aggregate of complete masked verifiers"
         },
         args.batch_size
     );
     let start = Instant::now();
-    let aggregate = PreparedBatch::new(
-        &settings,
-        parameters.clone(),
-        args.components,
-        args.keccak_backend,
-    )?;
+    let aggregate = PreparedBatch::new(&settings, parameters.clone(), args.components)?;
     report["setup_ms"] = json!(ms(start));
     report["geometry"] = aggregate.geometry();
     write_json(&args.out.join("report.json"), &report)?;
@@ -268,7 +227,6 @@ fn main() -> Result<()> {
         components: args.components,
         identities: aggregate.identities(),
         verifier_digest,
-        keccak_backend: args.keccak_backend,
         statement_format,
     };
     write_json(&args.out.join("trusted.json"), &trusted)?;
@@ -280,7 +238,7 @@ fn main() -> Result<()> {
             &key,
             &digest,
             &trusted.identities[0],
-            trusted.keccak_backend.into(),
+            HashBackend::Blake3,
         )?)
     } else {
         None
@@ -397,9 +355,7 @@ fn verify_files(directory: &Path) -> Result<()> {
     let expected_protocol = if trusted.components {
         COMPONENT_PROTOCOL
     } else {
-        trusted
-            .statement_format
-            .protocol(trusted.keccak_backend.into())
+        trusted.statement_format.protocol(HashBackend::Blake3)
     };
     ensure!(
         trusted.protocol == expected_protocol,
@@ -436,7 +392,7 @@ fn verify_files(directory: &Path) -> Result<()> {
             &key,
             &digest,
             &trusted.identities[0],
-            trusted.keccak_backend.into(),
+            HashBackend::Blake3,
         )?;
         let setup_ms = ms(start);
         let check = Instant::now();
@@ -451,7 +407,6 @@ fn verify_files(directory: &Path) -> Result<()> {
         &trusted.settings,
         trusted.child_parameters,
         trusted.components,
-        trusted.keccak_backend,
     )?;
     ensure!(
         aggregate.identities() == trusted.identities,

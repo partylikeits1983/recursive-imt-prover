@@ -49,7 +49,7 @@ impl PreparedMaskedVerifier {
             max_non_primitive_calls: 1 << 21,
             max_non_primitive_slots: 1 << 29,
         })?;
-        b.enable_native_keccak_f1600()?;
+        b.enable_native_blake3_compress()?;
         let public = b.alloc_public_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
         self.verify_in(&mut b, public)?;
         Ok(b.build()?)

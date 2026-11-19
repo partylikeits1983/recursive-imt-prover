@@ -18,7 +18,7 @@ use crate::benchmark::{environment, ms, peak_rss, statistics};
 use crate::files::{read_bounded, read_json, write_json};
 
 #[derive(Parser)]
-#[command(about = "Poly64 / Poly192 / Keccak / additive-WHIR NON-ZK research baseline")]
+#[command(about = "Poly64 / Poly192 / BLAKE3 / additive-WHIR NON-ZK research baseline")]
 pub struct Args {
     #[arg(long, default_value_t = 2)]
     pub batch_size: usize,
@@ -178,7 +178,7 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
         write_json(
             &args.out.join("trusted.json"),
             &Trusted {
-                protocol: "binary-poly64-keccak-imt-nonzk-v3".into(),
+                protocol: "binary-poly64-blake3-imt-nonzk-v3".into(),
                 settings: settings.clone(),
                 child_identity: child.inner.identity(),
                 aggregate_identity: aggregate.inner.identity(),
@@ -326,7 +326,7 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
 fn verify_files(directory: &Path) -> Result<()> {
     let trusted: Trusted = read_json(&directory.join("trusted.json"))?;
     ensure!(
-        trusted.protocol == "binary-poly64-keccak-imt-nonzk-v3",
+        trusted.protocol == "binary-poly64-blake3-imt-nonzk-v3",
         "unsupported trusted protocol"
     );
     let public: AggregatePublic = read_json(&directory.join("statement.json"))?;

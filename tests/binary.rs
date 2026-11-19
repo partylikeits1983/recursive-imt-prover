@@ -12,7 +12,7 @@ use recursive_imt_prover::binary::engine::{PreparedAggregate, PreparedChild, Set
 use recursive_imt_prover::binary::relation::{
     ClientPublic, ClientWitness, F, PUBLIC_BYTES, membership_circuit, membership_circuit_over,
 };
-use recursive_imt_prover::binary::tree::{Imt, commitment, keccak, nullifier_hash, parent};
+use recursive_imt_prover::binary::tree::{Imt, commitment, digest, nullifier_hash, parent};
 
 const TEST_DEPTH: usize = 32;
 
@@ -40,23 +40,23 @@ fn witness_fields(witness: &ClientWitness) -> Vec<F> {
 }
 
 #[test]
-fn keccak_is_not_sha3_and_tree_is_append_only() {
+fn blake3_digest_and_append_only_tree() {
     assert_eq!(
-        hex::encode(keccak(b"")),
-        "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+        hex::encode(digest(b"")),
+        "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
     );
     let mut tree = Imt::new(TEST_DEPTH).unwrap();
     let note = commitment(&[1; 32], &[2; 32]);
     assert_ne!(note, commitment(&[2; 32], &[1; 32]));
     assert_eq!(
         note,
-        keccak(&[b"IMT-KECCAK-LEAF2".as_slice(), &[1; 32], &[2; 32]].concat())
+        digest(&[b"IMT-BLAKE3-LEAF2".as_slice(), &[1; 32], &[2; 32]].concat())
     );
     assert_eq!(
         nullifier_hash(&[2; 32]),
-        keccak(&[b"IMT-KECCAK-NULL1".as_slice(), &[2; 32]].concat())
+        digest(&[b"IMT-BLAKE3-NULL1".as_slice(), &[2; 32]].concat())
     );
-    assert_ne!(nullifier_hash(&[2; 32]), keccak(&[2; 32]));
+    assert_ne!(nullifier_hash(&[2; 32]), digest(&[2; 32]));
     let index = tree.append(note).unwrap();
     tree.append([9; 32]).unwrap();
     let mut digest = note;
@@ -235,7 +235,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
 }
 
 #[test]
-fn keccak_air_rejects_tampered_permutation_trace() {
+fn blake3_air_rejects_tampered_compression_trace() {
     let child = PreparedChild::new(&settings()).unwrap();
     let (public, witness) = fixtures(TEST_DEPTH, 1).unwrap().remove(0);
     let mut runner = child.inner.circuit.runner();
@@ -245,10 +245,10 @@ fn keccak_air_rejects_tampered_permutation_trace() {
         .unwrap();
     let witness = runner.run_witness().unwrap();
     let mut traces = child.inner.bus.traces(&witness).unwrap();
-    let table = child.inner.bus.keccak_table_index().unwrap();
+    let table = child.inner.bus.packed_table_index().unwrap();
     let air = &child.inner.bus.airs()[table];
     check_constraints(air, &traces[table], &[]);
-    // A non-Boolean Keccak state bit violates the AIR even though its native
+    // A non-Boolean BLAKE3 input bit violates the AIR even though its native
     // host computation has already completed successfully.
     traces[table].values[0] = F::from_repr(2);
     assert!(

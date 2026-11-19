@@ -15,7 +15,6 @@ use p3_multilinear_util::point::Point;
 use p3_sumcheck::layout::Table;
 use rand::{SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 
 use super::{
     E, F,
@@ -33,8 +32,8 @@ use crate::binary::{
     relation::{ClientPublic, ClientWitness},
 };
 
-pub const PROTOCOL: &str = "experimental-binary-masked-imt-v6";
-const PROOF_MAGIC: &[u8; 8] = b"IMTVCA06";
+pub const PROTOCOL: &str = "experimental-binary-blake3-masked-imt-v7";
+const PROOF_MAGIC: &[u8; 8] = b"IMTVCA07";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 pub mod recursive;
@@ -100,7 +99,7 @@ impl PreparedMembership {
             "masked AIR exceeds message budget"
         );
         let preprocessed = air.preprocessed_trace().unwrap().transpose();
-        let identity = Keccak256::digest(postcard::to_allocvec(&(
+        let identity = blake3::hash(&postcard::to_allocvec(&(
             PROTOCOL,
             depth,
             algebra.identity,

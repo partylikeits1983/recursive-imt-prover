@@ -5,6 +5,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use p3_binary_field::{BinaryChallenger, Poly64, Poly192};
 use p3_binary_pcs::whir::{BinaryWhirDomain, BooleanWhirData, BooleanWhirPcs, BooleanWhirProver};
+use p3_blake3::Blake3;
 use p3_challenger::HashChallenger;
 use p3_keccak::Keccak256Hash;
 use p3_merkle_tree::MerkleTreeMmcs;
@@ -16,18 +17,61 @@ use p3_sumcheck::{
 use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
 use p3_whir::{FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig};
 
-type Hash = SerializingHasher<Keccak256Hash>;
+#[derive(Clone, Copy)]
+pub enum ProofHash {
+    Keccak,
+    Blake3,
+}
+
+impl p3_symmetric::CryptographicHasher<u8, [u8; 32]> for ProofHash {
+    const LANES: usize = 16;
+
+    fn hash_iter<I: IntoIterator<Item = u8>>(&self, input: I) -> [u8; 32] {
+        match self {
+            Self::Keccak => Keccak256Hash.hash_iter(input),
+            Self::Blake3 => Blake3.hash_iter(input),
+        }
+    }
+
+    fn hash_many(&self, input: &[u8], output: &mut [[u8; 32]]) {
+        match self {
+            Self::Keccak => Keccak256Hash.hash_many(input, output),
+            Self::Blake3 => Blake3.hash_many(input, output),
+        }
+    }
+}
+
+impl old_symmetric::CryptographicHasher<u8, [u8; 32]> for ProofHash {
+    const LANES: usize = 16;
+
+    fn hash_iter<I: IntoIterator<Item = u8>>(&self, input: I) -> [u8; 32] {
+        match self {
+            Self::Keccak => old_keccak::Keccak256Hash.hash_iter(input),
+            Self::Blake3 => old_blake3::Blake3.hash_iter(input),
+        }
+    }
+
+    fn hash_many(&self, input: &[u8], output: &mut [[u8; 32]]) {
+        match self {
+            Self::Keccak => old_keccak::Keccak256Hash.hash_many(input, output),
+            Self::Blake3 => old_blake3::Blake3.hash_many(input, output),
+        }
+    }
+}
+
+type Hash = SerializingHasher<ProofHash>;
 pub const WHIR_FOLD: usize = 4;
 pub const WHIR_LOG_INV_RATE: usize = 2;
 pub const WHIR_CAP_HEIGHT: usize = 0;
-type Compress = CompressionFunctionFromHasher<Keccak256Hash, 2, 32>;
+type Compress = CompressionFunctionFromHasher<ProofHash, 2, 32>;
 pub type Mmcs = MerkleTreeMmcs<Poly64, u8, Hash, Compress, 2, 32>;
-pub type Challenger = BinaryChallenger<Poly64, HashChallenger<u8, Keccak256Hash, 32>>;
+pub type Challenger = BinaryChallenger<Poly64, HashChallenger<u8, ProofHash, 32>>;
 type Bits = BooleanWhirPcs<Poly64, Poly192, BinaryWhirDomain<Poly64>, Mmcs, Challenger>;
 pub(crate) type Pcs = MixedTraceCommitment<Poly192, Bits>;
 pub type Data = MixedTraceData<Poly64, BooleanWhirData<Poly64, Poly192, Mmcs>>;
 
 pub struct Config {
+    pub(crate) hash: ProofHash,
     main: Pcs,
     preprocessed: Pcs,
     pub initial_codeword_cells: usize,
@@ -42,6 +86,7 @@ impl Config {
         main_encoding: Vec<TableEncoding>,
         pp: &[TableShape],
         pp_encoding: Vec<TableEncoding>,
+        hash: ProofHash,
     ) -> Result<Self> {
         let cells = |shapes: &[TableShape], encoding: &[TableEncoding]| {
             let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, encoding));
@@ -58,7 +103,7 @@ impl Config {
             initial_codeword_cells <= 1 << 30,
             "binary initial codeword cells {initial_codeword_cells} exceed this prototype's 2^30 budget"
         );
-        let main_pcs = pcs(main, main_encoding)?;
+        let main_pcs = pcs_with_hash(main, main_encoding, hash)?;
         let protocol = OpeningProtocol::new(
             main.iter()
                 .map(|&shape| {
@@ -77,8 +122,9 @@ impl Config {
             "invalid main PCS candidate bound"
         );
         Ok(Self {
+            hash,
             main: main_pcs,
-            preprocessed: pcs(pp, pp_encoding)?,
+            preprocessed: pcs_with_hash(pp, pp_encoding, hash)?,
             initial_codeword_cells,
             main_codeword_cells,
             preprocessed_codeword_cells,
@@ -88,6 +134,14 @@ impl Config {
 }
 
 pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result<Pcs> {
+    pcs_with_hash(shapes, encoding, ProofHash::Keccak)
+}
+
+fn pcs_with_hash(
+    shapes: &[TableShape],
+    encoding: Vec<TableEncoding>,
+    hash: ProofHash,
+) -> Result<Pcs> {
     let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, &encoding));
     let domain = BinaryWhirDomain::default();
     let config = WhirConfig::<Poly192, Poly64, Challenger>::new_with_domain(
@@ -102,16 +156,18 @@ pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result
         },
         &domain,
     )?;
-    let mmcs = Mmcs::new(
-        Hash::new(Keccak256Hash),
-        Compress::new(Keccak256Hash),
-        WHIR_CAP_HEIGHT,
-    );
+    let mmcs = Mmcs::new(Hash::new(hash), Compress::new(hash), WHIR_CAP_HEIGHT);
     let bits = BooleanWhirPcs::new(BooleanWhirProver::new(config, domain, mmcs), arity)?;
     Ok(MixedTraceCommitment::new(
         p3_binary_pcs::BooleanTraceCommitment::from_commitment(bits),
         encoding,
     ))
+}
+
+impl Config {
+    pub(crate) fn challenger(&self, seed: &[u8]) -> Challenger {
+        Challenger::from_hasher(seed.to_vec(), self.hash)
+    }
 }
 
 impl MultiStarkConfig for Config {
@@ -140,5 +196,5 @@ impl MultiStarkConfig for Config {
 }
 
 pub fn challenger(seed: &[u8]) -> Challenger {
-    Challenger::from_hasher(seed.to_vec(), Keccak256Hash)
+    Challenger::from_hasher(seed.to_vec(), ProofHash::Keccak)
 }

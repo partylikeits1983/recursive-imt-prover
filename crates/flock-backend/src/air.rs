@@ -42,6 +42,7 @@ pub(super) enum WitnessSource<'a> {
     },
     Public,
     Keccak,
+    Blake3,
     Bridge,
 }
 
@@ -53,6 +54,7 @@ pub struct ImportedAir {
     source: Source,
     successor: bool,
     public_table: bool,
+    blake3: bool,
     public_ids: Option<Vec<F>>,
     shard: Option<Arc<FanoutShard>>,
     gates: Option<Arc<GateShard>>,
@@ -146,6 +148,7 @@ impl Chip {
                 coordinate_width: 16,
             },
             _ if air.public_table => WitnessSource::Public,
+            _ if air.blake3 => WitnessSource::Blake3,
             _ => WitnessSource::Bridge,
         }
     }
@@ -201,6 +204,7 @@ impl Chip {
             bindings: vec![],
             successor: false,
             public_table: false,
+            blake3: false,
             public_ids: None,
             shard: None,
             gates: None,
@@ -410,6 +414,8 @@ impl Chip {
                 .copied()
                 .filter(|&width| width != 0)
                 .collect()
+        } else if a.blake3 {
+            vec![32; a.preprocessed_map.len()]
         } else if a.public_table {
             ensure!(
                 a.public_ids.is_some(),
@@ -445,6 +451,14 @@ impl Chip {
     pub fn import(source: NativeBusCircuitAir<OldF>, log_height: usize) -> Result<Self> {
         Self::import_shard(source, log_height, None)
     }
+    pub fn import_blake3(source: NativeBusCircuitAir<OldF>, log_height: usize) -> Result<Self> {
+        let Self::Native(mut air) = Self::import(source, log_height)? else {
+            unreachable!()
+        };
+        air.blake3 = true;
+        Ok(Self::Native(air))
+    }
+
     pub fn import_gates(
         source: NativeBusCircuitAir<OldF>,
         shard: Arc<GateShard>,
@@ -585,6 +599,7 @@ impl Chip {
             },
             successor,
             public_table,
+            blake3: false,
             public_ids: None,
             successor_bus: shard.as_ref().map_or_else(
                 || "imt.successor".to_owned(),
@@ -718,6 +733,14 @@ impl BaseAir<F> for Chip {
             _ => Some(vec![]),
         }
     }
+    fn boolean_columns(&self) -> usize {
+        if matches!(self, Self::Native(a) if a.blake3) {
+            self.width()
+        } else {
+            0
+        }
+    }
+
     fn main_next_row_columns(&self) -> Vec<usize> {
         vec![]
     }

@@ -281,7 +281,7 @@ fn check_split_fanout(commit_public_ids: bool) {
     )
     .unwrap();
     let fanout_pp = bus.airs()[0].preprocessed_trace().unwrap();
-    let widths = fanout::coordinate_widths(&circuit, &[], 119).unwrap();
+    let widths = fanout::coordinate_widths(&circuit, None).unwrap();
     let (shards, mut copies) = fanout::partition(&widths, &fanout_pp.values, &[], false).unwrap();
     let (fixed, _) = fanout::partition(&widths, &fanout_pp.values, &[], true).unwrap();
     assert_eq!(fixed.len(), fanout::RECURSIVE_LAYOUT.len());

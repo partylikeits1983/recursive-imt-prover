@@ -51,7 +51,7 @@ fn fixture(length: usize, product: bool) -> Result<Fixture> {
     let prepared = PreparedVector::new(code, vectors.len(), product, &parameters)?;
     let private = prepared.import(&proof, &weights, &parameters, start.clone())?;
     let mut b = CircuitBuilder::<F>::new();
-    b.enable_native_keccak_f1600()?;
+    b.enable_native_blake3_compress()?;
     let initial = b.alloc_public_input_array::<32>("initial-state");
     let mut public: Vec<_> = start
         .fingerprint()

@@ -24,7 +24,7 @@ static ALLOCATOR: MiMalloc = MiMalloc;
 
 #[derive(Parser)]
 #[command(
-    about = "Experimental masked binary Keccak IMT child; full ZK/security analysis outstanding"
+    about = "Experimental masked binary BLAKE3 IMT child; full ZK/security analysis outstanding"
 )]
 struct Args {
     #[arg(long, default_value_t = 32)]
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
         authority: prepared.identity(),
     };
     let mut report = json!({
-        "protocol":trusted.protocol, "depth":args.depth, "field":"Poly64/Poly192", "hash":"Keccak-256",
+        "protocol":trusted.protocol, "depth":args.depth, "field":"Poly64/Poly192", "hash":"BLAKE3",
         "bound":"Johnson; VEIL binding radius capped at half distance", "parameters":trusted.parameters,
         "acceptance_pass":false, "full_zk_established":false, "end_to_end_security_bits":null, "aggregate":false,
         "imt_child":true, "setup_ms":setup_ms, "trace_height":prepared.trace_height(), "trace_width":prepared.trace_width(),

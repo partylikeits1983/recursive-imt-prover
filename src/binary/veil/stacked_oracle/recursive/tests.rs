@@ -73,7 +73,7 @@ fn fixture() -> Result<Fixture> {
     proof.verify(&root, &functional, sum, &parameters, &mut before.clone())?;
 
     let mut builder = CircuitBuilder::<F>::new();
-    builder.enable_native_keccak_f1600()?;
+    builder.enable_native_blake3_compress()?;
     let mut public: Vec<F> = start
         .into_iter()
         .chain(root)

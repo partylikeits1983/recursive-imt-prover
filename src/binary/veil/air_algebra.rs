@@ -8,7 +8,6 @@ use anyhow::{Result, bail, ensure};
 use p3_air::{BaseEntry, BaseLeaf, SymbolicExpression};
 use p3_multi_stark::selectors::BoundaryEvals;
 use serde::Serialize;
-use sha3::{Digest, Keccak256};
 
 use super::{E, F, compiler::MaskedReader, constraints::Linear};
 
@@ -60,7 +59,7 @@ impl AirAlgebra {
             let output = result.compile(expression, &mut cache)?;
             result.outputs.push(output);
         }
-        result.identity = Keccak256::digest(postcard::to_allocvec(&(
+        result.identity = blake3::hash(&postcard::to_allocvec(&(
             b"binary-masked-air-algebra-v1",
             &result.gates,
             &result.outputs,

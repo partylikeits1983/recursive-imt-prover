@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub const PROTOCOL: &str = "experimental-binary-checkpoint-cyclic-merge-v1";
+pub const PROTOCOL: &str = "experimental-binary-blake3-checkpoint-cyclic-merge-v1";
 
 pub struct PreparedCyclicMerge {
     first: RecursiveAggregate,
@@ -157,7 +157,7 @@ fn circuit(source: &RecursiveAggregate, first: &RecursiveAuthority) -> Result<Ci
         max_non_primitive_calls: 1 << 21,
         max_non_primitive_slots: 1 << 29,
     })?;
-    b.enable_native_keccak_f1600()?;
+    b.enable_native_blake3_compress()?;
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("parent statement");
     let side = b.alloc_public_input("side");
     b.assert_bool(side);

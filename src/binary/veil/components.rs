@@ -82,7 +82,7 @@ impl PreparedComponentBatch {
     pub fn identities(&self) -> Vec<String> {
         self.authorities
             .iter()
-            .map(|a| hex::encode(crate::binary::tree::keccak(a.canonical_verifier_bytes())))
+            .map(|a| hex::encode(crate::binary::tree::digest(a.canonical_verifier_bytes())))
             .collect()
     }
 

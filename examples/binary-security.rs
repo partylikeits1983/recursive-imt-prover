@@ -1,4 +1,4 @@
-//! Assess the actual Keccak IMT AIR with Poly64/Poly192, without claiming ZK.
+//! Assess the actual BLAKE3 IMT AIR with Poly64/Poly192, without claiming ZK.
 use anyhow::Result;
 use p3_binary_field::Poly64;
 use p3_circuit::ops::ByteHash;
@@ -49,17 +49,17 @@ fn main() -> Result<()> {
                 BinaryNativePolyWhirPcsParameters::with_limits(
                     n,
                     protocol(bits, rate),
-                    ByteHash::Keccak256,
+                    ByteHash::Blake3,
                     MerkleArity::Four,
                     2,
                     &limits,
                 )
             };
-            let bit_variables = bus.packed_bit_variables().expect("Keccak table");
+            let bit_variables = bus.packed_bit_variables().expect("BLAKE3 table");
             let main = BinaryNativePolyMixedWhirPcsParameters::with_packed_table(
                 params(bus.main_variables(), 1)?,
                 params(bit_variables - 6, 3)?,
-                bus.packed_table_index().expect("Keccak table"),
+                bus.packed_table_index().expect("BLAKE3 table"),
                 bit_variables,
             )?;
             let pp = bus
@@ -71,7 +71,7 @@ fn main() -> Result<()> {
             let spec = BinaryNativeVerifierSpec {
                 main,
                 preprocessed: pp,
-                transcript_hash: ByteHash::Keccak256,
+                transcript_hash: ByteHash::Blake3,
                 initial_bytes: b"imt-poly-security-v1".to_vec(),
                 sumcheck_pow_bits: 0,
                 max_tau_draws: 32,

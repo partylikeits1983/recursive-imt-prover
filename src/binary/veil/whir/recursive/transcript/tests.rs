@@ -21,7 +21,7 @@ fn framed_transcript_matches_native_and_constrains_keccak() -> Result<()> {
     let end = reference.fingerprint();
 
     let mut builder = CircuitBuilder::<F>::new();
-    builder.enable_native_keccak_f1600()?;
+    builder.enable_native_blake3_compress()?;
     let start_target = builder.alloc_public_input_array::<32>("initial-state");
     let field_targets: Vec<_> = fields
         .iter()

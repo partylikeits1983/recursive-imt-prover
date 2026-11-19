@@ -326,7 +326,7 @@ pub(in crate::binary::veil) fn authenticate_batch(
                     let mut words = constants(b, NODE_DOMAIN);
                     words.extend(&pair[0]);
                     words.extend(&pair[1]);
-                    Ok(NativeBinaryEncoding::hash_words(b, ByteHash::Keccak256, &words)?.to_vec())
+                    Ok(NativeBinaryEncoding::hash_words(b, ByteHash::Blake3, &words)?.to_vec())
                 })
                 .collect::<Result<_>>()?;
         }
@@ -354,7 +354,7 @@ fn authenticate(
             words.extend(b.native_poly64_unchecked_words(coefficient, 4)?);
         }
     }
-    let mut digest = NativeBinaryEncoding::hash_words(b, ByteHash::Keccak256, &words)?;
+    let mut digest = NativeBinaryEncoding::hash_words(b, ByteHash::Blake3, &words)?;
     for (&bit, sibling) in query.bits.iter().zip(&row.path).take(height) {
         b.assert_bool(bit);
         let mut bytes = constants(b, NODE_DOMAIN);
@@ -370,7 +370,7 @@ fn authenticate(
                 .zip(sibling)
                 .map(|(&d, &s)| b.select(bit, d, s)),
         );
-        digest = NativeBinaryEncoding::hash_words(b, ByteHash::Keccak256, &bytes)?;
+        digest = NativeBinaryEncoding::hash_words(b, ByteHash::Blake3, &bytes)?;
     }
     for (actual, &expected) in digest.into_iter().zip(root) {
         b.connect(actual, expected);

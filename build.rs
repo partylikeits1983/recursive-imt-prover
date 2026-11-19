@@ -1,4 +1,3 @@
-use sha3::{Digest, Keccak256};
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
@@ -28,19 +27,19 @@ fn main() -> io::Result<()> {
         collect_sources(&root, &directory.join("src"), &mut files)?;
     }
     files.sort();
-    let mut keccak = Keccak256::new();
+    let mut hash = blake3::Hasher::new();
     for relative in files {
         let path = root.join(&relative);
         println!("cargo:rerun-if-changed={}", path.display());
         let name = relative.to_string_lossy();
         let contents = fs::read(path)?;
         for bytes in [name.as_bytes(), &[0], contents.as_slice(), &[0]] {
-            keccak.update(bytes);
+            hash.update(bytes);
         }
     }
     println!(
-        "cargo:rustc-env=IMT_SOURCE_KECCAK256={:x}",
-        keccak.finalize()
+        "cargo:rustc-env=IMT_SOURCE_BLAKE3={}",
+        hash.finalize().to_hex()
     );
     Ok(())
 }

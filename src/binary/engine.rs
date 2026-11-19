@@ -30,7 +30,7 @@ use super::relation::{
     AggregatePublic, ClientPublic, ClientWitness, F, PUBLIC_BYTES, membership_circuit,
 };
 use super::security::{AlgebraicAssessment, BatchAssessment};
-use super::tree::keccak;
+use super::tree::digest;
 
 pub type Authority = BinaryNativePolyMixedWhirAuthority<NativeBusCircuitAir<F>>;
 type Prover = BinaryNativePolyMixedWhirProver<NativeBusCircuitAir<F>>;
@@ -185,7 +185,7 @@ impl PreparedCircuit {
         )?;
         let packed_table = bus
             .packed_table_index()
-            .ok_or_else(|| anyhow::anyhow!("missing Keccak table"))?;
+            .ok_or_else(|| anyhow::anyhow!("missing BLAKE3 table"))?;
         let bit_variables = bus
             .packed_bit_variables()
             .ok_or_else(|| anyhow::anyhow!("missing packed geometry"))?;
@@ -211,7 +211,7 @@ impl PreparedCircuit {
             BinaryNativePolyWhirPcsParameters::with_limits(
                 n,
                 settings.protocol(packed),
-                ByteHash::Keccak256,
+                ByteHash::Blake3,
                 MerkleArity::Four,
                 2,
                 &limits,
@@ -239,7 +239,7 @@ impl PreparedCircuit {
         let spec = BinaryNativeVerifierSpec {
             main,
             preprocessed: pp,
-            transcript_hash: ByteHash::Keccak256,
+            transcript_hash: ByteHash::Blake3,
             initial_bytes: domain.to_vec(),
             sumcheck_pow_bits: 0,
             max_tau_draws: 32,
@@ -324,7 +324,7 @@ impl PreparedCircuit {
     }
 
     pub fn identity(&self) -> String {
-        hex::encode(keccak(self.authority.canonical_verifier_bytes()))
+        hex::encode(digest(self.authority.canonical_verifier_bytes()))
     }
 }
 
@@ -332,7 +332,7 @@ impl PreparedChild {
     pub fn new(settings: &Settings) -> Result<Self> {
         settings.validate()?;
         let circuit = membership_circuit(settings.depth)?;
-        let inner = PreparedCircuit::new(circuit, settings, b"binary-poly64-keccak-imt-child-v3")?;
+        let inner = PreparedCircuit::new(circuit, settings, b"binary-poly64-blake3-imt-child-v3")?;
         Ok(Self {
             inner,
             depth: settings.depth,
@@ -391,7 +391,7 @@ impl PreparedAggregate {
                 max_non_primitive_calls: 1 << 20,
                 max_non_primitive_slots: 1 << 28,
             })?;
-        builder.enable_native_keccak_f1600()?;
+        builder.enable_native_blake3_compress()?;
         for _ in 0..settings.batch_size {
             let public: Vec<Vec<_>> = counts
                 .iter()
@@ -406,7 +406,7 @@ impl PreparedAggregate {
             let challenger = BinaryTower128Challenger::with_initial_bytes_with_host::<
                 NativeBinaryEncoding,
                 F,
-            >(&mut builder, ByteHash::Keccak256, &initial)?;
+            >(&mut builder, ByteHash::Blake3, &initial)?;
             // This emits the entire verifier relation, including Fiat-Shamir,
             // Merkle openings, sumcheck, AIR evaluation and product-bus checks.
             verifier.verify_native(&mut builder, challenger, &public, &proof)?;
@@ -414,7 +414,7 @@ impl PreparedAggregate {
         }
         let circuit = builder.build()?;
         let domain = format!(
-            "binary-poly64-keccak-imt-aggregate-v3/{:02}",
+            "binary-poly64-blake3-imt-aggregate-v3/{:02}",
             settings.batch_size
         );
         let inner = PreparedCircuit::new(circuit, settings, domain.as_bytes())?;

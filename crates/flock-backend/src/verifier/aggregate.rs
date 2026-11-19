@@ -22,8 +22,7 @@ use crate::{
 pub struct RecursiveAggregate {
     authority: Verifier,
     arithmetic: RecursiveArithmetic,
-    boundary: BoundaryPcs,
-    linked: PreparedLinkedVerifier,
+    keccak: Option<(BoundaryPcs, PreparedLinkedVerifier)>,
 }
 
 pub const AUTHORITY_BYTES: usize = 64;
@@ -77,23 +76,32 @@ impl RecursiveAggregate {
     /// The authority must already have been checked against independently trusted verifier data.
     pub fn new(authority: Verifier) -> Result<Self> {
         ensure!(
-            authority.data.backend == HashBackend::Checkpoint,
-            "recursive aggregate requires checkpoint backend"
+            authority.data.backend != HashBackend::Flock,
+            "unsupported recursive aggregate backend"
         );
-        let scheme = authority.checkpoint.as_ref().unwrap();
         let arithmetic = authority.recursive_arithmetic()?;
-        let boundary = BoundaryPcs::new(scheme.log_batch, 2, scheme.recursive_pcs_seed())?;
-        let linked = PreparedLinkedVerifier::with_bridge(scheme.log_batch, scheme.direct_bridge)?;
+        let keccak = authority
+            .checkpoint
+            .as_ref()
+            .map(|scheme| {
+                Ok::<_, anyhow::Error>((
+                    BoundaryPcs::new(scheme.log_batch, 2, scheme.recursive_pcs_seed())?,
+                    PreparedLinkedVerifier::with_bridge(scheme.log_batch, scheme.direct_bridge)?,
+                ))
+            })
+            .transpose()?;
         Ok(Self {
             authority,
             arithmetic,
-            boundary,
-            linked,
+            keccak,
         })
     }
 
     pub fn circuit(&self) -> Result<Circuit<F>> {
         let mut b = builder()?;
+        if self.keccak.is_none() {
+            b.enable_native_blake3_compress()?;
+        }
         let public: Vec<_> = (0..self.authority.public_count)
             .map(|_| b.alloc_public_input("aggregate statement"))
             .collect();
@@ -121,14 +129,29 @@ impl RecursiveAggregate {
             public.len() == self.authority.public_count,
             "incorrect recursive public count"
         );
-        let scheme = self.authority.checkpoint.as_ref().unwrap();
-        let cap = self.boundary.allocate_cap(b, false);
-        let arithmetic_proof = self.arithmetic.allocate(b)?;
-        let keccak_proof = self.linked.allocate(b)?;
-        let opening = self.boundary.verifier.allocate_native_targets(b)?;
         let identity = &authority[..32];
         let preprocessing = vec![NativeBinaryEncoding::words_from_bytes(b, &authority[32..])?];
-        let seed = self.linked.arithmetic_seed(b, identity, &cap)?;
+        let Some((boundary, linked)) = &self.keccak else {
+            let arithmetic_proof = self.arithmetic.allocate(b)?;
+            let ch = BinaryTower128Challenger::with_initial_bytes_with_host::<
+                NativeBinaryEncoding,
+                F,
+            >(b, ByteHash::Blake3, identity)?;
+            self.arithmetic.verify_with_preprocessed(
+                b,
+                ch,
+                public,
+                &arithmetic_proof,
+                &preprocessing,
+            )?;
+            return Ok(());
+        };
+        let scheme = self.authority.checkpoint.as_ref().unwrap();
+        let cap = boundary.allocate_cap(b, false);
+        let arithmetic_proof = self.arithmetic.allocate(b)?;
+        let keccak_proof = linked.allocate(b)?;
+        let opening = boundary.verifier.allocate_native_targets(b)?;
+        let seed = linked.arithmetic_seed(b, identity, &cap)?;
         let ch = BinaryTower128Challenger::with_initial_bytes_with_host::<NativeBinaryEncoding, F>(
             b,
             ByteHash::Keccak256,
@@ -166,10 +189,10 @@ impl RecursiveAggregate {
             opened.to_vec()
         };
         let ports = PortTargets { instance, values };
-        let seed = self.linked.transcript_seed(b, identity)?;
-        let ch = self.boundary.challenger_with_seed(b, &seed, &cap)?;
-        let reduced = self.linked.verify_reduction(b, ch, &ports, &keccak_proof)?;
-        let (values, _) = self.boundary.verifier.verify_at_native(
+        let seed = linked.transcript_seed(b, identity)?;
+        let ch = boundary.challenger_with_seed(b, &seed, &cap)?;
+        let reduced = linked.verify_reduction(b, ch, &ports, &keccak_proof)?;
+        let (values, _) = boundary.verifier.verify_at_native(
             b,
             reduced.challenger.clone(),
             &cap,
@@ -192,6 +215,11 @@ impl RecursiveAggregate {
             public.len() == self.authority.public_count,
             "incorrect recursive public count"
         );
+        let Some((boundary, _)) = &self.keccak else {
+            return self
+                .arithmetic
+                .private_inputs(bytes, public, &self.authority.data.seed);
+        };
         let proof: AggregateProof = crate::proof_codec::decode(bytes)?;
         let scheme = self.authority.checkpoint.as_ref().unwrap();
         let values: Vec<Vec<_>> = self
@@ -216,17 +244,17 @@ impl RecursiveAggregate {
             self.authority.data.hash_index,
             scheme,
         )?;
-        let mut private = self.boundary.public_inputs(&proof.statement)?;
+        let mut private = boundary.public_inputs(&proof.statement)?;
         let seed = scheme.arithmetic_seed(&self.authority.data.seed, &proof.statement)?;
         private.extend(
             self.arithmetic
                 .import_proof(proof.arithmetic, public, &seed)?,
         );
         let seed = scheme.transcript_seed(&self.authority.data.seed);
-        let mut ch = self.boundary.native_challenger(&proof.statement, &seed)?;
+        let mut ch = boundary.native_challenger(&proof.statement, &seed)?;
         let input = scheme.recursive_input(&proof.keccak, &ports, &mut ch)?;
         private.extend(input.private_values);
-        private.extend(self.boundary.private_inputs(
+        private.extend(boundary.private_inputs(
             &proof.statement,
             &input.points,
             &input.opening,

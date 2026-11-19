@@ -1,4 +1,4 @@
-//! Depth-32 binary-field Keccak IMT proofs and recursive aggregation.
+//! Depth-32 binary-field BLAKE3 IMT proofs and recursive aggregation.
 pub mod aggregation_tree;
 pub mod checkpoint;
 pub mod cli;

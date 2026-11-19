@@ -22,7 +22,7 @@ static ALLOCATOR: MiMalloc = MiMalloc;
 
 #[derive(Parser)]
 #[command(
-    about = "Experimental binary Keccak VEIL/WHIR oracle bridge; no full-ZK or 128-bit certification"
+    about = "Experimental binary BLAKE3 VEIL/WHIR oracle bridge; no full-ZK or 128-bit certification"
 )]
 struct Args {
     #[arg(long, default_value_t = 8)]
@@ -124,7 +124,7 @@ fn main() -> Result<()> {
     write_json(
         &args.out.join("report.json"),
         &json!({"protocol":trusted.protocol,"variables":args.variables,"points":args.points,"parameters":trusted.parameters,
-        "field":"Poly64/Poly192","hash":"Keccak-256","bound":"Johnson; oracle binding radius also capped at half distance",
+        "field":"Poly64/Poly192","hash":"BLAKE3","bound":"Johnson; oracle binding radius also capped at half distance",
         "acceptance_pass":false,"full_zk_established":false,"end_to_end_security_bits":null,"imt_child":false,"aggregate":false,
         "measurement_scope":"all oracle setup, commitments and masked proof generation included; setup rebuilt each sample; compilation excluded",
         "environment":environment(),"samples":samples,"summary":summary,"fresh_verifier":fresh}),

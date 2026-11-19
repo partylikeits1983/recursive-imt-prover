@@ -110,13 +110,9 @@ where
     P: BinaryWhirPolicy<CF>,
 {
     H::check_hash(p.hash)?;
-    if domains.is_some()
-        && (p.hash != p3_circuit::ops::ByteHash::Keccak256
-            || p.arity != MerkleArity::Two
-            || p.cap_height != 0)
-    {
+    if domains.is_some() && (p.arity != MerkleArity::Two || p.cap_height != 0) {
         return Err(invalid(
-            "prefixed WHIR requires binary Keccak trees with cap height zero",
+            "prefixed WHIR requires binary Merkle trees with cap height zero",
         ));
     }
     check_targets(p, cap, points, proof)?;

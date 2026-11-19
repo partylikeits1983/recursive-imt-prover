@@ -4,7 +4,6 @@ use old_binary_field::{BinaryChallenger, Poly64 as F, Poly192 as E};
 use old_binary_pcs::whir::BinaryWhirDomain;
 use old_bus::BusProof;
 use old_challenger::HashChallenger;
-use old_keccak::Keccak256Hash;
 use old_merkle_tree::{MerkleCap, MerkleTreeMmcs};
 use old_multilinear_util::point::Point;
 use old_sumcheck::{
@@ -16,7 +15,7 @@ use old_whir::{
     FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig,
     pcs::proof::{PcsProof, WhirProof},
 };
-use p3_circuit::{CircuitBuilder, ExprId};
+use p3_circuit::{CircuitBuilder, ExprId, ops::ByteHash};
 use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_recursion::{
     BinaryTower128Challenger,
@@ -37,12 +36,12 @@ use crate::{
     },
 };
 
-type Ch = BinaryChallenger<F, HashChallenger<u8, Keccak256Hash, 32>>;
+type Ch = BinaryChallenger<F, HashChallenger<u8, crate::config::ProofHash, 32>>;
 type Mmcs = MerkleTreeMmcs<
     F,
     u8,
-    SerializingHasher<Keccak256Hash>,
-    CompressionFunctionFromHasher<Keccak256Hash, 2, 32>,
+    SerializingHasher<crate::config::ProofHash>,
+    CompressionFunctionFromHasher<crate::config::ProofHash, 2, 32>,
     2,
     32,
 >;
@@ -55,6 +54,7 @@ mod periodic_tests;
 mod tests;
 
 pub struct RecursiveArithmetic {
+    hash: crate::config::ProofHash,
     verifier: BinaryPolyCoordinateWhirVerifier,
     configs: [WhirConfig<E, F, Ch>; 2],
     mmcs: Mmcs,
@@ -64,8 +64,8 @@ pub struct RecursiveArithmetic {
 impl Verifier {
     pub fn recursive_arithmetic(&self) -> Result<RecursiveArithmetic> {
         ensure!(
-            self.data.backend == HashBackend::Checkpoint,
-            "recursive arithmetic requires checkpoint backend"
+            self.data.backend != HashBackend::Flock,
+            "unsupported recursive arithmetic backend"
         );
         let airs = recursive_air::convert(&self.data.airs)?;
         let heights: Vec<_> = self.data.airs.iter().map(|a| a.log_height).collect();
@@ -80,12 +80,18 @@ impl Verifier {
             .filter(|(a, _)| a.preprocessed_width() > 0)
             .map(|(a, &h)| TableShape::new(h, a.preprocessed_width()))
             .collect();
-        let main_encoding = if self.data.format == super::FORMAT {
+        let main_encoding = if matches!(
+            self.data.format.as_str(),
+            super::FORMAT | super::BLAKE3_FORMAT
+        ) {
             CoordinateEncoding::Bits
         } else {
             CoordinateEncoding::UniformWords
         };
-        let pp_encoding = if self.data.format == super::DIGIT_FORMAT {
+        let pp_encoding = if matches!(
+            self.data.format.as_str(),
+            super::DIGIT_FORMAT | super::BLAKE3_RECURSIVE_FORMAT
+        ) {
             CoordinateEncoding::PreprocessedDigits
         } else {
             CoordinateEncoding::Bits
@@ -105,7 +111,8 @@ impl Verifier {
             .key
             .preprocessed_commitment()
             .ok_or_else(|| anyhow::anyhow!("missing checkpoint preprocessing"))?;
-        let verifier = BinaryPolyCoordinateWhirVerifier::with_encodings(
+        let hash = self.data.backend.proof_hash();
+        let verifier = BinaryPolyCoordinateWhirVerifier::with_encodings_and_hash(
             &airs.iter().collect::<Vec<_>>(),
             &heights,
             parameters(0, &main, &self.data.main_coordinates),
@@ -119,13 +126,18 @@ impl Verifier {
                 ..VerifierLimits::default()
             },
             [main_encoding, pp_encoding],
+            match hash {
+                crate::config::ProofHash::Keccak => ByteHash::Keccak256,
+                crate::config::ProofHash::Blake3 => ByteHash::Blake3,
+            },
         )?;
         Ok(RecursiveArithmetic {
+            hash,
             verifier,
             configs,
             mmcs: Mmcs::new(
-                SerializingHasher::new(Keccak256Hash),
-                CompressionFunctionFromHasher::new(Keccak256Hash),
+                SerializingHasher::new(hash),
+                CompressionFunctionFromHasher::new(hash),
                 WHIR_CAP_HEIGHT,
             ),
             public_counts: airs.iter().map(|a| a.num_public_values()).collect(),
@@ -169,8 +181,13 @@ impl RecursiveArithmetic {
     }
 
     pub fn private_inputs(&self, bytes: &[u8], public: &[F], seed: &[u8]) -> Result<Vec<F>> {
-        let proof: AggregateProof = crate::proof_codec::decode(bytes)?;
-        self.import_proof(proof.arithmetic, public, seed)
+        let arithmetic = match self.hash {
+            crate::config::ProofHash::Keccak => {
+                crate::proof_codec::decode::<AggregateProof>(bytes)?.arithmetic
+            }
+            crate::config::ProofHash::Blake3 => crate::proof_codec::decode(bytes)?,
+        };
+        self.import_proof(arithmetic, public, seed)
     }
 
     pub(super) fn import_proof(
@@ -187,7 +204,7 @@ impl RecursiveArithmetic {
         let (bus, sumcheck): Reduction =
             postcard::from_bytes(&postcard::to_allocvec(&(&proof.bus, &proof.sumcheck))?)?;
         let cap = MerkleCap::new(proof.commitment.roots().to_vec());
-        let mut ch = Ch::from_hasher(seed.to_vec(), Keccak256Hash);
+        let mut ch = Ch::from_hasher(seed.to_vec(), self.hash);
         let input =
             self.verifier
                 .import_reduction(&cap, &public, bus.as_ref(), &sumcheck, &mut ch)?;

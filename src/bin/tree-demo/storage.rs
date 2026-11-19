@@ -44,10 +44,15 @@ pub(super) struct StoredProof<P> {
 }
 
 impl<P> StoredProof<P> {
-    pub fn write(dir: &Path, level: usize, index: usize, public: P, bytes: &[u8]) -> Result<Self> {
+    pub fn at(dir: &Path, level: usize, index: usize, public: P) -> Self {
         let path = dir.join(format!("{level}-{index}.proof"));
-        fs::write(&path, bytes)?;
-        Ok(Self { public, path })
+        Self { public, path }
+    }
+
+    pub fn write(dir: &Path, level: usize, index: usize, public: P, bytes: &[u8]) -> Result<Self> {
+        let stored = Self::at(dir, level, index, public);
+        fs::write(&stored.path, bytes)?;
+        Ok(stored)
     }
 }
 

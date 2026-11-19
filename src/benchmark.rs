@@ -21,7 +21,7 @@ pub fn environment() -> Value {
         "logical_cpus":sysconf(libc::_SC_NPROCESSORS_ONLN), "os":command("uname", &["-a"]),
         "rustc":command("rustc", &["-Vv"]), "threads":rayon::current_num_threads(),
         "rustflags_runtime":std::env::var("RUSTFLAGS").unwrap_or_default(),
-        "source_keccak256":env!("IMT_SOURCE_KECCAK256"),
+        "source_blake3":env!("IMT_SOURCE_BLAKE3"),
         "profile":if cfg!(debug_assertions) {"debug"} else {"release"},
         "compile_time_included":false,
         "plonky3_crates":"0.9.0-rc.2", "plonky3_revision":"fe5e46d755b8a7d9069778361e21b33e5978b377",

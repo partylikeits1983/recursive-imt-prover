@@ -8,7 +8,7 @@ use p3_circuit_prover::native_bus::{KeccakCommitment, NativeBusCircuit};
 use super::{NODE_DOMAIN, STATEMENT_BYTES, TreeStatement, TreeTarget};
 use crate::binary::{
     relation::{AggregatePublic, ClientPublic, F, PUBLIC_BYTES},
-    tree::keccak,
+    tree::digest,
 };
 
 fn public(count: usize) -> AggregatePublic {
@@ -24,7 +24,7 @@ fn public(count: usize) -> AggregatePublic {
 
 fn circuit(leaf: bool) -> Result<Circuit<F>> {
     let mut b = CircuitBuilder::new();
-    b.enable_native_keccak_f1600()?;
+    b.enable_native_blake3_compress()?;
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("statement");
     let node = if leaf {
         let public = b.alloc_private_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
@@ -114,7 +114,7 @@ fn leaf_constraints_bind_canonical_root_and_nullifier_hash_bytes() -> Result<()>
         let mut encoding = b"IMT-AGG-LEAF-V2".to_vec();
         encoding.extend(public.root);
         encoding.extend(nullifier_hash);
-        assert_eq!(leaf.digest, keccak(&encoding));
+        assert_eq!(leaf.digest, digest(&encoding));
         assert!(accepts(&circuit, &leaf.fields(), &public.fields())?);
         for (index, delta) in [(0, 1), (32, 1), (63, 1), (32, 256)] {
             let mut private = public.fields();
@@ -159,7 +159,7 @@ fn one_merge_circuit_constrains_every_level_and_rejects_invalid_counts() -> Resu
         message.extend(right.digest);
         message.push(count);
         let expected = TreeStatement {
-            digest: keccak(&message),
+            digest: digest(&message),
             count: count.wrapping_mul(2),
         };
         let private: Vec<_> = left.fields().into_iter().chain(right.fields()).collect();

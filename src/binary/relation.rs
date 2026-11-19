@@ -71,7 +71,7 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
     ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
     ensure!(F::COORDINATE_BITS >= 8, "carrier must represent full bytes");
     let mut builder = CircuitBuilder::<F>::new();
-    builder.enable_native_keccak_f1600()?;
+    builder.enable_native_blake3_compress()?;
     let root = builder.alloc_public_input_array::<32>("root");
     let nullifier_hash = builder.alloc_public_input_array::<32>("nullifier-hash");
     let secret = builder.alloc_private_input_array::<32>("secret-num");
@@ -86,8 +86,8 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
     message.extend(secret);
     message.extend(nullifier);
     // The native sponge constrains every byte to eight Boolean coordinates,
-    // and enforces Keccak padding and permutation calls.
-    let mut digest = builder.native_keccak256_bytes(&message)?;
+    // and enforces BLAKE3 padding and permutation calls.
+    let mut digest = builder.native_blake3_bytes(&message)?;
     let mut message: Vec<_> = NULLIFIER_DOMAIN
         .iter()
         .map(|&byte| {
@@ -96,7 +96,7 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
         })
         .collect();
     message.extend(nullifier);
-    let computed = builder.native_keccak256_bytes(&message)?;
+    let computed = builder.native_blake3_bytes(&message)?;
     for (actual, expected) in computed.into_iter().zip(nullifier_hash) {
         builder.connect(actual, expected);
     }
@@ -120,7 +120,7 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
             right.push(builder.add(sibling[i], swap));
         }
         node.extend(right);
-        digest = builder.native_keccak256_bytes(&node)?;
+        digest = builder.native_blake3_bytes(&node)?;
     }
     for i in 0..32 {
         builder.connect(digest[i], root[i]);

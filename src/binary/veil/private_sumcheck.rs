@@ -1,5 +1,5 @@
 //! Private-oracle integration fixture for the VEIL/WHIR bridge. This is not
-//! yet the Keccak membership child, nor a certified full-ZK construction.
+//! yet the BLAKE3 membership child, nor a certified full-ZK construction.
 
 use anyhow::{Result, ensure};
 use p3_multilinear_util::poly::Poly;

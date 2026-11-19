@@ -7,7 +7,7 @@ use recursive_imt_prover::binary::{
 };
 
 #[test]
-fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
+fn repeated_blake3_memberships_bind_distinct_witnesses_and_statements() {
     let children = fixtures(32, 2).unwrap();
     let public: Vec<_> = children.iter().flat_map(|(p, _)| p.fields()).collect();
     let private: Vec<_> = children
@@ -18,7 +18,7 @@ fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
         membership_circuit(32).unwrap(),
         2,
         b"flock-membership-adapter-test",
-        HashBackend::Flock,
+        HashBackend::Blake3,
     )
     .unwrap();
     eprintln!("{}", serde_json::to_string(&prepared.geometry).unwrap());
@@ -54,7 +54,7 @@ fn repeated_keccak_memberships_bind_distinct_witnesses_and_statements() {
         membership_circuit(32).unwrap(),
         2,
         b"other-verifying-authority",
-        HashBackend::Flock,
+        HashBackend::Blake3,
     )
     .unwrap();
     assert!(other.verify(&proof, &public).is_err());

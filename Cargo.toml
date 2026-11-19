@@ -17,19 +17,20 @@ clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rayon = "=1.12.0"
-sha3 = "0.10.8"
+blake3 = "1.8"
 hex = "0.4.3"
 rand = { version = "0.10", features = ["std_rng", "sys_rng"] }
 postcard = { version = "1", features = ["alloc"] }
 p3-air = "=0.9.0-rc.2"
 p3-matrix = "=0.9.0-rc.2"
-p3-keccak-air = "=0.9.0-rc.2"
+p3-blake3-air = "=0.9.0-rc.2"
 p3-field = "=0.9.0-rc.2"
 p3-security = "=0.9.0-rc.2"
 p3-binary-field = "=0.9.0-rc.2"
 p3-binary-dft = "=0.9.0-rc.2"
 p3-commit = "=0.9.0-rc.2"
 p3-challenger = "=0.9.0-rc.2"
+p3-blake3 = "=0.9.0-rc.2"
 p3-keccak = "=0.9.0-rc.2"
 p3-merkle-tree = "=0.9.0-rc.2"
 p3-symmetric = "=0.9.0-rc.2"
@@ -47,8 +48,11 @@ p3-recursion = { path = "vendor/p3-recursion", features = ["parallel"] }
 tempfile = "3.27.0"
 ctrlc = { version = "3.5.3", features = ["termination"] }
 
+[dev-dependencies]
+p3-keccak-air = "=0.9.0-rc.2"
+
 [build-dependencies]
-sha3 = "0.10.8"
+blake3 = "1.8"
 
 [profile.release]
 codegen-units = 16

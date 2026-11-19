@@ -10,7 +10,9 @@ use crate::binary::{
     tree::nullifier_hash,
     veil::{
         F,
-        membership_air::{DIRECTION, MembershipAir, NULLIFIER, ROWS_PER_HASH, STATE_START, WIDTH},
+        membership_air::{
+            BLOCK_START, DIRECTION, MembershipAir, NULLIFIER, RIGHT_TAIL, ROWS_PER_HASH, WIDTH,
+        },
         parameters::Parameters,
     },
 };
@@ -26,16 +28,16 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
     for kind in 0..10 {
         let mut bad = trace.clone();
         let cell = match kind {
-            0 => STATE_START + 16 * 8,     // secret
-            1 => STATE_START + 48 * 8,     // nullifier
-            2 => 500 * WIDTH + NULLIFIER,  // carried nullifier
-            3 => STATE_START,              // leaf domain
-            4 => STATE_START + 80 * 8,     // Keccak suffix
-            5 => 24 * WIDTH + STATE_START, // leaf output / link
-            6 => 24 * WIDTH + DIRECTION,
-            7 => 25 * WIDTH + 24, // schedule: first node or padding flag
-            8 => 33 * ROWS_PER_HASH * WIDTH + STATE_START, // nullifier domain
-            _ => (34 * ROWS_PER_HASH - 1) * WIDTH + STATE_START, // nullifier hash
+            0 => BLOCK_START + 16 * 8,         // secret
+            1 => BLOCK_START + 48 * 8,         // nullifier
+            2 => 40 * WIDTH + NULLIFIER,       // carried nullifier
+            3 => BLOCK_START,                  // leaf domain
+            4 => WIDTH + BLOCK_START + 16 * 8, // final block padding
+            5 => WIDTH,                        // chained compression
+            6 => WIDTH + DIRECTION,
+            7 => 2 * WIDTH + RIGHT_TAIL, // second part of right digest
+            8 => 33 * ROWS_PER_HASH * WIDTH + BLOCK_START, // nullifier domain
+            _ => 33 * ROWS_PER_HASH * WIDTH + DIRECTION, // inactive direction
         };
         bad.values[cell] += F::ONE;
         assert!(
@@ -59,13 +61,13 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
             .is_err()
         );
     }
-    // Both Keccak computations are valid, but they use different nullifiers.
+    // Both BLAKE3 computations are valid, but they use different nullifiers.
     let mut other = witness.clone();
     other.nullifier[31] ^= 1;
     let other_trace = air.trace(&public, &other)?;
     let mut forged = trace.clone();
     let first = 33 * ROWS_PER_HASH;
-    for row in first..first + ROWS_PER_HASH {
+    for row in first..first + 1 {
         forged.values[row * WIDTH..row * WIDTH + NULLIFIER]
             .copy_from_slice(&other_trace.values[row * WIDTH..row * WIDTH + NULLIFIER]);
     }
@@ -111,6 +113,7 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
         b"IMTVCA03",
         b"IMTVCA04",
         b"IMTVCA05",
+        b"IMTVCA06",
     ] {
         let mut old = bytes.clone();
         old[..8].copy_from_slice(old_magic);

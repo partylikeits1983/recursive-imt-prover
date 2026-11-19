@@ -64,7 +64,7 @@ fn circuit_air_schedule_matches_native_replay_at_depth32() -> Result<()> {
     let native = program.reduce(replay)?;
     let end = reader.public_transcript().fingerprint();
     let mut builder = CircuitBuilder::<F>::new();
-    builder.enable_native_keccak_f1600()?;
+    builder.enable_native_blake3_compress()?;
     let start_target = builder.alloc_public_input_array::<32>("initial-state");
     let values: Vec<_> = masked[..program.message_count()]
         .iter()

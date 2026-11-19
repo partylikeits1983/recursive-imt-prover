@@ -242,7 +242,10 @@ impl StatementFormat {
         match (self, backend) {
             (Self::Ordered, HashBackend::Flock) => PROTOCOL,
             (Self::Ordered, HashBackend::Checkpoint) => CHECKPOINT_PROTOCOL,
-            (Self::CyclicPair, _) => "experimental-binary-masked-checkpoint-cyclic-pair-v1",
+            (Self::Ordered, HashBackend::Blake3) => {
+                "experimental-binary-blake3-masked-aggregate-v1"
+            }
+            (Self::CyclicPair, _) => "experimental-binary-blake3-masked-cyclic-pair-v1",
         }
     }
 
@@ -280,7 +283,7 @@ fn tree_pair_circuit(verifier: &PreparedMaskedVerifier) -> Result<Circuit<F>> {
         max_non_primitive_calls: 1 << 21,
         max_non_primitive_slots: 1 << 29,
     })?;
-    b.enable_native_keccak_f1600()?;
+    b.enable_native_blake3_compress()?;
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("tree-statement");
     let side = b.alloc_public_input("side");
     b.assert_bool(side);
@@ -298,7 +301,7 @@ fn tree_pair_circuit(verifier: &PreparedMaskedVerifier) -> Result<Circuit<F>> {
         count: leaf.count,
     };
     // Both instances bind the same ordered pair digest; the verifier supplies
-    // their distinct sides. A conflicting sibling requires a Keccak collision.
+    // their distinct sides. A conflicting sibling requires a BLAKE3 collision.
     TreeTarget::merge(&mut b, left, right)?.connect(&mut b, expected);
     Ok(b.build()?)
 }
@@ -314,8 +317,8 @@ fn configuration_binding(
         "first aggregation requires two children"
     );
     ensure!(
-        format != StatementFormat::CyclicPair || backend == HashBackend::Checkpoint,
-        "cyclic pairs require the checkpoint backend"
+        format != StatementFormat::CyclicPair || backend == HashBackend::Blake3,
+        "cyclic pairs require the BLAKE3 backend"
     );
     Ok(postcard::to_allocvec(&(
         format.protocol(backend),

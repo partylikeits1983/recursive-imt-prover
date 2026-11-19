@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Result, ensure};
-use sha3::{Digest, Keccak256};
 
-pub const LEAF_DOMAIN: &[u8; 16] = b"IMT-KECCAK-LEAF2";
-pub const NODE_DOMAIN: &[u8; 16] = b"IMT-KECCAK-NODE1";
-pub const NULLIFIER_DOMAIN: &[u8; 16] = b"IMT-KECCAK-NULL1";
+pub const LEAF_DOMAIN: &[u8; 16] = b"IMT-BLAKE3-LEAF2";
+pub const NODE_DOMAIN: &[u8; 16] = b"IMT-BLAKE3-NODE1";
+pub const NULLIFIER_DOMAIN: &[u8; 16] = b"IMT-BLAKE3-NULL1";
 pub type Hash = [u8; 32];
 
 /// Sparse storage of a fixed-depth append-only tree. Empty leaves are zero bytes.
@@ -16,8 +15,8 @@ pub struct Imt {
     nodes: BTreeMap<(usize, u64), Hash>,
 }
 
-pub fn keccak(bytes: &[u8]) -> Hash {
-    Keccak256::digest(bytes).into()
+pub fn digest(bytes: &[u8]) -> Hash {
+    *blake3::hash(bytes).as_bytes()
 }
 
 pub fn commitment(secret_num: &Hash, nullifier: &Hash) -> Hash {
@@ -25,14 +24,14 @@ pub fn commitment(secret_num: &Hash, nullifier: &Hash) -> Hash {
     bytes.extend_from_slice(LEAF_DOMAIN);
     bytes.extend_from_slice(secret_num);
     bytes.extend_from_slice(nullifier);
-    keccak(&bytes)
+    digest(&bytes)
 }
 
 pub fn nullifier_hash(nullifier: &Hash) -> Hash {
     let mut bytes = Vec::with_capacity(48);
     bytes.extend_from_slice(NULLIFIER_DOMAIN);
     bytes.extend_from_slice(nullifier);
-    keccak(&bytes)
+    digest(&bytes)
 }
 
 pub fn parent(left: &Hash, right: &Hash) -> Hash {
@@ -40,7 +39,7 @@ pub fn parent(left: &Hash, right: &Hash) -> Hash {
     bytes.extend_from_slice(NODE_DOMAIN);
     bytes.extend_from_slice(left);
     bytes.extend_from_slice(right);
-    keccak(&bytes)
+    digest(&bytes)
 }
 
 impl Imt {

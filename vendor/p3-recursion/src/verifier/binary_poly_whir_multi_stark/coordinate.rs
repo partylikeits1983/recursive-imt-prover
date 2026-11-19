@@ -120,6 +120,30 @@ impl BinaryPolyCoordinateWhirVerifier {
         A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
         C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
     {
+        Self::with_encodings_and_hash(
+            airs,
+            heights,
+            main,
+            preprocessing,
+            limits,
+            encodings,
+            ByteHash::Keccak256,
+        )
+    }
+
+    pub fn with_encodings_and_hash<A, C>(
+        airs: &[&A],
+        heights: &[usize],
+        main: CoordinatePcsParameters<'_, C>,
+        preprocessing: Option<(CoordinatePcsParameters<'_, C>, MerkleCap<F, [u8; 32]>)>,
+        limits: &VerifierLimits,
+        encodings: [CoordinateEncoding; 2],
+        hash: ByteHash,
+    ) -> Result<Self, VerificationError>
+    where
+        A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
+        C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+    {
         let (relation, main_protocol, pp_protocol) = PolyMultiStarkRelation::build(
             airs,
             heights,
@@ -139,7 +163,7 @@ impl BinaryPolyCoordinateWhirVerifier {
             let pcs = BinaryPolyDeferredWhirTraceVerifier::new(
                 parameters.config,
                 columns.protocol().clone(),
-                ByteHash::Keccak256,
+                hash,
                 parameters.cap_height,
                 parameters.ring_seed,
             )?;

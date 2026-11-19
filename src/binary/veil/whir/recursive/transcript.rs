@@ -1,4 +1,4 @@
-//! Circuit replay of the masked child's framed Keccak transcript.
+//! Circuit replay of the masked child's framed BLAKE3 transcript.
 use anyhow::{Result, ensure};
 use p3_circuit::ops::binary_encoding::NativeBinaryEncoding;
 use p3_circuit::ops::binary_host::BinaryCircuitHost;
@@ -139,10 +139,10 @@ impl CircuitTranscript {
     }
 
     fn finish_words(&mut self, builder: &mut CircuitBuilder<F>, words: &[ExprId]) -> Result<()> {
-        // Every unchecked input word is absorbed by the Keccak AIR, which
+        // Every unchecked input word is absorbed by the BLAKE3 AIR, which
         // constrains its 16-bit range; recomposition then uniquely binds the
         // complete Poly64 coefficient. A host hash alone would not suffice.
-        let digest = NativeBinaryEncoding::hash_words(builder, ByteHash::Keccak256, words)?;
+        let digest = NativeBinaryEncoding::hash_words(builder, ByteHash::Blake3, words)?;
         self.state = NativeBinaryEncoding::bytes_from_words(builder, &digest)?
             .try_into()
             .map_err(|_| anyhow::anyhow!("wrong transcript digest length"))?;

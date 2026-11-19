@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     MAX_CHILDREN,
     relation::{AggregatePublic, ClientPublic, F, PUBLIC_BYTES},
-    tree::{Hash, keccak},
+    tree::{Hash, digest},
 };
 
 pub mod cyclic;
@@ -40,7 +40,7 @@ impl TreeStatement {
         message.extend(public.root);
         message.extend(public.nullifier_hash);
         Self {
-            digest: keccak(&message),
+            digest: digest(&message),
             count: 1,
         }
     }
@@ -58,7 +58,7 @@ impl TreeStatement {
         message.extend(right.digest);
         message.push(right.count);
         Ok(Self {
-            digest: keccak(&message),
+            digest: digest(&message),
             count: left.count * 2,
         })
     }
@@ -91,7 +91,7 @@ impl TreeTarget {
         let mut message = domain(b, LEAF_DOMAIN);
         message.extend(public);
         Ok(Self {
-            digest: b.native_keccak256_bytes(&message)?,
+            digest: b.native_blake3_bytes(&message)?,
             count: b.define_const(F::new(1)),
         })
     }
@@ -119,7 +119,7 @@ impl TreeTarget {
         message.extend(right.digest);
         message.push(right.count);
         Ok(Self {
-            digest: b.native_keccak256_bytes(&message)?,
+            digest: b.native_blake3_bytes(&message)?,
             count,
         })
     }

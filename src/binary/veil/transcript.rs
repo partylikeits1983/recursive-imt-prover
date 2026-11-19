@@ -1,6 +1,5 @@
 use anyhow::{Result, ensure};
 use p3_field::{PrimeCharacteristicRing, RawDataSerializable};
-use sha3::{Digest, Keccak256};
 
 use super::hash::TRANSCRIPT_DOMAIN;
 use super::{E, F};
@@ -37,34 +36,34 @@ impl Transcript {
     }
 
     pub fn bytes(&mut self, label: &[u8], bytes: &[u8]) {
-        let mut hash = Keccak256::new();
+        let mut hash = blake3::Hasher::new();
         hash.update(TRANSCRIPT_DOMAIN);
-        hash.update(self.state);
-        hash.update((label.len() as u64).to_le_bytes());
+        hash.update(&self.state);
+        hash.update(&(label.len() as u64).to_le_bytes());
         hash.update(label);
         if !label.len().is_multiple_of(2) {
-            hash.update([0]);
+            hash.update(&[0]);
         }
-        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(&(bytes.len() as u64).to_le_bytes());
         hash.update(bytes);
         if !bytes.len().is_multiple_of(2) {
-            hash.update([0]);
+            hash.update(&[0]);
         }
         self.state = hash.finalize().into();
     }
 
     pub fn fields(&mut self, label: &[u8], fields: &[E]) {
-        let mut hash = Keccak256::new();
+        let mut hash = blake3::Hasher::new();
         hash.update(TRANSCRIPT_DOMAIN);
-        hash.update(self.state);
-        hash.update((label.len() as u64).to_le_bytes());
+        hash.update(&self.state);
+        hash.update(&(label.len() as u64).to_le_bytes());
         hash.update(label);
         if !label.len().is_multiple_of(2) {
-            hash.update([0]);
+            hash.update(&[0]);
         }
-        hash.update((fields.len() as u64 * 24).to_le_bytes());
+        hash.update(&(fields.len() as u64 * 24).to_le_bytes());
         for field in fields {
-            hash.update(field.into_bytes().into_iter().collect::<Vec<_>>());
+            hash.update(&field.into_bytes().into_iter().collect::<Vec<_>>());
         }
         self.state = hash.finalize().into();
     }
