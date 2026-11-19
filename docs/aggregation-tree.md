@@ -149,3 +149,16 @@ merge construction, identical key bytes throughout, and independent final
 verification. Different keys per level do not meet it. Keep resource and security
 guards in place. This establishes the correctness baseline; the
 [performance targets](development.md#next-work) require further optimization.
+
+### Opening a field word
+
+The v5 aggregate verifier stores each homogeneous, power-of-two-width witness
+column as bits down the low row coordinates. For a word of width `2^k`, let
+`X` be the polynomial basis generator of Poly64. For each bit-position
+variable `j`, set `a_j = X^(2^j)` and `q_j = a_j / (1 + a_j)`. Opening the
+bit column at the ordinary row point followed by `q_(k-1), ..., q_0` gives
+one evaluation. Multiplying it by `product_j (1 + a_j)` recovers the logical
+column evaluation, since the resulting weight of bit `i` is exactly `X^i`.
+WHIR authenticates this evaluation in both the native and recursive verifiers.
+Mixed-width and preprocessed tables retain their coordinate openings. The
+trusted key determines the layout. The verifier can also read v4 keys.

@@ -28,6 +28,7 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const WORD_FORMAT: &str = "imt-binary-trusted-verifier-v5";
 const FORMAT: &str = "imt-binary-trusted-verifier-v4";
 
 #[derive(Serialize, Deserialize)]
@@ -70,7 +71,12 @@ impl Prepared {
             .collect::<Result<Vec<_>>>()?;
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
-            format: FORMAT.to_owned(),
+            format: if self.word_openings {
+                WORD_FORMAT
+            } else {
+                FORMAT
+            }
+            .to_owned(),
             backend: self.backend,
             binding: binding.to_vec(),
             seed: self
@@ -97,6 +103,7 @@ impl Verifier {
     pub fn require_same_layout(&self, output: &Prepared) -> Result<()> {
         ensure!(
             self.data.backend == output.backend
+                && (self.data.format == WORD_FORMAT) == output.word_openings
                 && self.data.hash_index == output.hash_index
                 && self.data.main_coordinates == output.geometry.main_coordinate_widths
                 && self.data.preprocessed_coordinates
@@ -140,7 +147,9 @@ impl Verifier {
             postcard::take_from_bytes(bytes)?;
         ensure!(rest.is_empty(), "trailing trusted verifier data");
         ensure!(
-            data.format == FORMAT && data.binding == binding,
+            (data.format == FORMAT
+                || (data.format == WORD_FORMAT && data.backend == HashBackend::Checkpoint))
+                && data.binding == binding,
             "trusted verifier configuration mismatch"
         );
         ensure!(
@@ -199,7 +208,7 @@ impl Verifier {
             data.main_coordinates
                 .iter()
                 .cloned()
-                .map(TableEncoding::new)
+                .map(|w| TableEncoding::with_word_openings(w, data.format == WORD_FORMAT))
                 .collect::<Result<_>>()?,
             &pp,
             data.preprocessed_coordinates

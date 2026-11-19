@@ -95,3 +95,7 @@ Johnson even though native WHIR supports it. Keep these changes explicit when
 updating the dependency; do not silently replace Johnson with capacity bounds.
 
 Unused development dependencies removed: `p3-poseidon2`.
+
+The coordinate verifier can open uniform 2–64-bit Poly64 columns at a fixed
+multilinear suffix and recover each field value with one scaling factor.
+The verifier key selects the encoding.

@@ -23,7 +23,7 @@ use p3_circuit::{
 };
 use p3_commit::MultilinearPcs;
 use p3_matrix::dense::RowMajorMatrix;
-use p3_multilinear_util::point::Point;
+use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_recursion::{
     BinaryTower128Challenger,
     pcs::binary::{BinaryPolyCoordinateOpeningPlan, BinaryPolyDeferredWhirTraceVerifier},
@@ -68,13 +68,22 @@ fn accepts(circuit: &Circuit<CF>, public: &[CF], private: &[CF]) -> bool {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "recursive PCS proof; run with --release")]
 fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
-    let widths = vec![vec![0, 1, 16, 64], vec![1, 1, 0], vec![0, 0], vec![64, 7]];
-    let logs = [7, 8, 6, 9];
+    let widths = vec![
+        vec![0, 1, 16, 64],
+        vec![1, 1, 0],
+        vec![0, 0],
+        vec![64, 7],
+        vec![16, 16],
+        vec![64],
+    ];
+    let logs = [7, 8, 6, 9, 4, 5];
     let requests = [
         vec![vec![3, 0, 1, 2], vec![2]],
         vec![vec![2, 1]],
         vec![vec![0, 1]],
         vec![],
+        vec![vec![1, 0]],
+        vec![vec![0]],
     ];
     let shapes: Vec<_> = logs
         .iter()
@@ -108,17 +117,17 @@ fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
             })
             .collect(),
     );
-    let plan = BinaryPolyCoordinateOpeningPlan::new(&logical, &widths)?;
+    let plan = BinaryPolyCoordinateOpeningPlan::with_word_openings(&logical, &widths, true)?;
     let pcs = pcs(
         &shapes,
         widths
             .iter()
             .cloned()
-            .map(TableEncoding::new)
+            .map(|widths| TableEncoding::with_word_openings(widths, true))
             .collect::<Result<_>>()?,
     )?;
     let mut random = challenger(b"coordinate-test-witness");
-    let tables = widths
+    let tables: Vec<_> = widths
         .iter()
         .zip(logs)
         .map(|(widths, log)| {
@@ -146,12 +155,29 @@ fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
             )
         })
         .collect();
+    let expected: Vec<_> = protocol
+        .iter_openings()
+        .zip(&points)
+        .map(|((t, batch), point)| {
+            batch
+                .current()
+                .iter()
+                .map(|&col| Poly::new(tables[t].poly(col).as_slice().to_vec()).eval_base(point))
+                .collect::<Vec<_>>()
+        })
+        .collect();
     let mut prover = challenger(SEED);
     let (cap, data) = pcs.commit(tables, &mut prover)?;
     let proof = pcs.open_at(data, &protocol, &points, &mut prover)?;
     let mut native = challenger(SEED);
     pcs.observe_commitment(&cap, &mut native);
     let evals = pcs.verify_at(&cap, &proof, &protocol, &points, &mut native)?;
+    assert!(
+        evals
+            .iter()
+            .zip(&expected)
+            .all(|(actual, want)| actual.current() == want)
+    );
     let next = native.sample_algebra_element::<E>();
     let BooleanWhirOpening::Deferred(opening) = &proof.opening else {
         panic!("expected deferred opening")
@@ -186,15 +212,18 @@ fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
         deferred_seed(plan.num_variables(), plan.ring_claim_count()),
     )?;
     let old_cap = MerkleCap::<CF, [u8; 32]>::new(cap.roots().to_vec());
-    let old_points: Vec<_> = points
+    let logical_points: Vec<Vec<_>> = points
         .iter()
         .map(|p| {
-            OldPoint::new(
-                p.iter()
-                    .map(|v| CE::new(v.coefficients().map(|c| CF::new(c.to_bits()))))
-                    .collect(),
-            )
+            p.iter()
+                .map(|v| CE::new(v.coefficients().map(|c| CF::new(c.to_bits()))))
+                .collect()
         })
+        .collect();
+    let old_points: Vec<_> = plan
+        .opening_points(&logical_points, |raw| CE::from(CF::new(raw)))?
+        .into_iter()
+        .map(OldPoint::new)
         .collect();
     let mut imported = Ch::from_hasher(SEED.to_vec(), Keccak256Hash);
     verifier.observe_native_commitment(&mut imported, &old_cap)?;
@@ -229,6 +258,8 @@ fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
         .iter()
         .map(|p| p.iter().map(|_| target(&mut b)).collect())
         .collect();
+    let point_targets =
+        plan.opening_points(&point_targets, |raw| b.native_poly192_constant([raw, 0, 0]))?;
     let proof_targets = verifier.allocate_native_targets(&mut b)?;
     let seed: Vec<_> = SEED
         .iter()

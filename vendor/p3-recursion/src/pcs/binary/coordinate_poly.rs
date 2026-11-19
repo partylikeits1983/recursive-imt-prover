@@ -2,13 +2,49 @@
 use alloc::{vec, vec::Vec};
 use core::ops::Range;
 
-use p3_binary_field::Poly64;
+use p3_binary_field::{Poly64, TowerLevel};
 use p3_circuit::{CircuitBuilder, ops::NativePoly192Target};
+use p3_field::PrimeCharacteristicRing;
 use p3_sumcheck::{OpeningBatch, OpeningProtocol, TableShape, TableSpec};
 
 use super::trace_plan::TracePlan;
 use super::whir_plan::invalid;
 use crate::verifier::{VerificationError, VerifierLimits};
+
+/// Public MLE suffix for the little-endian polynomial basis of a Poly64 word.
+#[derive(Clone, Debug)]
+pub struct Poly64WordOpening {
+    pub suffix: Vec<u64>,
+    pub scale: u64,
+}
+
+impl Poly64WordOpening {
+    pub fn for_widths(widths: &[usize]) -> Option<Self> {
+        let &width = widths.first()?;
+        if !(2..=64).contains(&width)
+            || !width.is_power_of_two()
+            || widths.iter().any(|&w| w != width)
+        {
+            return None;
+        }
+        // For bit j, q/(1+q) = X^(2^j). Multiplying eq(q, i) by the
+        // product of denominators gives the polynomial basis element X^i.
+        let mut scale = Poly64::ONE;
+        let suffix = (0..width.ilog2())
+            .rev()
+            .map(|bit| {
+                let weight = Poly64::new(1u64 << (1 << bit));
+                let denominator = Poly64::ONE + weight;
+                scale *= denominator;
+                (weight / denominator).to_repr()
+            })
+            .collect();
+        Some(Self {
+            suffix,
+            scale: scale.to_repr(),
+        })
+    }
+}
 
 pub struct BinaryPolyCoordinateOpeningPlan {
     protocol: OpeningProtocol,
@@ -16,6 +52,7 @@ pub struct BinaryPolyCoordinateOpeningPlan {
     widths: Vec<usize>,
     variables: usize,
     claims: usize,
+    folds: Vec<Option<Poly64WordOpening>>,
 }
 
 impl BinaryPolyCoordinateOpeningPlan {
@@ -25,13 +62,22 @@ impl BinaryPolyCoordinateOpeningPlan {
         logical: &OpeningProtocol,
         widths: &[Vec<usize>],
     ) -> Result<Self, VerificationError> {
+        Self::with_word_openings(logical, widths, false)
+    }
+
+    pub fn with_word_openings(
+        logical: &OpeningProtocol,
+        widths: &[Vec<usize>],
+        fold_words: bool,
+    ) -> Result<Self, VerificationError> {
         let shapes = logical.table_shapes();
         let limits = VerifierLimits::default();
         if shapes.is_empty() || shapes.len() != widths.len() || shapes.len() > limits.max_instances
         {
             return Err(invalid("coordinate table count mismatch"));
         }
-        let mut ranges = Vec::with_capacity(shapes.len());
+        let mut table_folds = Vec::with_capacity(shapes.len());
+        let mut ranges: Vec<Vec<Range<usize>>> = Vec::with_capacity(shapes.len());
         let mut encoded = Vec::with_capacity(shapes.len());
         for (shape, widths) in shapes.iter().zip(widths) {
             if widths.is_empty()
@@ -41,26 +87,34 @@ impl BinaryPolyCoordinateOpeningPlan {
             {
                 return Err(invalid("invalid coordinate column widths"));
             }
+            let fold = if fold_words {
+                Poly64WordOpening::for_widths(widths)
+            } else {
+                None
+            };
             let mut offset = 0usize;
-            let columns: Vec<_> = widths
+            let columns = widths
                 .iter()
                 .map(|&width| {
                     let start = offset;
-                    offset += width;
+                    offset += if fold.is_some() { 1 } else { width };
                     start..offset
                 })
                 .collect();
-            // Match the native encoding of an all-zero table.
             let committed = offset.max(1);
-            if committed > limits.max_matrix_width
-                || shape.num_variables() > limits.max_log_domain_or_degree
-            {
+            let height = shape
+                .num_variables()
+                .checked_add(fold.as_ref().map_or(0, |w| w.suffix.len()))
+                .ok_or_else(|| invalid("word table height overflow"))?;
+            if committed > limits.max_matrix_width || height > limits.max_log_domain_or_degree {
                 return Err(invalid("coordinate table exceeds verifier limits"));
             }
             ranges.push(columns);
-            encoded.push(TableShape::new(shape.num_variables(), committed));
+            encoded.push(TableShape::new(height, committed));
+            table_folds.push(fold);
         }
         let mut columns = Vec::new();
+        let mut folds = Vec::new();
         let mut committed_widths = Vec::new();
         let mut schedules = vec![Vec::new(); shapes.len()];
         for (table, batch) in logical.iter_openings() {
@@ -82,6 +136,7 @@ impl BinaryPolyCoordinateOpeningPlan {
                     .collect(),
             );
             let width = encoded[table].width();
+            folds.push(table_folds[table].clone());
             committed_widths.push(width);
             schedules[table].push(OpeningBatch::new((0..width).collect(), vec![]));
         }
@@ -106,6 +161,7 @@ impl BinaryPolyCoordinateOpeningPlan {
             widths: committed_widths,
             variables,
             claims: plan.specs.len(),
+            folds,
         })
     }
 
@@ -117,6 +173,27 @@ impl BinaryPolyCoordinateOpeningPlan {
     }
     pub const fn ring_claim_count(&self) -> usize {
         self.claims
+    }
+
+    pub fn opening_points<T: Clone>(
+        &self,
+        points: &[Vec<T>],
+        mut constant: impl FnMut(u64) -> T,
+    ) -> Result<Vec<Vec<T>>, VerificationError> {
+        if points.len() != self.folds.len() {
+            return Err(invalid("coordinate point count mismatch"));
+        }
+        Ok(points
+            .iter()
+            .zip(&self.folds)
+            .map(|(point, fold)| {
+                let mut coordinates = point.clone();
+                if let Some(fold) = fold {
+                    coordinates.extend(fold.suffix.iter().copied().map(&mut constant));
+                }
+                coordinates
+            })
+            .collect())
     }
 
     /// Only pass openings authenticated by the PCS verifier under `self.protocol()`.
@@ -139,11 +216,19 @@ impl BinaryPolyCoordinateOpeningPlan {
         let zero = b.define_const(Poly64::new(0));
         self.columns
             .iter()
+            .zip(&self.folds)
             .zip(authenticated)
-            .map(|(columns, values)| {
+            .map(|((columns, fold), values)| {
                 let logical = columns
                     .iter()
                     .map(|range| {
+                        if let Some(fold) = fold {
+                            let scale = b.define_const(Poly64::new(fold.scale));
+                            let coeffs = values.current()[range.start]
+                                .coefficients()
+                                .map(|v| b.mul(v, scale));
+                            return Ok(b.native_poly192_from_coefficients(coeffs));
+                        }
                         let mut result = [zero; 3];
                         for (k, value) in values.current()[range.clone()].iter().enumerate() {
                             for (slot, &coordinate) in result.iter_mut().zip(value.coefficients()) {

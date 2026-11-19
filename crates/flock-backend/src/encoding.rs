@@ -1,10 +1,12 @@
 //! Trusted, injective coordinate encodings for Poly64 trace columns.
 use anyhow::{Result, ensure};
 use core::ops::Range;
+use p3_recursion::pcs::binary::Poly64WordOpening;
 use p3_sumcheck::TableShape;
 
 #[derive(Clone, Debug)]
 pub struct TableEncoding {
+    pub word: Option<Poly64WordOpening>,
     pub widths: Vec<usize>,
     pub columns: Vec<Range<usize>>,
     pub boolean_columns: usize,
@@ -13,18 +15,28 @@ pub struct TableEncoding {
 
 impl TableEncoding {
     pub fn new(widths: Vec<usize>) -> Result<Self> {
+        Self::with_word_openings(widths, false)
+    }
+
+    pub fn with_word_openings(widths: Vec<usize>, fold: bool) -> Result<Self> {
         ensure!(!widths.is_empty(), "empty coordinate encoding");
+        let word = if fold {
+            Poly64WordOpening::for_widths(&widths)
+        } else {
+            None
+        };
         let mut committed_width = 0usize;
         let mut columns = Vec::with_capacity(widths.len());
         for &width in &widths {
             ensure!(width <= 64, "coordinate width outside 0..=64");
             let end = committed_width
-                .checked_add(width)
+                .checked_add(if word.is_some() { 1 } else { width })
                 .ok_or_else(|| anyhow::anyhow!("coordinate width overflow"))?;
             columns.push(committed_width..end);
             committed_width = end;
         }
         Ok(Self {
+            word,
             boolean_columns: widths.iter().take_while(|&&width| width == 1).count(),
             widths,
             columns,
@@ -41,7 +53,8 @@ pub fn committed_shapes(shapes: &[TableShape], encodings: &[TableEncoding]) -> V
         .zip(encodings)
         .map(|(shape, encoding)| {
             assert_eq!(shape.width(), encoding.widths.len(), "one width per column");
-            TableShape::new(shape.num_variables(), encoding.committed_width)
+            let extra = encoding.word.as_ref().map_or(0, |word| word.suffix.len());
+            TableShape::new(shape.num_variables() + extra, encoding.committed_width)
         })
         .collect()
 }

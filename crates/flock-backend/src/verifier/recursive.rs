@@ -79,8 +79,9 @@ impl Verifier {
             .filter(|(a, _)| a.preprocessed_width() > 0)
             .map(|(a, &h)| TableShape::new(h, a.preprocessed_width()))
             .collect();
-        let main = plan(&shapes, &self.data.main_coordinates)?;
-        let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates)?;
+        let fold = self.data.format == super::WORD_FORMAT;
+        let main = plan(&shapes, &self.data.main_coordinates, fold)?;
+        let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates, false)?;
         let configs = [config(main.num_variables())?, config(pp.num_variables())?];
         let parameters =
             |i, plan: &BinaryPolyCoordinateOpeningPlan, widths| CoordinatePcsParameters {
@@ -94,7 +95,7 @@ impl Verifier {
             .key
             .preprocessed_commitment()
             .ok_or_else(|| anyhow::anyhow!("missing checkpoint preprocessing"))?;
-        let verifier = BinaryPolyCoordinateWhirVerifier::new(
+        let verifier = BinaryPolyCoordinateWhirVerifier::with_word_openings(
             &airs.iter().collect::<Vec<_>>(),
             &heights,
             parameters(0, &main, &self.data.main_coordinates),
@@ -107,6 +108,7 @@ impl Verifier {
                 max_rounds: 320,
                 ..VerifierLimits::default()
             },
+            fold,
         )?;
         Ok(RecursiveArithmetic {
             verifier,
@@ -215,14 +217,20 @@ impl RecursiveArithmetic {
     }
 }
 
-fn plan(shapes: &[TableShape], widths: &[Vec<usize>]) -> Result<BinaryPolyCoordinateOpeningPlan> {
+fn plan(
+    shapes: &[TableShape],
+    widths: &[Vec<usize>],
+    fold: bool,
+) -> Result<BinaryPolyCoordinateOpeningPlan> {
     let protocol = OpeningProtocol::new(
         shapes
             .iter()
             .map(|&s| TableSpec::new(s, vec![OpeningBatch::new((0..s.width()).collect(), vec![])]))
             .collect(),
     );
-    Ok(BinaryPolyCoordinateOpeningPlan::new(&protocol, widths)?)
+    Ok(BinaryPolyCoordinateOpeningPlan::with_word_openings(
+        &protocol, widths, fold,
+    )?)
 }
 
 fn config(arity: usize) -> Result<WhirConfig<E, F, Ch>> {

@@ -78,6 +78,21 @@ impl BinaryPolyCoordinateWhirVerifier {
         A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
         C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
     {
+        Self::with_word_openings(airs, heights, main, preprocessing, limits, false)
+    }
+
+    pub fn with_word_openings<A, C>(
+        airs: &[&A],
+        heights: &[usize],
+        main: CoordinatePcsParameters<'_, C>,
+        preprocessing: Option<(CoordinatePcsParameters<'_, C>, MerkleCap<F, [u8; 32]>)>,
+        limits: &VerifierLimits,
+        fold_main: bool,
+    ) -> Result<Self, VerificationError>
+    where
+        A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
+        C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+    {
         let (relation, main_protocol, pp_protocol) = PolyMultiStarkRelation::build(
             airs,
             heights,
@@ -91,8 +106,12 @@ impl BinaryPolyCoordinateWhirVerifier {
                 "coordinate verifier does not support indexed lookups",
             ));
         }
-        let build = |protocol, parameters: CoordinatePcsParameters<'_, C>| {
-            let columns = BinaryPolyCoordinateOpeningPlan::new(&protocol, parameters.widths)?;
+        let build = |protocol, parameters: CoordinatePcsParameters<'_, C>, fold| {
+            let columns = BinaryPolyCoordinateOpeningPlan::with_word_openings(
+                &protocol,
+                parameters.widths,
+                fold,
+            )?;
             let pcs = BinaryPolyDeferredWhirTraceVerifier::new(
                 parameters.config,
                 columns.protocol().clone(),
@@ -106,7 +125,7 @@ impl BinaryPolyCoordinateWhirVerifier {
             .checked_shl(main.cap_height as u32)
             .filter(|&n| n <= limits.max_cap_roots)
             .ok_or_else(|| invalid("invalid coordinate cap height"))?;
-        let main = build(main_protocol, main)?;
+        let main = build(main_protocol, main, fold_main)?;
         let preprocessed = match (preprocessing, pp_protocol) {
             (Some((parameters, cap)), Some(protocol)) => {
                 if parameters.cap_height >= usize::BITS as usize
@@ -114,7 +133,7 @@ impl BinaryPolyCoordinateWhirVerifier {
                 {
                     return Err(invalid("incorrect preprocessing cap size"));
                 }
-                Some((build(protocol, parameters)?, cap))
+                Some((build(protocol, parameters, false)?, cap))
             }
             (None, None) => None,
             _ => return Err(invalid("coordinate preprocessing mismatch")),
@@ -230,11 +249,17 @@ impl BinaryPolyCoordinateWhirVerifier {
                 b, ch, public, &common,
             )?;
         self.relation.set_unindexed_points(&mut reduction);
+        let points = self
+            .main
+            .columns
+            .opening_points(&reduction.main_points, |raw| {
+                b.native_poly192_constant([raw, 0, 0])
+            })?;
         let (coordinates, mut ch) = self.main.pcs.verify_at_native(
             b,
             reduction.challenger.clone(),
             &proof.commitment,
-            &reduction.main_points,
+            &points,
             &proof.main,
         )?;
         let main = self.main.columns.recombine_native(b, &coordinates)?;
@@ -306,11 +331,15 @@ impl BinaryPolyCoordinateWhirVerifier {
             .iter()
             .map(|a| a.log_height())
             .collect();
+        let logical =
+            self.relation
+                .input
+                .main_schedule
+                .points(&heights, reduction.point.as_slice(), None);
         let main_points = self
-            .relation
-            .input
-            .main_schedule
-            .points(&heights, reduction.point.as_slice(), None)
+            .main
+            .columns
+            .opening_points(&logical, |v| E::from(F::new(v)))?
             .into_iter()
             .map(Point::new)
             .collect();

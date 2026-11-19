@@ -69,6 +69,7 @@ pub enum HashBackend {
 }
 
 pub struct Prepared {
+    word_openings: bool,
     backend: HashBackend,
     checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
@@ -376,6 +377,9 @@ impl Prepared {
                 b"imt-checkpoint-backend-v6/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
+        if recursive {
+            identity.update(b"/poly64-word-openings-v1");
+        }
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
         identity.update(hash.digest());
@@ -447,7 +451,7 @@ impl Prepared {
                     }
                     WitnessSource::Bridge | WitnessSource::Keccak => vec![16; shape.width()],
                 };
-                TableEncoding::new(widths)
+                TableEncoding::with_word_openings(widths, recursive)
             })
             .collect::<Result<Vec<_>>>()?;
         let main_coordinate_widths: Vec<_> =
@@ -556,6 +560,7 @@ impl Prepared {
             security_terms: terms,
         };
         Ok(Self {
+            word_openings: recursive,
             backend,
             checkpoint,
             circuit,

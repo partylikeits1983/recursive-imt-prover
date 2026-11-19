@@ -7,12 +7,13 @@
 #[cfg(test)]
 mod tests;
 
+use crate::F;
 use crate::encoding::{TableEncoding, committed_shapes};
 
 use p3_binary_field::{BinaryField8, BitCoordinates, PackedGf2x64, TowerLevel};
-use p3_challenger::fs::TranscriptField;
 use p3_challenger::{CanObserve, CanSampleUniformBits, FieldChallenger, GrindingChallenger};
 use p3_commit::MultilinearPcs;
+use p3_field::PrimeCharacteristicRing;
 use p3_field::{Algebra, ExtensionField, Field};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_maybe_rayon::prelude::*;
@@ -33,26 +34,8 @@ use p3_binary_pcs::{Coordinates, coordinate_bytes, pack};
 /// Rows one packed word holds.
 const WORD_BITS: usize = 64;
 
-/// A commitment to tables with a bit region and a dense region, one bit witness underneath.
-///
-/// Each table has a trusted encoding. Its leading one-coordinate columns retain
-/// their indices for weighted Boolean claims; other columns expand into their
-/// declared number of low coordinates.
-///
-/// Source cells and packed elements use `F`.
-///
-/// Opening points and evaluations use its extension `EF`.
-///
-/// Dense columns split into the coordinates of `F`, and recombine by its embedding into `EF`.
-///
-/// `F` must be the backend's `B::Val`.
-///
-/// The default `F = EF` preserves the square case where `B::Val = EF`.
-///
-/// Specify `F` explicitly when the backend's `Val` differs from `EF`.
-///
-/// The split is part of the statement, so prover and verifier build it from the same tables.
-pub struct MixedTraceCommitment<EF, B, F = EF> {
+/// Commits Poly64 trace columns through the verifier-authorized Boolean encoding.
+pub struct MixedTraceCommitment<EF, B> {
     /// The Boolean trace commitment every claim is discharged against.
     inner: BooleanTraceCommitment<EF, B>,
     encodings: Vec<TableEncoding>,
@@ -84,7 +67,7 @@ pub fn coordinate_basis<EF: Coordinates>() -> Vec<EF> {
         .collect()
 }
 
-impl<EF, B, F: Coordinates> MixedTraceCommitment<EF, B, F> {
+impl<EF, B> MixedTraceCommitment<EF, B> {
     /// Split each table at its bit region, and commit through `inner`.
     ///
     /// `inner` must hold the arity [`committed_shapes`] stacks to.
@@ -100,7 +83,7 @@ impl<EF, B, F: Coordinates> MixedTraceCommitment<EF, B, F> {
     }
 }
 
-impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, B, F> {
+impl<EF: ExtensionField<F>, B> MixedTraceCommitment<EF, B> {
     /// Refuse a protocol whose table count or widths disagree with the bit regions.
     ///
     /// A table whose committed width overflows a word is refused too.
@@ -122,6 +105,42 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
             }
         }
         Ok(())
+    }
+
+    fn check_protocol<E>(
+        &self,
+        protocol: &OpeningProtocol,
+    ) -> Result<(), BooleanTraceCommitmentError<E>> {
+        self.check_regions(&protocol.table_shapes())?;
+        if protocol
+            .iter_openings()
+            .any(|(t, b)| self.encodings[t].word.is_some() && !b.next().is_empty())
+        {
+            return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
+        }
+        Ok(())
+    }
+
+    fn opening_points<E>(
+        &self,
+        protocol: &OpeningProtocol,
+        points: &[Point<EF>],
+    ) -> Result<Vec<Point<EF>>, BooleanTraceCommitmentError<E>> {
+        self.check_protocol(protocol)?;
+        protocol
+            .check_points(points)
+            .map_err(|_| BooleanTraceCommitmentError::InvalidOpeningProtocol)?;
+        Ok(protocol
+            .iter_openings()
+            .zip(points)
+            .map(|((t, _), point)| {
+                let mut coords = point.as_slice().to_vec();
+                if let Some(word) = &self.encodings[t].word {
+                    coords.extend(word.suffix.iter().map(|&raw| EF::from(F::new(raw))));
+                }
+                Point::new(coords)
+            })
+            .collect())
     }
 
     /// The same schedule over the committed columns, each batch widened to its whole table.
@@ -157,9 +176,7 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
         )
     }
 
-    /// A field evaluation cannot be split into evaluations of its Boolean
-    /// coordinates. Forward supplied values only when expansion changes
-    /// neither the columns nor the complete ordered opening request.
+    /// Forward full-batch hints whose encoded readings are determined by the logical readings.
     fn expand_known<E>(
         &self,
         protocol: &OpeningProtocol,
@@ -180,15 +197,22 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
                 {
                     return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
                 }
-                Ok(
-                    if self.encodings[table].widths.iter().all(|&width| width == 1)
-                        && original == expanded
-                    {
-                        hint.clone()
-                    } else {
-                        None
-                    },
-                )
+                let Some(values) = hint.as_ref().filter(|_| original == expanded) else {
+                    return Ok(None);
+                };
+                let encoding = &self.encodings[table];
+                if let Some(word) = &encoding.word {
+                    let inverse = F::new(word.scale).inverse();
+                    return Ok(Some(OpeningBatch::new(
+                        values.current().iter().map(|&v| v * inverse).collect(),
+                        Vec::new(),
+                    )));
+                }
+                Ok(encoding
+                    .widths
+                    .iter()
+                    .all(|&w| w == 1)
+                    .then(|| values.clone()))
             })
             .collect()
     }
@@ -210,6 +234,9 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
                     columns
                         .iter()
                         .map(|&column| {
+                            if let Some(word) = &encoding.word {
+                                return values[column] * F::new(word.scale);
+                            }
                             let range = encoding.columns[column].clone();
                             if encoding.widths[column] == 0 {
                                 EF::ZERO
@@ -243,6 +270,32 @@ impl<EF: ExtensionField<F>, B, F: Field + Coordinates> MixedTraceCommitment<EF, 
         let height = 1usize << num_variables;
         let width = table.num_polys();
         let encoding = &self.encodings[index];
+        if let Some(word) = &encoding.word {
+            let word_width = encoding.widths[0];
+            let lanes = WORD_BITS / word_width;
+            let mut packed = vec![0; height.div_ceil(lanes) * width];
+            packed
+                .par_chunks_mut(width)
+                .enumerate()
+                .try_for_each(|(block, out)| {
+                    for (col, slot) in out.iter_mut().enumerate() {
+                        let view = table.column(col);
+                        for row in block * lanes..((block + 1) * lanes).min(height) {
+                            let value = view.value(row).to_repr();
+                            if word_width < WORD_BITS && value >> word_width != 0 {
+                                return Err(());
+                            }
+                            *slot |= value << ((row % lanes) * word_width);
+                        }
+                    }
+                    Ok(())
+                })
+                .map_err(|()| BooleanTraceCommitmentError::InvalidOpeningProtocol)?;
+            return Ok(Table::from_packed_bits(
+                RowMajorMatrix::new(packed, width),
+                num_variables + word.suffix.len(),
+            ));
+        }
         let bits = encoding.boolean_columns;
         let committed = encoding.committed_width;
         let blocks = height.div_ceil(WORD_BITS);
@@ -377,9 +430,25 @@ impl<EF: Field, D> MixedTraceData<EF, D> {
     }
 }
 
-impl<EF, B, F, Challenger> MultilinearPcs<EF, Challenger> for MixedTraceCommitment<EF, B, F>
+fn sample_points<EF: ExtensionField<F>>(
+    protocol: &OpeningProtocol,
+    challenger: &mut impl FieldChallenger<F>,
+) -> Vec<Point<EF>> {
+    let shapes = protocol.table_shapes();
+    protocol
+        .iter_openings()
+        .map(|(t, _)| {
+            Point::new(
+                (0..shapes[t].num_variables())
+                    .map(|_| challenger.sample_algebra_element())
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+impl<EF, B, Challenger> MultilinearPcs<EF, Challenger> for MixedTraceCommitment<EF, B>
 where
-    F: TranscriptField + TowerLevel + Coordinates,
     EF: BitCoordinates + ExtensionField<F>,
     B: BooleanMultilinearPcs<EF, Challenger, Val = F>,
     Challenger: FieldChallenger<F>
@@ -435,10 +504,17 @@ where
         protocol: Self::OpeningProtocol,
         challenger: &mut Challenger,
     ) -> Result<Self::Proof, Self::ProverError> {
-        self.check_regions(&protocol.table_shapes())?;
-        let committed = self.expand_protocol(&protocol);
-        drop(prover_data.tables);
-        self.inner.open(prover_data.inner, committed, challenger)
+        self.check_protocol(&protocol)?;
+        if !prover_data
+            .tables
+            .iter()
+            .map(Table::shape)
+            .eq(protocol.table_shapes())
+        {
+            return Err(BooleanTraceCommitmentError::InvalidOpeningProtocol);
+        }
+        let points = sample_points(&protocol, challenger);
+        self.open_at(prover_data, &protocol, &points, challenger)
     }
 
     fn verify(
@@ -448,17 +524,16 @@ where
         challenger: &mut Challenger,
         protocol: Self::OpeningProtocol,
     ) -> Result<(), Self::Error> {
-        self.check_regions(&protocol.table_shapes())?;
-        let committed = self.expand_protocol(&protocol);
-        self.inner.verify(commitment, proof, challenger, committed)
+        self.check_protocol(&protocol)?;
+        self.observe_commitment(commitment, challenger);
+        let points = sample_points(&protocol, challenger);
+        self.verify_at(commitment, proof, &protocol, &points, challenger)
+            .map(|_| ())
     }
 }
 
-/// Supplied values for unchanged Boolean batches retain their original meaning.
-/// All other expanded batches are evaluated from the committed tables as before.
-impl<EF, B, F, Challenger> PrescribedPointPcs<EF, Challenger> for MixedTraceCommitment<EF, B, F>
+impl<EF, B, Challenger> PrescribedPointPcs<EF, Challenger> for MixedTraceCommitment<EF, B>
 where
-    F: TranscriptField + TowerLevel + Coordinates,
     EF: BitCoordinates + ExtensionField<F>,
     B: BooleanMultilinearPcs<EF, Challenger, Val = F>,
     Challenger: FieldChallenger<F>
@@ -473,8 +548,7 @@ where
 
     fn prescribed_security(&self, protocol: &OpeningProtocol) -> Option<PrescribedOpeningSecurity> {
         // The recombination draws nothing, so the committed protocol's evidence is the whole.
-        self.check_regions::<B::Error>(&protocol.table_shapes())
-            .ok()?;
+        self.check_protocol::<B::Error>(protocol).ok()?;
         self.inner
             .prescribed_security(&self.expand_protocol(protocol))
     }
@@ -486,11 +560,11 @@ where
         points: &[Point<EF>],
         challenger: &mut Challenger,
     ) -> Result<Self::Proof, Self::ProverError> {
-        self.check_regions(&protocol.table_shapes())?;
+        let points = self.opening_points(protocol, points)?;
         let committed = self.expand_protocol(protocol);
         drop(prover_data.tables);
         self.inner
-            .open_at(prover_data.inner, &committed, points, challenger)
+            .open_at(prover_data.inner, &committed, &points, challenger)
     }
 
     fn open_at_known(
@@ -501,12 +575,12 @@ where
         known: &[Option<OpeningEvals<EF>>],
         challenger: &mut Challenger,
     ) -> Result<Self::Proof, Self::ProverError> {
-        self.check_regions(&protocol.table_shapes())?;
+        let points = self.opening_points(protocol, points)?;
         let committed = self.expand_protocol(protocol);
         let known = self.expand_known(protocol, &committed, known)?;
         drop(prover_data.tables);
         self.inner
-            .open_at_known(prover_data.inner, &committed, points, &known, challenger)
+            .open_at_known(prover_data.inner, &committed, &points, &known, challenger)
     }
 
     fn verify_at(
@@ -517,11 +591,11 @@ where
         points: &[Point<EF>],
         challenger: &mut Challenger,
     ) -> Result<Vec<OpeningEvals<EF>>, Self::Error> {
-        self.check_regions(&protocol.table_shapes())?;
+        let points = self.opening_points(protocol, points)?;
         let committed = self.expand_protocol(protocol);
         let evals = self
             .inner
-            .verify_at(commitment, proof, &committed, points, challenger)?;
+            .verify_at(commitment, proof, &committed, &points, challenger)?;
         Ok(self.recombine(protocol, &evals))
     }
     fn weighted_security(
@@ -529,8 +603,7 @@ where
         protocol: &OpeningProtocol,
         weighted: usize,
     ) -> Option<PrescribedOpeningSecurity> {
-        self.check_regions::<B::Error>(&protocol.table_shapes())
-            .ok()?;
+        self.check_protocol::<B::Error>(protocol).ok()?;
         self.inner
             .weighted_security(&self.expand_protocol(protocol), weighted)
     }
@@ -552,17 +625,19 @@ where
         {
             return Some(Err(BooleanTraceCommitmentError::InvalidOpeningProtocol));
         }
-        if let Err(e) = self.check_regions(&protocol.table_shapes()) {
-            return Some(Err(e));
-        }
+        let points = match self.opening_points(protocol, points) {
+            Ok(p) => p,
+            Err(e) => return Some(Err(e)),
+        };
         let committed = self.expand_protocol(protocol);
         let known = match self.expand_known(protocol, &committed, known) {
             Ok(known) => known,
             Err(error) => return Some(Err(error)),
         };
         drop(data.tables);
-        self.inner
-            .open_at_known_weighted(data.inner, &committed, points, &known, weighted, challenger)
+        self.inner.open_at_known_weighted(
+            data.inner, &committed, &points, &known, weighted, challenger,
+        )
     }
 
     fn verify_at_weighted(
@@ -580,15 +655,16 @@ where
         {
             return Some(Err(BooleanTraceCommitmentError::InvalidOpeningProtocol));
         }
-        if let Err(e) = self.check_regions(&protocol.table_shapes()) {
-            return Some(Err(e));
-        }
+        let points = match self.opening_points(protocol, points) {
+            Ok(p) => p,
+            Err(e) => return Some(Err(e)),
+        };
         self.inner
             .verify_at_weighted(
                 commitment,
                 proof,
                 &self.expand_protocol(protocol),
-                points,
+                &points,
                 weighted,
                 challenger,
             )
