@@ -76,28 +76,24 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Two depth-32, 64-child release runs on an Apple M2 Pro with 16 GiB of memory,
-eight Rayon workers and one aggregation node at a time. Child, pair and merge
-times are per-proof medians. Fresh verification includes process startup and
-trusted-key loading.
+Each row measures a complete depth-32 tree with 64 child proofs on an Apple M2
+Pro with 16 GiB of memory and eight Rayon workers. One aggregation node runs at
+a time. Child, first-pair and merge times are per-proof medians. The final
+verification time includes process startup and trusted-key loading.
 
-| Final encoding | Child proving | First pair | Recursive merge | All 63 aggregations | Final file | Fresh verification |
+| Keccak wire layout | Child proving | First pair | Recursive merge | All 63 aggregations | Final file | Fresh verification |
 |---|---:|---:|---:|---:|---:|---:|
-| Uncompressed | 2.65 s | 16.51 s | 16.54 s | 17 min 36 s | 1,142,244 B | 114 ms |
-| zlib | 2.98 s | 16.50 s | 16.36 s | 17 min 27 s | 996,198 B | 119 ms |
+| Separate port table | 2.98 s | 16.50 s | 16.36 s | 17 min 27 s | 996,198 B | 119 ms |
+| Direct bridge | 2.55 s | 15.90 s | 15.60 s | 16 min 45 s | 962,180 B | 110 ms |
 
-The final proof in the second run occupied 1,141,892 bytes before compression.
-Encoding the 996,198-byte file took 26 ms.
-Both runs reused the same merge key at all five levels and verified the
-ordered list in a fresh process. The second run took 21 min 26 s
-from setup through final verification, excluding negative tests. Peak process-tree
-physical footprint was 17.2 GB, including compressed or swapped memory.
-[Raw timings, proof sizes and verification results](benchmarks/binary/tree-merge/word-openings-sixty-four.json)
-
-The previous coordinate encoding took 17.58 s per merge and produced a
-1,398,055-byte proof. The targets of 10 s per merge and 60 s for the full tree
-remain open.
-[Previous run](benchmarks/binary/tree-merge/selector-sixty-four.json)
+The direct bridge run reused one merge key across all five higher levels.
+Merges ranged from 15.07 to 19.10 seconds. Setup, child proving and verification,
+aggregation and independent final verification took 20 min 20 s in total, excluding
+negative tests. The raw aggregate was 1,110,236 bytes before final-file compression.
+Peak process-tree physical footprint was 16.3 GB, including compressed or swapped memory.
+The performance targets are 10 seconds per merge and 60 seconds for the tree.
+[Direct bridge measurements](benchmarks/binary/tree-merge/direct-bridge-sixty-four.json)
+and [previous measurements](benchmarks/binary/tree-merge/word-openings-sixty-four.json).
 
 ## Running locally
 

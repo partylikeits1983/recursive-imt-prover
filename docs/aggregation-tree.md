@@ -128,11 +128,10 @@ All runs produced the same 1,396,679-byte proof and verifier key.
 
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It constructed the merge circuit once and checked the same
-key at all five levels. The key also matched the eight-child run byte for
-byte. A fresh process verified the 996,198-byte proof against the ordered
+key at all five levels. A fresh process verified the 962,180-byte proof against the ordered
 statements using only the trusted verifier files. The test rejected corrupted
 proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/word-openings-sixty-four.json).
+[Raw measurements and validation](../benchmarks/binary/tree-merge/direct-bridge-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
@@ -167,7 +166,7 @@ guards in place. This establishes the correctness baseline; the
 ### Opening a field word
 
 For witness tables whose columns all have the same power-of-two width from 2 to
-64 bits, the v5 aggregate verifier uses the low row coordinates for the bits of each word. For a word of width `2^k`, let
+64 bits, verifier versions 5 and 6 use the low row coordinates for the bits of each word. For a word of width `2^k`, let
 `X` be the polynomial basis generator of Poly64. For each bit-position
 variable `j`, set `a_j = X^(2^j)` and `q_j = a_j / (1 + a_j)`. Opening the
 bit column at the ordinary row point followed by `q_(k-1), ..., q_0` gives
@@ -175,4 +174,4 @@ one evaluation. Multiplying it by `product_j (1 + a_j)` recovers the logical
 column evaluation, since the resulting weight of bit `i` is exactly `X^i`.
 WHIR authenticates this evaluation in both the native and recursive verifiers.
 Mixed-width and preprocessed tables retain their coordinate openings. The
-trusted key determines the layout. The verifier can also read v4 keys.
+trusted key determines the layout. The verifier also accepts version 4 snapshots.
