@@ -76,25 +76,25 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Each row is one complete 64-child tree on an Apple M2 Pro with 16 GiB of memory.
-One node ran at a time. Child, first-pair and merge times are per-proof
-medians. Fresh verification includes process startup and trusted-key loading.
+Both runs used an Apple M2 Pro with 16 GiB of memory and 12 Rayon workers.
+Each run proved 64 independent children and processed one aggregation node at
+a time. Per-proof times are medians. Fresh verification includes process
+startup and trusted-key loading.
 
-| Recursive verifier | Workers | Child proving | First pair | Merge | All 63 aggregations | Final file | Fresh verification |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Cubic product rows | 8 | 2.60 s | 12.47 s | 12.45 s | 13 min 10 s | 976,533 B | 115 ms |
-| Preprocessing digits and shared gate tables | 12 | 2.33 s | 11.38 s | 10.85 s | 11 min 47 s | 895,139 B | 110 ms |
+| Prover | Child proving | First pair | Merge | All 63 aggregations | Final file | Fresh verification |
+|---|---:|---:|---:|---:|---:|---:|
+| Previous | 2.33 s | 11.38 s | 10.85 s | 11 min 47 s | 895,139 B | 110 ms |
+| Current | 2.55 s | 10.06 s | 10.01 s | 10 min 37 s | 893,611 B | 102 ms |
 
-With eight workers in both eight-child runs, the new layout reduced the median
-merge from 12.60 s to 10.88 s. In the 64-child run with 12 workers, merges
-ranged from 10.40 to 12.56 s. The longest chain of six dependent aggregation
-nodes took 68.81 s when their individual timings were added. Setup, child proving
-and verification, aggregation and independent verification took 15 min 08 s in
-total, excluding negative tests. The final proof was 954,927 bytes before
-compression. Peak process-tree physical footprint was 13.0 GB. The targets are
-10 seconds per merge and 60 seconds to aggregate 64 existing proofs.
-[Measurements and layout comparisons](benchmarks/binary/tree-merge/preprocessing-digits-sixty-four.json)
-and [previous 64-child run](benchmarks/binary/tree-merge/extension-products-sixty-four.json).
+15 of 31 merges finished within 10 seconds. Merge times ranged from
+9.63 to 11.97 seconds. The longest chain of six dependent nodes summed to
+63.70 seconds. The target for aggregating 64 existing child proofs is one minute.
+
+Setup, child proving and verification, aggregation and fresh verification took
+14 min 07 s, excluding negative tests. The final proof was 953,487 bytes
+before compression. Peak process-tree physical footprint was 12.8 GB.
+[Current measurements](benchmarks/binary/tree-merge/affine-bus-sixty-four.json) and
+[previous measurements](benchmarks/binary/tree-merge/preprocessing-digits-sixty-four.json).
 
 ## Running locally
 

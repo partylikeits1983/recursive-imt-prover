@@ -138,11 +138,9 @@ All runs produced the same 1,396,679-byte proof and verifier key.
 [Measurements and baseline phase timings](../benchmarks/binary/tree-merge/merge-selectors.json).
 
 The integration test verified 64 distinct child proofs, 32 first aggregates
-and 31 merges. It constructed the merge circuit once and checked the same
-key at all five levels. A fresh process verified the 895,139-byte proof against the ordered
-statements using only the trusted verifier files. The test rejected corrupted
-proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/preprocessing-digits-sixty-four.json).
+and 31 merges. It used one merge key across all five levels. A fresh process
+verified the 893,611-byte aggregate in 102 ms. The median merge took
+10.01 s. [Full measurements and validation](../benchmarks/binary/tree-merge/affine-bus-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
@@ -158,7 +156,8 @@ cargo run --locked --release --bin tree-demo -- --verify --out run/tree8
 `--threads` sets the total Rayon worker count. `--parallel-nodes` sets how
 many sibling pairs may use that pool at once and defaults to one. Siblings
 share the prepared key and retain their input order. The report gives wall
-time for each level and latency for each node. The integration test uses four
+time for each level and latency for each node. Imports of sibling proofs run
+concurrently, so their individual timings overlap. The integration test uses four
 threads by default and accepts an override through `RAYON_NUM_THREADS`.
 
 `tree-demo` records every proof time, circuit construction count, verifier digest,
