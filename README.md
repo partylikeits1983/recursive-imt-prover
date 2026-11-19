@@ -76,28 +76,30 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-One release run on an Apple M2 Pro with 16 GiB of memory, eight Rayon workers and
-one active proving node. Each range includes every proof of that type in the run.
+One 64-child release run on an Apple M2 Pro with 16 GiB of memory, eight Rayon
+workers and one active aggregation node. Each range covers every node of that type.
 
 | Operation | Median | Range |
 |---|---:|---:|
-| Child proving (64 proofs) | 2.78 s | 2.30–3.29 s |
-| First aggregation (32 proofs) | 18.24 s | 17.22–19.85 s |
-| Recursive merge (31 proofs) | 19.17 s | 18.27–22.01 s |
+| Child proving (64 proofs) | 2.70 s | 2.26–3.17 s |
+| First aggregation (32 proofs) | 17.57 s | 16.66–19.82 s |
+| Recursive merge (31 proofs) | 18.01 s | 16.84–21.67 s |
 
-Aggregation took **19 min 46 s**. Including setup, all 64 children
-and final verification, the run took **23 min 37 s**, excluding negative tests. The
-final proof occupied **1,401,340 bytes**. Fresh verification took **117 ms**
-including startup and key loading. Peak process-tree physical footprint was
-17.3 GB, including compressed or swapped memory.
-[Raw per-proof measurements and acceptance checks](benchmarks/binary/tree-merge/fixed-gates-sixty-four.json).
+Aggregation took **18 min 53 s**. Setup, child proving and verification,
+aggregation and final verification took **22 min 39 s**
+in total, excluding negative tests. The final proof occupied **1,397,831 bytes**.
+Fresh verification took **125 ms**, including startup and key loading.
+For a merge, median witness generation took 0.72 s and median proof generation
+took 16.89 s. Peak process-tree physical footprint was 16.9 GB, including
+compressed or swapped memory.
+[Raw measurements](benchmarks/binary/tree-merge/direct-witness-sixty-four.json)
 
-On the same machine and worker count, the previous layout took 24 min 20 s
-for aggregation. The new layout reduced that time by 18.8% in one run per
-version. The proof meets the 1.5 MB target. The goals of 1 MB, 10 seconds per
-merge and 60 seconds for all 63 aggregation operations remain open.
-[Previous 64-child measurements](benchmarks/binary/tree-merge/compact-sixty-four.json) ·
-[Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json).
+Aggregation time was 4.4% lower than the previous 19 min 46 s run on
+the same machine and worker count. Each version was measured once. The proof
+meets the 1.5 MB target. The goals of 1 MB, 10 seconds per merge and 60 seconds
+for all 63 aggregation operations remain open.
+[Previous measurements](benchmarks/binary/tree-merge/fixed-gates-sixty-four.json) ·
+[Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json)
 
 ## Running locally
 

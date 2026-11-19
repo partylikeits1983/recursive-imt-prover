@@ -56,13 +56,17 @@ the previous accumulator plus `s` times the packed word. Active inputs are
 bits and unused inputs are zero. If the table fills, the longest chains take
 priority. The remaining operations and their copy constraints use native gates.
 
-Each arithmetic table declares which wire IDs, selectors and coefficient bits it
-needs. Setup checks every source row against the table's bounds and capacity.
-Multiplication tables omit the constant and unused selectors. Constant gates use
-17-bit or 64-bit coefficient columns. First aggregation and merge share these
-definitions. This reduces the preprocessing codeword from 134,217,728 to
-67,108,864 cells and the three initial codewords together from 419,430,400 to
-352,321,536 cells.
+Setup checks each gate's wire IDs, coefficient and operation against its fixed
+table layout. For a pair of Boolean selects that swap two inputs, both inputs
+fit within the wider of the two output bounds. Constant multiply-add rows
+also bound the addend through the equation `addend = output + coefficient * input`.
+The prover omits columns whose wire ID and value are both fixed to zero.
+
+The prover reads the circuit witness directly into the committed tables. For
+each Keccak call it computes the boundary states and checks the supplied output
+limbs. The linked GKR argument verifies the permutation. The initial codewords
+contain 268,435,456 arithmetic cells, 67,108,864 preprocessing cells and
+16,777,216 Keccak cells.
 
 ## Authenticated cyclic authority
 
@@ -103,10 +107,10 @@ incompatible layouts. This component test does not replace the full tree run.
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It constructed the merge circuit once and checked the same
 key at all five levels. The key also matched the eight-child run byte for
-byte. A fresh process verified the 1,401,340-byte proof against the ordered
+byte. A fresh process verified the 1,397,831-byte proof against the ordered
 statements using only the trusted verifier files. The test rejected corrupted
 proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/fixed-gates-sixty-four.json).
+[Raw measurements and validation](../benchmarks/binary/tree-merge/direct-witness-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
