@@ -1,0 +1,141 @@
+{
+  "source_commit": "7eccd912e063d7b7154711ffd884ee9c947bb4e6",
+  "method": "Each run proves eight independent depth-32 children, four first aggregates and three merges. One merge key is used at both merge levels. Final verification runs in a fresh process. The timings include one first use of each prepared circuit. All times are milliseconds.",
+  "environment": {
+    "hardware": "Apple M2 Pro",
+    "memory_bytes": 17179869184,
+    "threads": 12,
+    "parallel_nodes": 1,
+    "toolchain": "1.98.1",
+    "profile": "release",
+    "rustflags": ""
+  },
+  "parameters": {
+    "field": "Poly64 / Poly192",
+    "hash": "Keccak-256",
+    "proximity_bound": "Johnson",
+    "WHIR_log_inverse_rate": 2,
+    "WHIR_fold": 4,
+    "WHIR_pow_limit": 16,
+    "full_child_zk_established": false,
+    "end_to_end_security_bits": null,
+    "outer_WHIR_security_target_bits": 152
+  },
+  "variants": [
+    {
+      "configuration": "Binary proof commitments with cap height zero.",
+      "source_keccak256": "32388ac77c858ed638e9e174405d33501deea61c6ac69fa0f776eba81ac66e4e",
+      "merge_key_digest": "b555c13fad96406d4b96bc265aebf995911088fbd8405479e928f907e831403b",
+      "codeword_cells": 218103808,
+      "merge_keccak_calls": 41406,
+      "first_node_ms": [
+        10304.683,
+        10133.476,
+        10719.917,
+        10437.991
+      ],
+      "merge_ms": [
+        10546.921,
+        9924.987,
+        10027.894
+      ],
+      "median_merge_ms": 10027.894375,
+      "aggregation_wall_ms": 72377.792749,
+      "fresh_verify_ms": 101.698708,
+      "proof_bytes": 893873,
+      "uncompressed_bytes": 953359,
+      "proof_sha256": "ee0f62d77310f35d937a078d0ad94a8711a6730798fa226f39fe00d2b2d57f6b",
+      "peak_tree_physical_footprint_bytes": 11926728640,
+      "same_merge_key": true,
+      "fresh_verification": true,
+      "mutations_rejected": [
+        "root",
+        "nullifier hash",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ]
+    },
+    {
+      "configuration": "Four-digest Keccak proof commitments with cap height zero. The deferred recursive WHIR adapter uses Plonky3\u2019s four-digest opening verifier. Relative to the binary control, the fixed four-wire arithmetic table log height is 21 instead of 19. Fanout log heights are 10 instead of 9 for eight copies of a one-bit wire, and 17 instead of 11 for eight copies of a 16-bit wire.",
+      "source_keccak256": "18cd0091be8190c0569dc214a8e17eebbf6e536f1506be4fd34fb3ce4979239f",
+      "merge_key_digest": "a1234abca108d0f8c2bfafc8ed64fddf70d635d198695608fc601df641fb14c7",
+      "codeword_cells": 419430400,
+      "merge_keccak_calls": 32920,
+      "first_node_ms": [
+        13868.048,
+        13021.793,
+        13431.685,
+        13422.894
+      ],
+      "merge_ms": [
+        17736.18,
+        14221.19,
+        13884.34
+      ],
+      "median_merge_ms": 14221.19,
+      "aggregation_wall_ms": 99893.799416,
+      "fresh_verify_ms": 107.61262500000001,
+      "proof_bytes": 1112019,
+      "uncompressed_bytes": 1179032,
+      "proof_sha256": "2ae846034106d6675c4ad254a8bc33b548d31152f1accc4527056e3814aac3f1",
+      "peak_tree_physical_footprint_bytes": 17221071552,
+      "same_merge_key": true,
+      "fresh_verification": true,
+      "mutations_rejected": [
+        "root",
+        "nullifier hash",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ]
+    },
+    {
+      "configuration": "Binary proof commitments with cap height two for main and Keccak openings and zero for trusted arithmetic preprocessing.",
+      "source_keccak256": "98a3ed575c4a68cbdda9b1a6ad17efc158dc3ef014e08276a8ddcaf5ffdd8fd3",
+      "merge_key_digest": "77f69b5d7498593198045a7af109c8e68c93ebea8b76cb92f3bb12b74c3a6a5d",
+      "codeword_cells": 218103808,
+      "merge_keccak_calls": 41266,
+      "first_node_ms": [
+        9887.122,
+        10161.281,
+        9979.536,
+        10128.315
+      ],
+      "merge_ms": [
+        10488.397,
+        9845.415,
+        9507.869
+      ],
+      "median_merge_ms": 9845.414708,
+      "aggregation_wall_ms": 70287.789125,
+      "fresh_verify_ms": 105.474458,
+      "proof_bytes": 895707,
+      "uncompressed_bytes": 955343,
+      "proof_sha256": "88697dc232895d37b00e8045d04598e62b05176604f1321679daaa3664292c82",
+      "peak_tree_physical_footprint_bytes": 11901856064,
+      "same_merge_key": true,
+      "fresh_verification": true,
+      "mutations_rejected": [
+        "root",
+        "nullifier hash",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ]
+    }
+  ],
+  "comparison_scope": "One full eight-child run per configuration on the same host. Different masked child proofs were generated for each run. The measured binary timing ranges overlap."
+}

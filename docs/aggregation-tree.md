@@ -129,13 +129,21 @@ incompatible layouts. This component test does not replace the full tree run.
 
 ## Validation and acceptance
 
-A separate benchmark timed the same merge of two eight-child aggregates on an
-Apple M2 Pro with eight threads. The baseline took 19.16 s at the median of four warm runs.
-Selecting the boundary values directly and factoring the equality weights took
-18.38 s across four warm runs. Computing AIR column offsets once per instance
-gave 17.57 s and 18.71 s in two subsequent warm runs. The timing ranges overlap.
-All runs produced the same 1,396,679-byte proof and verifier key.
-[Measurements and baseline phase timings](../benchmarks/binary/tree-merge/merge-selectors.json).
+Three eight-child runs compared Merkle commitments inside the aggregate proof.
+All used 12 workers, the same Johnson parameters and a binary IMT.
+
+| Proof commitment | Median merge | All seven nodes | Final file |
+|---|---:|---:|---:|
+| Binary, one root | 10.03 s | 72.38 s | 893,873 B |
+| Binary, four-root cap for main and Keccak commitments | 9.85 s | 70.29 s | 895,707 B |
+| Four-digest nodes, one root | 14.22 s | 99.89 s | 1,112,019 B |
+
+Four-digest nodes reduced merge-circuit Keccak calls from 41,406 to 32,920.
+The arithmetic tables needed to order siblings increased the initial codeword
+from 218 million to 419 million cells. The binary timing ranges overlap over
+three merges per configuration. The standard prover uses binary commitments
+with one root. [Raw measurements](../benchmarks/binary/tree-merge/merkle-commitments-eight.json)
+and [earlier prover profiles](../benchmarks/binary/tree-merge/merge-selectors.json).
 
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It used one merge key across all five levels. A fresh process
