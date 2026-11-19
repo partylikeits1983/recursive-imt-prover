@@ -171,36 +171,18 @@ impl<EF: Field> BoundaryEvals<EF> {
         )
     }
 
-    /// The full selector values at a residual-cube row, combined with the bound-coordinate prefix.
-    ///
-    /// The first-row and last-row selectors factor across bound and residual coordinates:
-    /// ```text
-    ///     first = prefix.first * [row == 0]
-    ///     last  = prefix.last  * [row == height - 1]
-    /// ```
-    ///
-    /// The transition selector is `1 - last` over all coordinates:
-    /// ```text
-    ///     transition = 1 - prefix.last * [row == height - 1]
-    /// ```
-    ///
-    /// The implementation form reaches the same value through the residual indicators:
-    /// ```text
-    ///     transition = [row < height - 1] + [row == height - 1] * prefix.transition
-    /// ```
-    /// The two forms agree exactly because the prefix maintains `transition = 1 - last`.
-    ///
-    /// # Arguments
-    ///
-    /// - `row`: index into the residual cube.
-    /// - `height`: number of rows in the residual cube.
-    /// - `prefix`: partial products over the coordinates bound so far.
+    /// Restrict the bound prefix to a Boolean row of the remaining cube.
+    #[inline]
     pub(super) fn from_row_with_prefix(row: usize, height: usize, prefix: Self) -> Self {
-        let suffix = Self::from_row(row, height);
+        let last = row + 1 == height;
         Self::new(
-            prefix.first * suffix.first,
-            prefix.last * suffix.last,
-            suffix.transition + suffix.last * prefix.transition,
+            if row == 0 { prefix.first } else { EF::ZERO },
+            if last { prefix.last } else { EF::ZERO },
+            if last {
+                prefix.transition
+            } else {
+                EF::from_bool(row + 1 < height)
+            },
         )
     }
 
@@ -277,15 +259,11 @@ impl<EF: Field> BoundaryEvals<EF> {
         F: Field,
         EF: ExtensionField<F>,
     {
+        let at = |lane| Self::from_row_with_prefix(row + lane, height, prefix);
         BoundaryEvals::new(
-            EF::ExtensionPacking::from_ext_fn(|lane| prefix.first * EF::from_bool(row + lane == 0)),
-            EF::ExtensionPacking::from_ext_fn(|lane| {
-                prefix.last * EF::from_bool(row + lane + 1 == height)
-            }),
-            EF::ExtensionPacking::from_ext_fn(|lane| {
-                let suffix_last = EF::from_bool(row + lane + 1 == height);
-                EF::from_bool(row + lane + 1 < height) + suffix_last * prefix.transition
-            }),
+            EF::ExtensionPacking::from_ext_fn(|lane| at(lane).first),
+            EF::ExtensionPacking::from_ext_fn(|lane| at(lane).last),
+            EF::ExtensionPacking::from_ext_fn(|lane| at(lane).transition),
         )
     }
 
@@ -332,13 +310,11 @@ impl<EF: Field> BoundaryEvals<EF> {
     where
         P: PackedField<Scalar = EF>,
     {
+        let at = |lane| Self::from_row_with_prefix(row + lane, height, prefix);
         BoundaryEvals::new(
-            P::from_fn(|lane| prefix.first * EF::from_bool(row + lane == 0)),
-            P::from_fn(|lane| prefix.last * EF::from_bool(row + lane + 1 == height)),
-            P::from_fn(|lane| {
-                let suffix_last = EF::from_bool(row + lane + 1 == height);
-                EF::from_bool(row + lane + 1 < height) + suffix_last * prefix.transition
-            }),
+            P::from_fn(|lane| at(lane).first),
+            P::from_fn(|lane| at(lane).last),
+            P::from_fn(|lane| at(lane).transition),
         )
     }
 

@@ -40,6 +40,12 @@ impl<F: Field> FactoredEquality<F> {
         self.high[row >> self.low_variables] * self.low[row & (self.low.len() - 1)]
     }
 
+    #[inline]
+    pub(super) fn sum_endpoints(&self, row: usize) -> F {
+        let hi = row >> self.low_variables;
+        (self.high[hi] + self.high[hi + self.high.len() / 2]) * self.low[row & (self.low.len() - 1)]
+    }
+
     pub(super) fn fix_prefix_var_mut(&mut self, challenge: F) {
         let anchor = self.point.remove(0);
         self.prefix *= Point::eval_eq(&[anchor], &[challenge]);
@@ -104,6 +110,13 @@ mod tests {
                     );
                     if round == variables {
                         break;
+                    }
+                    let half = factored.len() / 2;
+                    for row in 0..half {
+                        assert_eq!(
+                            factored.sum_endpoints(row),
+                            actual[row] + actual[row + half]
+                        );
                     }
                     if mode == 3 && round % 2 == 0 {
                         factored.sum_prefix_var_mut();

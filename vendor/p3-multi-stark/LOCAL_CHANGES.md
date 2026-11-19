@@ -42,6 +42,9 @@ the prefix by its equality factor; summing a coordinate removes its normalized
 factor. No division is used, including when the prefix is zero.
 `src/bus/composition.rs` reads those exact weights in place of dense tables.
 
+The bus sumcheck factors the low-coordinate weight out of each endpoint sum.
+Scalar and packed boundary selectors select their bound prefix directly on Boolean rows.
+
 Differential tests compare every weight against the original dense polynomial
 through binding and summing, including Boolean anchors and zero prefixes.
 Existing projected/generic bus tests and commitment-binding tests remain active.

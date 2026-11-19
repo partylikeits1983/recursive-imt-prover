@@ -656,8 +656,11 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
     fn eval(&self, b: &mut AB) {
         match self {
             Self::Native(a) => {
+                let copy_offset = a.preprocessed_map.iter().flatten().count();
                 for instance in 0..a.instances {
                     let main_offset = instance * self.instance_width();
+                    let public_offset = instance * a.source.num_public_values();
+                    let evaluate = |e, b: &AB| resolve(e, b, a, main_offset, public_offset);
                     let binding = a.bindings.get(instance);
                     let successor_bus =
                         binding.map_or(a.successor_bus.as_str(), |b| &b.successor_bus);
@@ -693,16 +696,18 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                         b.assert_zero(b.main().current(0).unwrap());
                     }
                     for c in &a.constraints {
-                        let value = resolve(c, b, a, instance);
+                        let value = evaluate(c, b);
                         b.assert_zero(value);
                     }
                     for (index, i) in a.interactions.iter().enumerate() {
                         let activation = if let Some(Some(column)) =
                             a.copies.replacements.get(index)
                         {
-                            let offset = a.preprocessed_map.iter().filter(|c| c.is_some()).count();
                             BusActivation::Boolean(
-                                b.preprocessed().current(offset + column).unwrap().into(),
+                                b.preprocessed()
+                                    .current(copy_offset + column)
+                                    .unwrap()
+                                    .into(),
                             )
                         } else {
                             match &i.activation {
@@ -711,9 +716,7 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                                     OldBoundary::First => BusBoundary::First,
                                     OldBoundary::Last => BusBoundary::Last,
                                 }),
-                                OldActivation::Boolean(v) => {
-                                    BusActivation::Boolean(resolve(v, b, a, instance))
-                                }
+                                OldActivation::Boolean(v) => BusActivation::Boolean(evaluate(v, b)),
                             }
                         };
                         b.push_bus_interaction_with(
@@ -723,11 +726,8 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                                 OldDirection::Pull => BusDirection::Pull,
                             },
                             |b| {
-                                let mut fields: Vec<_> = i
-                                    .fields
-                                    .iter()
-                                    .map(|v| resolve(v, b, a, instance))
-                                    .collect();
+                                let mut fields: Vec<_> =
+                                    i.fields.iter().map(|v| evaluate(v, b)).collect();
                                 if i.bus_name == "imt.keccak" {
                                     fields[0] += F::from_repr((instance * a.hash_stride) as u64);
                                 }
@@ -819,10 +819,10 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
     e: &SymbolicExpression<OldF>,
     b: &AB,
     air: &ImportedAir,
-    instance: usize,
+    main_offset: usize,
+    public_offset: usize,
 ) -> AB::Expr {
-    let main_offset = instance * air.main_width();
-    let public_offset = instance * air.source.num_public_values();
+    let operand = |e| resolve(e, b, air, main_offset, public_offset);
     match e {
         SymbolicExpr::Leaf(leaf) => match leaf {
             BaseLeaf::Constant(v) => AB::Expr::from(convert(*v)),
@@ -853,16 +853,10 @@ fn resolve<AB: BusInteractionBuilder<F = F>>(
                 _ => panic!("unsupported trusted AIR variable"),
             },
         },
-        SymbolicExpr::Add { x, y, .. } => {
-            resolve(x, b, air, instance) + resolve(y, b, air, instance)
-        }
-        SymbolicExpr::Sub { x, y, .. } => {
-            resolve(x, b, air, instance) - resolve(y, b, air, instance)
-        }
-        SymbolicExpr::Mul { x, y, .. } => {
-            resolve(x, b, air, instance) * resolve(y, b, air, instance)
-        }
-        SymbolicExpr::Neg { x, .. } => -resolve(x, b, air, instance),
+        SymbolicExpr::Add { x, y, .. } => operand(x) + operand(y),
+        SymbolicExpr::Sub { x, y, .. } => operand(x) - operand(y),
+        SymbolicExpr::Mul { x, y, .. } => operand(x) * operand(y),
+        SymbolicExpr::Neg { x, .. } => -operand(x),
     }
 }
 

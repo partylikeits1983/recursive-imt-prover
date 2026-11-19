@@ -210,7 +210,7 @@ fn quadratic_coefficients<R: Field>(
         .into_par_iter()
         .map(|row| {
             // Summing the leading equality factor leaves the weighted suffix.
-            let weight = equality.at(row) + equality.at(row + half);
+            let weight = equality.sum_endpoints(row);
             row_sums(row, half).map(|sum| sum * weight)
         })
         .par_fold_reduce(|| [R::ZERO; 3], add, add);
