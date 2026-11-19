@@ -1,0 +1,245 @@
+{
+  "hardware": "12-core Apple M2 Pro, 8 performance cores, 16 GiB; macOS arm64; rustc 1.98.1; ordinary shared laptop load",
+  "base_commit": "ad30f73ab6fac519eb228b923c874271f68159bd",
+  "flock": {
+    "revision": "dcd17533128a595e475b3dbba56c3dc2ad65161f",
+    "hash_bench": {
+      "env": "RAYON_NUM_THREADS=8 HASH_BENCH_LOG2S=16 HASH_BENCH_RUNS=3",
+      "command": "cargo bench --locked --bench hash_throughput",
+      "scope": "Independent compression proofs using the upstream ARM AG prover. One verified warm-up, then best of three timed runs.",
+      "SHA-256": {
+        "timed_passes_s": [
+          0.539,
+          0.341,
+          0.287
+        ],
+        "best_s": 0.286878,
+        "compressions_per_second": 228445.84
+      },
+      "BLAKE3": {
+        "timed_passes_s": [
+          0.115,
+          0.106,
+          0.108
+        ],
+        "best_s": 0.105897,
+        "compressions_per_second": 618867.93
+      }
+    },
+    "field_bench": {
+      "command": "cargo bench --locked --bench field",
+      "unit": "ns per element, upstream independent-accumulator throughput microbenchmarks",
+      "F8_scalar_mul": 2.151,
+      "F8_NEON_16_lane_mul": 0.101,
+      "F128_default_mul": 1.962,
+      "F128_deferred_mul_accumulate": 0.623
+    }
+  },
+  "leanVM": {
+    "archived_revision": "b7f5ba6ec2dbfd3e46fd0a3343f921db2479b240",
+    "active_revision": "161cb67e1b54f7031b2603b8628f467f2ec92fca",
+    "standalone_keccak": {
+      "command": "KECCAK_N_LOG=16 KECCAK_DEPTH=<24|12> BENCH_REPEAT=5 cargo bench --locked -p experimental_keccak_gkr --bench hash_batch",
+      "scope": "65,536 permutations, upstream default worker topology, timed after warm-up, verified by upstream verifier",
+      "cases": [
+        {
+          "rounds_per_segment": 24,
+          "timed_passes_s": [
+            0.219,
+            0.216,
+            0.211,
+            0.21,
+            0.204
+          ],
+          "mean_prove_ms": 211.8,
+          "verify_ms": 4.7,
+          "permutations_per_second": 309375,
+          "proof_KiB": 237.1,
+          "proof_scalars": 2843
+        },
+        {
+          "rounds_per_segment": 12,
+          "timed_passes_s": [
+            0.217,
+            0.22,
+            0.214,
+            0.22,
+            0.211
+          ],
+          "mean_prove_ms": 216.3,
+          "verify_ms": 3.6,
+          "permutations_per_second": 302925,
+          "proof_KiB": 225.9,
+          "proof_scalars": 1597
+        }
+      ]
+    },
+    "recursive_merge": {
+      "command": "cargo leanvm-bench --prover experimental recursion --n 2 --xmss-per-leaf 1400 --leaf-log-inv-rate 2 --log-inv-rate 1 --repeat 3",
+      "scope": "Two leanVM leaf proofs prepared outside the measured recursion interval. Their guest, 128-bit challenge field, affine WHIR and verifier differ from ours.",
+      "mean_prove_s": 0.253,
+      "mean_verify_ms": 13.64,
+      "proof_KiB": 270.5,
+      "peak_GiB": 0.811
+    },
+    "rmfe_check": "Pulled the 16 encoding words and 16 projection masks from the pinned verifier. Verified the projected binary polynomial product equals bitwise AND on all 256 ordered basis pairs and 4,096 pseudorandom word pairs (Python Random seed 20261119). Maximum product degree is 46."
+  },
+  "local_keccak": {
+    "scope": "Full 24-round committed standalone Keccak with our WHIR parameters, 65,536 deterministic permutations and 12 Rayon threads. Time includes the commitment, GKR reduction and PCS opening. Verification is timed separately.",
+    "command": "RAYON_NUM_THREADS=12 checkpoint-keccak 65536 2 [fresh-directory]",
+    "order": [
+      "baseline",
+      "compact_and_midpoint",
+      "compact_and_midpoint",
+      "baseline"
+    ],
+    "samples_ms": {
+      "baseline": [
+        3329.023,
+        2818.337,
+        2685.553,
+        2644.964
+      ],
+      "compact_and_midpoint": [
+        2147.968,
+        2312.281,
+        2257.815,
+        2222.036
+      ]
+    },
+    "midpoint_abba_order": [
+      "compact",
+      "compact_and_midpoint",
+      "compact_and_midpoint",
+      "compact"
+    ],
+    "midpoint_abba_ms": {
+      "compact": [
+        2138.7,
+        2169.634,
+        2131.127,
+        2144.81
+      ],
+      "compact_and_midpoint": [
+        2128.363,
+        2114.692,
+        2090.273,
+        2118.665
+      ]
+    },
+    "proof_sha256": "3c42a852eed0cbcf8b986c5f383be00658e8717a1de16bf0be081b77a2fa52b4",
+    "fresh_verifications_passed": true
+  },
+  "local_higher_merge": {
+    "fixture": "One valid eight-child aggregate supplied on both sides to produce a repeatable sixteen-child higher merge. Independent of the 64-child replay.",
+    "command": "RAYON_NUM_THREADS=12 bench-merge <saved_subtree> <same_saved_subtree> --repetitions 2",
+    "order": "Baseline, compact, compact, baseline (2 proofs per process); midpoint samples were collected separately.",
+    "aggregation_wall_ms": {
+      "baseline": [
+        12671.984,
+        12147.356,
+        12183.411,
+        11383.834
+      ],
+      "compact": [
+        11825.879,
+        10389.145,
+        12467.774,
+        14220.713
+      ],
+      "compact_and_midpoint": [
+        9704.496,
+        9185.397
+      ]
+    },
+    "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+  },
+  "local_64_replay": {
+    "scope": "One run per build on the identical 64 saved record child proofs, all 63 nodes plus fresh root verification, 12 workers, one node at a time, key preparation excluded from prepared time. Sequential laptop runs at different times.",
+    "command": "tree-demo --batch-size 64 --threads 12 --jobs 1 --parallel-nodes 1 --from-children <saved children> --keep --out <fresh-directory> --json",
+    "before": {
+      "prepared_aggregation_to_fresh_verification_ms": 671613.3935420001,
+      "cold_aggregation_to_fresh_verification_ms": 687176.826958,
+      "fresh_verifier_wall_ms": 114.8995,
+      "final_proof_bytes": 998119,
+      "peak_rss_bytes": 5913559040,
+      "acceptance_pass": true,
+      "same_key_recursion": true,
+      "negative_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "verified": true,
+      "source_keccak256": "04550ced93d97523f87e2c7064f15139e3453aa36d6c699cba469dee11887248",
+      "first_pairs": {
+        "nodes": 32,
+        "node_wall_sum_ms": 340243.245,
+        "median_ms": 10298.233,
+        "outer_prove_sum_ms": 309459.578
+      },
+      "higher_merges": {
+        "nodes": 31,
+        "node_wall_sum_ms": 330910.74,
+        "median_ms": 10469.715,
+        "outer_prove_sum_ms": 304932.747
+      }
+    },
+    "after": {
+      "prepared_aggregation_to_fresh_verification_ms": 566449.009917,
+      "cold_aggregation_to_fresh_verification_ms": 582100.0700419999,
+      "fresh_verifier_wall_ms": 111.949375,
+      "final_proof_bytes": 998119,
+      "peak_rss_bytes": 7001554944,
+      "acceptance_pass": true,
+      "same_key_recursion": true,
+      "negative_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "verified": true,
+      "source_keccak256": "cbd738da8433ca98067e0929d9b5e58ad152832f184a9a158ce5d8bfbb032413",
+      "first_pairs": {
+        "nodes": 32,
+        "node_wall_sum_ms": 288432.961,
+        "median_ms": 8942.061,
+        "outer_prove_sum_ms": 259983.47
+      },
+      "higher_merges": {
+        "nodes": 31,
+        "node_wall_sum_ms": 277564.608,
+        "median_ms": 8821.862,
+        "outer_prove_sum_ms": 252616.449
+      },
+      "peak_footprint_bytes": 11984761024
+    },
+    "root_proof_sha256": "588a4f216f44da4458ae185d05f63830837525a5f6e030c100de2beac02b0d84",
+    "target_ms": 180000,
+    "target_met": false,
+    "system_vm_stat": {
+      "before": {
+        "Swapins": 301050602,
+        "Swapouts": 398631684
+      },
+      "after": {
+        "Swapins": 301519468,
+        "Swapouts": 399215980
+      }
+    }
+  }
+}

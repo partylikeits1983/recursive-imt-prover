@@ -1,5 +1,5 @@
 //! Complete masked-child verification relation. Every input other than the
-//! root/nullifier-hash is serialized child-proof data, never an original IMT witness.
+//! public record statement comes from the serialized child proof.
 use anyhow::{Result, ensure};
 use p3_circuit::{
     Circuit, CircuitBuilder, CircuitConstructionLimits, ExprId, ops::NativePoly192Target,
@@ -50,12 +50,12 @@ impl PreparedMaskedVerifier {
             max_non_primitive_slots: 1 << 29,
         })?;
         b.enable_native_keccak_f1600()?;
-        let public = b.alloc_public_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
+        let public = b.alloc_public_input_array::<PUBLIC_BYTES>("record-statement");
         self.verify_in(&mut b, public)?;
         Ok(b.build()?)
     }
 
-    /// Append the complete verifier for one caller-owned root/nullifier-hash statement.
+    /// Append the complete verifier for one caller-owned record statement.
     pub fn verify_in(
         &self,
         b: &mut CircuitBuilder<F>,
@@ -154,12 +154,10 @@ impl PreparedMaskedVerifier {
             }
             linear.push(check);
         }
-        let mut inputs = Vec::new();
-        for byte in public {
-            for bit in b.binary_decompose_coordinates(byte, 8)? {
-                inputs.push(b.native_poly192_from_coefficients([bit, ExprId::ZERO, ExprId::ZERO]));
-            }
-        }
+        let inputs = public
+            .into_iter()
+            .map(|byte| b.native_poly192_from_coefficients([byte, ExprId::ZERO, ExprId::ZERO]))
+            .collect();
         let public = public_evaluation(b, inputs, &self.child.prep_columns, &reduction.point)?;
         let endpoint = self
             .child

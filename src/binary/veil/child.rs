@@ -33,8 +33,8 @@ use crate::binary::{
     relation::{ClientPublic, ClientWitness},
 };
 
-pub const PROTOCOL: &str = "experimental-binary-masked-imt-v6";
-const PROOF_MAGIC: &[u8; 8] = b"IMTVCA06";
+pub const PROTOCOL: &str = "experimental-binary-masked-record-v1";
+const PROOF_MAGIC: &[u8; 8] = b"IMTRCA01";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 pub mod recursive;
@@ -349,8 +349,7 @@ impl PreparedMembership {
         ] {
             bytes.extend((value as u64).to_le_bytes());
         }
-        bytes.extend(public.root);
-        bytes.extend(public.nullifier_hash);
+        bytes.extend(public.bytes());
         bytes.extend(root);
         Ok(bytes)
     }

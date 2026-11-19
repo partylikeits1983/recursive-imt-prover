@@ -2,9 +2,9 @@
 
 The active path is a masked Keccak IMT child over Poly64/Poly192, followed by
 non-ZK aggregation of the ordered child statements. Child IMT depth is fixed at 32.
-The current statement is `(root, nullifier_hash)`; see [protocol](protocol.md).
-The 64-child acceptance test passes: 32 first aggregates and five merge levels
-use one merge circuit/key, followed by independent final verification.
+The current statement is `(root, input_tag, output_commitment)`. See [protocol](protocol.md).
+The 64-child acceptance test verifies 32 first aggregates and five merge levels
+with a shared merge key, then checks the root in an independent process.
 Statistical child ZK and end-to-end 128-bit classical security remain unproved.
 See [security limits](binary-security.md) and [measurements](binary-veil.md).
 
@@ -26,16 +26,16 @@ recursive format: 32 first aggregates, then 16, 8, 4, 2 and 1 merges. Build the
 merge circuit once, assert key reuse at every higher level and verify the final
 proof in a fresh process. Different merge keys per level do not meet this gate.
 
-The performance targets are at most 10 seconds per merge and 60 seconds from
-64 child proofs to one verified aggregate, ideally 30 seconds. Report child
-generation, setup, aggregation and final verification separately, as well as full
-elapsed time. Keep aggregate proofs below 1.5 MB and work toward 1 MB. The
+The performance target is under 180 seconds from 64 prepared child proofs to
+one independently verified aggregate on the M2 Pro. One minute is a stretch
+target. Report child generation, setup, aggregation and final verification
+separately, as well as full elapsed time. Keep aggregate proofs below 1.5 MB and work toward 1 MB. The
 64-child correctness run is a baseline, not completion of the performance goal.
 
 The [aggregation performance plan](aggregation-performance.md) covers worker
 scheduling, the Keccak sumcheck experiment and commitment-opening costs.
 For single-machine work, track committed linear intermediates and padding
-against the current 218,103,808 initial codeword cells. Measure the memory
+against the recorded 184,549,376 initial codeword cells. Measure the memory
 cost of running sibling pairs concurrently.
 
 The recursive packing table now stores one scale per geometric coefficient run.

@@ -54,6 +54,7 @@ fn compact_chi_rounds_match_dense_sumcheck() {
         (1, None, None),
         (2, None, None),
         (3, None, None),
+        (4, None, None), // exercise both the index-to-field transition and the next dense fold
         (3, Some(E::ZERO), Some(E::ZERO)),
         (3, Some(E::ONE), Some(E::ONE)),
         (3, Some(E::ZERO), Some(E::ONE)), // zero equality scale after the first fold

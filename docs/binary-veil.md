@@ -2,24 +2,24 @@
 
 The active child proves membership in a **depth-32** Keccak IMT over
 Poly64/Poly192. VEIL-inspired masking targets statistical ZK. The joint privacy
-argument and end-to-end 128-bit analysis remain open. The recursive tree passed its
-[64-child acceptance test](aggregation-tree.md#validation-and-acceptance).
+argument and end-to-end 128-bit analysis remain open. The record replay verified all five merge levels with one
+key. [64-child measurements](../benchmarks/binary/tree-merge/record-replacement.json)
 
 ## Complete masked child and compact trace openings
 
 `child.rs`, `membership_air.rs` and `air_algebra.rs` define the fixed relation.
-Each of the 34 hashes occupies 25 rows; the trace is padded to 1,024 rows.
+Each of the 35 hashes occupies 25 rows and the trace is padded to 1,024 rows.
 Trusted preprocessing pins round flags, domains, padding and the final output.
 Constraints link successive hashes, enforce Boolean path directions, and bind
-all public root and nullifier-hash bytes. Four private Poly64 carry columns
-connect the nullifier in the leaf preimage to its separate hash preimage.
+all bytes of the public root, input tag and replacement commitment. Four
+private Poly64 limbs carry the input nonce and a fifth carries the quantity.
 
 The native AIR proof is private intermediate state and is never serialized.
 The compiler masks witness-dependent round messages, current and repeat-last
 successor evaluations, and endpoint multiplication values. Trusted public and
 preprocessed openings are derived independently. The child relation has no buses.
 
-The v6 child retains an oracle stacking 128 columns at a time into coefficient vectors of
+The record child retains an oracle stacking 128 columns at a time into coefficient vectors of
 length 262,144. It uses Plonky3's additive NTT and WHIR:
 
 - The final aligned coefficient block holds the trace. Earlier coefficients are
@@ -54,7 +54,7 @@ Fiat-Shamir composition are separate. See [security limitations](binary-security
 ## End-to-end aggregate
 
 `masked-demo` produces independent child proofs and drops their IMT witnesses.
-The aggregator receives only child proofs and public roots/nullifier hashes. Flock or the
+The aggregator receives only child proofs and the three public fields per child. Flock or the
 checkpoint backend constrains the complete child verifier inside one non-ZK
 proof. Final verification needs that aggregate, its public statement and trusted
 verifier data, without the child proofs.
@@ -62,7 +62,7 @@ verifier data, without the child proofs.
 The flat-batch benchmark has measurements through eight children.
 In the recursive tree, the first aggregation verifies two children and binds
 their ordered statements to a Keccak digest and count. The first aggregation
-and merge share a verifier layout and carry the merge authority. The 64-child
+and merge share a verifier layout and carry the merge authority. For the previous statement, the 64-child
 integration test verified the full ordered list in a fresh process, used the same
 merge key at five levels and rejected altered inputs. [Three-circuit design](aggregation-tree.md)
 
@@ -204,7 +204,7 @@ Aggregate encoding uses fixed-width field elements. The outer initial rate is
 [Earlier encoding measurements](../benchmarks/binary/masked-aggregate/compact-d32-n2.json)
 retain the original parameters and source fingerprints.
 
-## Nullifier statement
+## Historical two-field statement
 
 The depth-32 `(root, nullifier_hash)` relation uses 34 Keccak permutations and
 four private carry columns in the same 1,024-row trace and 128-column stacking.
@@ -312,11 +312,11 @@ the benchmark executable source digest:
 
 ### Link to the aggregate's native ports
 
-Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v9` replaces
+Optional aggregate protocol `experimental-binary-masked-checkpoint-aggregate-v10` replaces
 the Flock Boolean wire table with an ordinary native port table and a committed
 Keccak GKR subargument. The one aggregate encoding contains both subarguments;
-neither is sufficient on its own. The complete child verifier and its public
-root/nullifier-hash wiring remain in the arithmetic relation. No child witness or child
+neither is sufficient on its own. The complete child verifier and its
+public statement wiring remain in the arithmetic relation. No child witness or child
 proof is needed by final verification.
 
 The boundary commitment and fixed authority identity seed the arithmetic

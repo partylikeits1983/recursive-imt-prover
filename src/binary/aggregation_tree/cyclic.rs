@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub const PROTOCOL: &str = "experimental-binary-checkpoint-cyclic-merge-v1";
+pub const PROTOCOL: &str = "experimental-binary-checkpoint-cyclic-merge-v2";
 
 pub struct PreparedCyclicMerge {
     first: RecursiveAggregate,

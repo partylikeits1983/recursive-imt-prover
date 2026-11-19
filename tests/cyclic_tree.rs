@@ -77,7 +77,7 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     assert_eq!(report["invalid_child_statement_rejected"], true);
     assert_eq!(report["invalid_child_proof_rejected"], true);
     assert_eq!(report["foreign_authority_rejected"], true);
-    assert_eq!(report["negative_checks"].as_array().unwrap().len(), 9);
+    assert_eq!(report["negative_checks"].as_array().unwrap().len(), 10);
     let levels = report["merge_levels"].as_array().unwrap();
     assert_eq!(levels.len(), 5);
     let mut inputs = report["children"].as_array().unwrap();
@@ -121,7 +121,7 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
         assert!(
             public.children[..index]
                 .iter()
-                .all(|earlier| earlier.nullifier_hash != statement.nullifier_hash)
+                .all(|earlier| earlier.input_tag != statement.input_tag)
         );
     }
     let stored = fs::metadata(directory.join("aggregate.proof"))?.len();
@@ -159,11 +159,11 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
         "fresh verifier accepted an altered root"
     );
     altered = public.clone();
-    altered.children[0].nullifier_hash[0] ^= 1;
+    altered.children[0].input_tag[0] ^= 1;
     write_json(&independent.join("statement.json"), &altered)?;
     ensure!(
         !verify()?.status.success(),
-        "fresh verifier accepted an altered nullifier hash"
+        "fresh verifier accepted an altered input tag"
     );
     altered = public.clone();
     altered.children.swap(0, 1);

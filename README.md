@@ -3,8 +3,8 @@
 ![CLI proof tree showing active child and aggregate proofs, with CPU and RAM readings](docs/images/tree-demo.png)
 
 A work-in-progress research prover for depth-32 Keccak-256 incremental Merkle
-tree (IMT) membership. It combines up to 64 independent client proofs into one
-proof of an ordered list of Merkle roots and nullifier hashes.
+tree (IMT) record replacement. It combines up to 64 independent client proofs
+into one proof of an ordered list of roots, input tags and output commitments.
 
 The child uses experimental statistical masking. A formal zero-knowledge
 proof for the child and an end-to-end analysis of the 128-bit classical
@@ -34,19 +34,19 @@ left-to-right order. One merge circuit and key cover every recursive level.
 
 | Circuit | Public inputs | Private inputs (witness) | Shareable output from the prover |
 | --- | --- | --- | --- |
-| **IMT child** | 32-byte Merkle root and 32-byte nullifier hash | 32-byte secret number, 32-byte nullifier, 32-bit leaf index, and 32 sibling hashes of 32 bytes each | One masked membership proof and its public root and nullifier hash |
-| **First aggregation** | 32-byte ordered pair digest, leaf count fixed at two, left/right roles, and merge authority | Two masked child proofs, their root and nullifier-hash pairs, and sibling statement digests | One pair proof and the two ordered public leaf statements |
+| **IMT child** | Merkle root, input tag and output commitment (32 bytes each) | Input and output labels and nonces (32 bytes each), one shared 64-bit quantity, leaf index and 32 sibling hashes | One masked record proof and its public statement |
+| **First aggregation** | 32-byte ordered pair digest, leaf count fixed at two, left/right roles, and merge authority | Two masked child proofs, their public statements, and sibling statement digests | One pair proof and the two ordered public leaf statements |
 | **Recursive merge** | 32-byte parent digest, total leaf count, left/right roles, and merge authority | Two aggregate proofs, their subtree digests and leaf counts, and sibling subtree digests | One merge proof and the combined ordered list of public leaf statements |
 
-**IMT child.** The circuit hashes the secret number and nullifier into a leaf.
-Each index bit places the running hash to the left or right of its sibling.
-After 32 steps, the result must match the public Merkle root. The circuit also
-hashes the same private nullifier and checks it against the public nullifier
-hash. Applications handle accepted roots and spent nullifiers.
+**IMT child.** The client opens an existing record under the public root and
+commits to a replacement carrying the same private quantity. The private path
+authenticates the input record. Its nonce determines the public input tag.
+An application can use that tag to reject repeated use and can append the
+output commitment as a new record.
 
-**First aggregation.** The circuit verifies both masked child proofs inside
-the circuit using the fixed child verifier. It hashes each child's root and
-nullifier hash into a statement digest. The left and right verifier instances
+**First aggregation.** The circuit verifies both masked child proofs with the
+fixed child verifier. It hashes each child's three public fields into a
+statement digest. The left and right verifier instances
 must agree on the digest of the ordered pair and on a leaf count of two.
 
 **Recursive merge.** The circuit verifies two aggregate proofs with equal
@@ -56,28 +56,30 @@ and counts in left-to-right order. Inputs covering two leaves use the pinned
 first-aggregation key. Larger inputs use the carried merge authority, which
 contains the merge verifier's transcript identity and preprocessing commitment.
 
-The aggregator receives proofs and statement data. The root and nullifier-hash
-pairs are witness data inside the first aggregation circuit and are also
+The aggregator receives proofs and statement data. The three public fields per child
+are witness data inside the first aggregation circuit and are also
 published in the ordered output list. Aggregation proofs are non-ZK. The final
 verifier rehashes that list and checks one root proof under an independently
 trusted merge key. [Protocol details](docs/protocol.md) · [Recursive design](docs/aggregation-tree.md)
 
 ## Proof sizes
 
-Representative serialized sizes from a retained 64-leaf run on an Apple M2 Pro
-with 12 Rayon threads and one aggregate at a time. The median timings cover
-leaf proving and per-node aggregation, respectively.
+The 64-child record replay ran on a 12-core M2 Pro with 16 GB of RAM. It used
+12 threads and one aggregation node at a time. Children were prepared separately
+with four threads. Timings are medians within this run.
 
 | Proof | Leaves covered | Size per proof | Median time |
 | --- | ---: | ---: | ---: |
-| IMT child | 1 | ~1.13 MB | 2.50 s |
-| First aggregation | 2 | ~0.98 MB | 9.74 s |
-| Recursive merge | 4–64 | ~0.98 MB | 9.61 s |
+| Record child | 1 | 1.13 MB | 3.51 s |
+| First aggregation | 2 | 1.07 MB | 8.94 s |
+| Recursive merge | 4–64 | 1.06 MB | 8.82 s |
 
-The saved 64-leaf root proof was **909,023 bytes** after zlib compression. The
-public statements and verifier key are separate files. Fresh verification took
-112 ms in this run.
-[Raw measurements](benchmarks/binary/tree-merge/conditional-swaps-sixty-four.json) · [Performance notes](docs/aggregation-performance.md)
+From saved children to a freshly verified root took **566.45 s (9 min 26 s)**.
+The previous run took 671.61 s on the same child proofs. The three-minute
+target requires **3.15×** the latest measured throughput. Both runs produced
+the same 998,119-byte compressed root proof. The latest fresh verification
+took 112 ms. The ordered statements and verifier key are separate files.
+[Replay and upstream benchmarks](benchmarks/binary/tree-merge/flock-leanvm-m2.json) · [Child preparation](benchmarks/binary/tree-merge/record-replacement.json) · [Performance plan](docs/aggregation-performance.md)
 
 ## Proof stack and security
 

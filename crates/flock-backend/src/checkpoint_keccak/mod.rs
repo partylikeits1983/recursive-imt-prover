@@ -102,17 +102,29 @@ where
     bind(output, log_batch, challenger, transcript)?;
     let mut claim = output.clone();
     let mut layers = Vec::with_capacity(ROUNDS);
+    // The layers are proved backwards. Reuse round 12 locally when replaying
+    // the upper half, without adding another state to the proof or transcript.
+    let midpoint = ROUNDS / 2;
+    let advance = |mut state: State, rounds: core::ops::Range<usize>| {
+        for round in rounds {
+            state = linear::finish_round(&linear::forward(&state), round);
+        }
+        state
+    };
+    let middle: Vec<State> = inputs
+        .par_iter()
+        .map(|&s| advance(s, 0..midpoint))
+        .collect();
     for round in (0..ROUNDS).rev() {
         challenger.observe(F::from_repr(round as u64));
-        let before_chi = inputs
+        let (states, start) = if round >= midpoint {
+            (middle.as_slice(), midpoint)
+        } else {
+            (inputs, 0)
+        };
+        let before_chi = states
             .par_iter()
-            .map(|input| {
-                let mut state = *input;
-                for previous in 0..round {
-                    state = linear::finish_round(&linear::forward(&state), previous);
-                }
-                linear::forward(&state)
-            })
+            .map(|&state| linear::forward(&advance(state, start..round)))
             .collect();
         let mut sumcheck = ChiSumcheck::new(before_chi, &claim.instance, claim.weights.clone());
         let (proof, point) = sumcheck.prove::<F, C>(

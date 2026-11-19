@@ -7,10 +7,10 @@ use p3_field::PrimeCharacteristicRing;
 use super::{MaskedMembershipProof, PendingChild, PreparedMembership};
 use crate::binary::{
     cli::fixtures,
-    tree::nullifier_hash,
+    tree::{commitment, input_tag},
     veil::{
         F,
-        membership_air::{DIRECTION, MembershipAir, NULLIFIER, ROWS_PER_HASH, STATE_START, WIDTH},
+        membership_air::{DIRECTION, MembershipAir, NONCE, ROWS_PER_HASH, STATE_START, WIDTH},
         parameters::Parameters,
     },
 };
@@ -26,16 +26,16 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
     for kind in 0..10 {
         let mut bad = trace.clone();
         let cell = match kind {
-            0 => STATE_START + 16 * 8,     // secret
-            1 => STATE_START + 48 * 8,     // nullifier
-            2 => 500 * WIDTH + NULLIFIER,  // carried nullifier
+            0 => STATE_START + 16 * 8,     // input label
+            1 => STATE_START + 48 * 8,     // input nonce
+            2 => 500 * WIDTH + NONCE,      // carried input nonce
             3 => STATE_START,              // leaf domain
-            4 => STATE_START + 80 * 8,     // Keccak suffix
+            4 => STATE_START + 88 * 8,     // Keccak suffix
             5 => 24 * WIDTH + STATE_START, // leaf output / link
             6 => 24 * WIDTH + DIRECTION,
             7 => 25 * WIDTH + 24, // schedule: first node or padding flag
-            8 => 33 * ROWS_PER_HASH * WIDTH + STATE_START, // nullifier domain
-            _ => (34 * ROWS_PER_HASH - 1) * WIDTH + STATE_START, // nullifier hash
+            8 => 33 * ROWS_PER_HASH * WIDTH + STATE_START, // tag domain
+            _ => (34 * ROWS_PER_HASH - 1) * WIDTH + STATE_START, // input tag
         };
         bad.values[cell] += F::ONE;
         assert!(
@@ -43,12 +43,14 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
             "depth={depth}, mutation={kind}"
         );
     }
-    for kind in 0..2 {
+    for kind in 0..3 {
         let mut altered = public.clone();
         if kind == 0 {
             altered.root[0] ^= 1;
+        } else if kind == 1 {
+            altered.input_tag[0] ^= 1;
         } else {
-            altered.nullifier_hash[0] ^= 1;
+            altered.output_commitment[0] ^= 1;
         }
         assert!(
             catch_unwind(AssertUnwindSafe(|| check_constraints(
@@ -59,18 +61,18 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
             .is_err()
         );
     }
-    // Both Keccak computations are valid, but they use different nullifiers.
+    // Both Keccak computations are valid, but they use different nonces.
     let mut other = witness.clone();
-    other.nullifier[31] ^= 1;
+    other.input_nonce[31] ^= 1;
     let other_trace = air.trace(&public, &other)?;
     let mut forged = trace.clone();
     let first = 33 * ROWS_PER_HASH;
     for row in first..first + ROWS_PER_HASH {
-        forged.values[row * WIDTH..row * WIDTH + NULLIFIER]
-            .copy_from_slice(&other_trace.values[row * WIDTH..row * WIDTH + NULLIFIER]);
+        forged.values[row * WIDTH..row * WIDTH + NONCE]
+            .copy_from_slice(&other_trace.values[row * WIDTH..row * WIDTH + NONCE]);
     }
     let mut changed = public.clone();
-    changed.nullifier_hash = nullifier_hash(&other.nullifier);
+    changed.input_tag = input_tag(&other.input_nonce);
     let changed_inputs = MembershipAir::public_values(&changed);
     assert!(
         catch_unwind(AssertUnwindSafe(|| check_constraints(
@@ -82,14 +84,35 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
     );
     // Replacing all carry cells cannot disconnect the original leaf preimage.
     for row in 0..air.height() {
-        forged.values[row * WIDTH + NULLIFIER..(row + 1) * WIDTH]
-            .copy_from_slice(&other_trace.values[row * WIDTH + NULLIFIER..(row + 1) * WIDTH]);
+        forged.values[row * WIDTH + NONCE..(row + 1) * WIDTH]
+            .copy_from_slice(&other_trace.values[row * WIDTH + NONCE..(row + 1) * WIDTH]);
     }
     assert!(
         catch_unwind(AssertUnwindSafe(|| check_constraints(
             &air,
             &forged,
             &changed_inputs
+        )))
+        .is_err()
+    );
+    // A valid output hash for another quantity must fail even when the
+    // public commitment and every round of that hash agree.
+    let mut other = witness.clone();
+    other.quantity ^= 1 << 63;
+    let other_trace = air.trace(&public, &other)?;
+    let mut forged = trace.clone();
+    let start = 34 * ROWS_PER_HASH;
+    for row in start..start + ROWS_PER_HASH {
+        let state = row * WIDTH..row * WIDTH + DIRECTION;
+        forged.values[state.clone()].copy_from_slice(&other_trace.values[state]);
+    }
+    let mut changed = public.clone();
+    changed.output_commitment =
+        commitment(&other.output_label, &other.output_nonce, other.quantity);
+    let inputs = MembershipAir::public_values(&changed);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| check_constraints(
+            &air, &forged, &inputs
         )))
         .is_err()
     );
@@ -111,18 +134,21 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
         b"IMTVCA03",
         b"IMTVCA04",
         b"IMTVCA05",
+        b"IMTVCA06",
     ] {
         let mut old = bytes.clone();
         old[..8].copy_from_slice(old_magic);
         assert!(MaskedMembershipProof::from_bytes(&old).is_err());
     }
     prepared.verify(&public, &decoded)?;
-    for kind in 0..2 {
+    for kind in 0..3 {
         let mut altered = public.clone();
         if kind == 0 {
             altered.root[0] ^= 1;
+        } else if kind == 1 {
+            altered.input_tag[0] ^= 1;
         } else {
-            altered.nullifier_hash[0] ^= 1;
+            altered.output_commitment[0] ^= 1;
         }
         assert!(prepared.verify(&altered, &decoded).is_err());
     }
@@ -155,7 +181,7 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
     // private relation precheck. The child verifier must enforce the AIR itself.
     let trace = prepared.witness(&public, &witness)?;
     let mut false_public = public.clone();
-    false_public.nullifier_hash[0] ^= 1;
+    false_public.output_commitment[0] ^= 1;
     let PendingChild {
         root,
         ctx,

@@ -1,21 +1,24 @@
 use anyhow::{Result, ensure};
 use p3_binary_field::{Poly64, TowerLevel};
 use p3_circuit::ops::binary_native::BinaryCoordinateField;
-use p3_circuit::{Circuit, CircuitBuilder};
+use p3_circuit::{Circuit, CircuitBuilder, ExprId};
 use serde::{Deserialize, Serialize};
 
 use super::{
     IMT_DEPTH,
-    tree::{Hash, LEAF_DOMAIN, NODE_DOMAIN, NULLIFIER_DOMAIN},
+    tree::{Hash, NODE_DOMAIN, RECORD_DOMAIN, TAG_DOMAIN},
 };
 
 pub type F = Poly64;
-pub const PUBLIC_BYTES: usize = 64;
+pub const PUBLIC_BYTES: usize = 96;
 
 #[derive(Clone, Debug)]
 pub struct ClientWitness {
-    pub secret_num: Hash,
-    pub nullifier: Hash,
+    pub input_label: Hash,
+    pub input_nonce: Hash,
+    pub output_label: Hash,
+    pub output_nonce: Hash,
+    pub quantity: u64,
     pub leaf_index: u32,
     pub merkle_path: Vec<Hash>,
 }
@@ -24,7 +27,8 @@ pub struct ClientWitness {
 #[serde(deny_unknown_fields)]
 pub struct ClientPublic {
     pub root: Hash,
-    pub nullifier_hash: Hash,
+    pub input_tag: Hash,
+    pub output_commitment: Hash,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,13 +38,17 @@ pub struct AggregatePublic {
 }
 
 impl ClientPublic {
-    /// Each byte is a raw binary-field coordinate, NOT an integer field embedding.
-    pub fn fields(&self) -> Vec<F> {
+    pub fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
         self.root
             .iter()
-            .chain(&self.nullifier_hash)
-            .map(|&b| F::from_repr(u64::from(b)))
-            .collect()
+            .chain(&self.input_tag)
+            .chain(&self.output_commitment)
+            .copied()
+    }
+
+    /// Each byte is a raw binary-field coordinate, NOT an integer field embedding.
+    pub fn fields(&self) -> Vec<F> {
+        self.bytes().map(|b| F::from_repr(u64::from(b))).collect()
     }
 }
 
@@ -49,9 +57,12 @@ impl ClientWitness {
         ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
         ensure!(self.merkle_path.len() == depth, "incorrect path length");
         let mut fields: Vec<_> = self
-            .secret_num
+            .input_label
             .iter()
-            .chain(&self.nullifier)
+            .chain(&self.input_nonce)
+            .chain(&self.output_label)
+            .chain(&self.output_nonce)
+            .chain(&self.quantity.to_le_bytes())
             .map(|&b| F::from_repr(u64::from(b)))
             .collect();
         for (level, sibling) in self.merkle_path.iter().enumerate() {
@@ -73,57 +84,64 @@ pub fn membership_circuit_over<F: BinaryCoordinateField>(depth: usize) -> Result
     let mut builder = CircuitBuilder::<F>::new();
     builder.enable_native_keccak_f1600()?;
     let root = builder.alloc_public_input_array::<32>("root");
-    let nullifier_hash = builder.alloc_public_input_array::<32>("nullifier-hash");
-    let secret = builder.alloc_private_input_array::<32>("secret-num");
-    let nullifier = builder.alloc_private_input_array::<32>("nullifier");
-    let mut message: Vec<_> = LEAF_DOMAIN
-        .iter()
-        .map(|&byte| {
-            builder
-                .define_const(F::from_raw_coordinates(u128::from(byte)).expect("byte fits carrier"))
-        })
-        .collect();
-    message.extend(secret);
-    message.extend(nullifier);
-    // The native sponge constrains every byte to eight Boolean coordinates,
-    // and enforces Keccak padding and permutation calls.
-    let mut digest = builder.native_keccak256_bytes(&message)?;
-    let mut message: Vec<_> = NULLIFIER_DOMAIN
-        .iter()
-        .map(|&byte| {
-            builder
-                .define_const(F::from_raw_coordinates(u128::from(byte)).expect("byte fits carrier"))
-        })
-        .collect();
-    message.extend(nullifier);
-    let computed = builder.native_keccak256_bytes(&message)?;
-    for (actual, expected) in computed.into_iter().zip(nullifier_hash) {
+    let input_tag = builder.alloc_public_input_array::<32>("input-tag");
+    let output = builder.alloc_public_input_array::<32>("output-commitment");
+    let input_label = builder.alloc_private_input_array::<32>("input-label");
+    let input_nonce = builder.alloc_private_input_array::<32>("input-nonce");
+    let output_label = builder.alloc_private_input_array::<32>("output-label");
+    let output_nonce = builder.alloc_private_input_array::<32>("output-nonce");
+    let quantity = builder.alloc_private_input_array::<8>("quantity-le");
+    let mut digest = hash(
+        &mut builder,
+        RECORD_DOMAIN,
+        &[&input_label, &input_nonce, &quantity],
+    )?;
+    let tag = hash(&mut builder, TAG_DOMAIN, &[&input_nonce])?;
+    let replacement = hash(
+        &mut builder,
+        RECORD_DOMAIN,
+        &[&output_label, &output_nonce, &quantity],
+    )?;
+    for (actual, expected) in tag
+        .into_iter()
+        .zip(input_tag)
+        .chain(replacement.into_iter().zip(output))
+    {
         builder.connect(actual, expected);
     }
     for _ in 0..depth {
         let direction = builder.alloc_private_input("index_bit");
         builder.assert_bool(direction);
         let sibling = builder.alloc_private_input_array::<32>("sibling");
-        let mut node: Vec<_> = NODE_DOMAIN
-            .iter()
-            .map(|&byte| {
-                builder.define_const(
-                    F::from_raw_coordinates(u128::from(byte)).expect("byte fits carrier"),
-                )
-            })
-            .collect();
+        let mut left = Vec::with_capacity(32);
         let mut right = Vec::with_capacity(32);
         for i in 0..32 {
             let delta = builder.add(digest[i], sibling[i]);
             let swap = builder.mul(direction, delta);
-            node.push(builder.add(digest[i], swap));
+            left.push(builder.add(digest[i], swap));
             right.push(builder.add(sibling[i], swap));
         }
-        node.extend(right);
-        digest = builder.native_keccak256_bytes(&node)?;
+        digest = hash(&mut builder, NODE_DOMAIN, &[&left, &right])?;
     }
     for i in 0..32 {
         builder.connect(digest[i], root[i]);
     }
     Ok(builder.build()?)
+}
+
+fn hash<F: BinaryCoordinateField>(
+    builder: &mut CircuitBuilder<F>,
+    domain: &[u8],
+    parts: &[&[ExprId]],
+) -> Result<[ExprId; 32]> {
+    let mut message: Vec<_> = domain
+        .iter()
+        .map(|&b| {
+            builder.define_const(F::from_raw_coordinates(u128::from(b)).expect("byte fits carrier"))
+        })
+        .collect();
+    for part in parts {
+        message.extend_from_slice(part);
+    }
+    Ok(builder.native_keccak256_bytes(&message)?)
 }

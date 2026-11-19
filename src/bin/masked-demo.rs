@@ -472,15 +472,16 @@ fn negative_checks(
     proof: &[u8],
     public: &AggregatePublic,
 ) -> Result<()> {
-    for kind in 0..5 {
+    for kind in 0..6 {
         let mut changed = public.clone();
         match kind {
-            0 => changed.children[0].nullifier_hash[0] ^= 1,
+            0 => changed.children[0].input_tag[0] ^= 1,
             1 => changed.children[0].root[0] ^= 1,
             2 => {
                 changed.children.pop();
             }
             3 => changed.children.push(changed.children[0].clone()),
+            4 => changed.children[0].output_commitment[0] ^= 1,
             _ => {
                 if changed.children.len() == 1 {
                     continue;

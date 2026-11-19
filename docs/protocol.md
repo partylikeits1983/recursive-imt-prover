@@ -7,57 +7,52 @@ security remain unestablished; this is research code.
 
 ## Child statement
 
-Public: `root[32]`, `nullifier_hash[32]`.
-Private: `secret_num[32]`, `nullifier[32]`, `leaf_index: u32`, 32 sibling hashes.
-
-The secret number is an unsigned 256-bit integer encoded in exactly 32
-little-endian bytes. The nullifier is a 32-byte string. Fixtures generate both
-independently with fresh cryptographic randomness. There is no reduction modulo
-a prime, variable-length integer encoding, amount or additional nonce.
-
-With `K = Keccak256` and concatenation `||`, prove:
+Each child replaces one private record with another of the same quantity. Its
+96 public bytes are the root, input tag and output commitment, in that order.
+The witness holds two 32-byte labels, two 32-byte nonces, one unsigned 64-bit
+quantity, the 32-bit input position and 32 sibling hashes. Both records use
+the same commitment format so the replacement can become a later input.
 
 ```text
-leaf = K("IMT-KECCAK-LEAF2" || secret_num || nullifier)
-nullifier_hash = K("IMT-KECCAK-NULL1" || nullifier)
-
-current = leaf
+record(label, nonce, q) = K("IMT-RECORD-OPEN1" || label || nonce || LE64(q))
+current = record(input_label, input_nonce, quantity)
 for level in 0..32:
     (left, right) = (current, sibling[level]) if index_bit[level] == 0
                     else (sibling[level], current)
     current = K("IMT-KECCAK-NODE1" || left || right)
 current == root
+K("IMT-RECORD-USED1" || input_nonce) == input_tag
+record(output_label, output_nonce, quantity) == output_commitment
 ```
 
-The three tags are distinct 16-byte ASCII strings without terminators. Keccak
-uses its original `0x01` suffix, not SHA3's suffix. All preimages fit one rate
-block. The index bits are Boolean and private. No insertion root is required:
-the fixtures use populated trees and later appends before choosing proof roots.
+The domain tags are 16 ASCII bytes. Full-round Keccak-256 uses the original
+`0x01` suffix. Every preimage fits one 136-byte rate block. The fixtures draw
+independent random labels and nonces. A label is opaque data. Knowledge of the
+input opening and authentication path authorizes the replacement in this
+model. The application selects accepted roots, checks tag uniqueness and
+appends outputs. Reusing a nonce repeats the tag, including across roots.
+Anyone who knows a record nonce can predict its tag.
+Key-based authorization, encrypted delivery and multi-record balancing are
+outside this relation. The public/private split is modeled on an action with
+one hidden input and one hidden output. [Orchard circuit](https://github.com/zcash/orchard/blob/main/src/circuit.rs)
 
-The public nullifier hash identifies repeated uses of the same nullifier.
-The proof authenticates that hash but does not check whether it was used before.
-Different roots and repeated valid statements are accepted. Root-history checks,
-spent-nullifier storage, action authorization and state transitions belong to a
-future application. No on-chain verifier is implemented.
+## Membership AIR
 
-## Small membership AIR
+The child schedules the input record, 32 parents, the input tag and the output
+record. Each Keccak permutation takes 25 rows. The 875 active rows fit the
+existing 1,024-row trace. Trusted preprocessing fixes the round flags, hash
+roles, padding and digest check rows. Boolean path directions link each child
+digest to the correct half of the next parent input.
 
-The AIR reuses Plonky3's binary Keccak permutation constraints. It schedules the
-leaf hash, 32 parent hashes and the nullifier hash consecutively: 34 permutations,
-850 active rows, padded to 1,024. Trusted preprocessing fixes the schedule, domain
-tags, padding and output rows. Ordinary next-row constraints link the Merkle path.
-
-Four extra private Poly64 columns carry the nullifier across rows. Each represents
-eight consecutive nullifier bytes in the polynomial basis. At the leaf input and
-the nullifier-hash input, a linear constraint packs the corresponding 64 Boolean
-Keccak input bits into the same carried value. Transition constraints keep that
-value constant. Packing is injective because these are exactly the 64 basis
-coordinates of Poly64; integer embedding into characteristic two would be wrong.
-
-This binds both hashes to one nullifier with four columns, without a copy bus or
-another proof. The existing 128-column stacking still fits the enlarged trace
-in the same number of stacks. The extra Keccak permutation does not increase
-the padded trace height. All four carry columns remain private and masked.
+Four private Poly64 columns carry the input nonce between its two preimages.
+A fifth carries the quantity between the input and output records. At the
+scheduled input rows each limb equals the polynomial-basis packing of 64
+Boolean Keccak state bits. These coordinates give a unique 64-bit encoding.
+Row transitions force the carries to stay constant. Both records therefore
+encode identical quantity bytes, including at zero and the maximum u64.
+At each digest output row the AIR packs each eight Boolean coordinates into
+one byte and checks it against the corresponding public byte. The masked
+native and recursive verifiers both supply 96 byte coordinates in the same order.
 
 ## Child masking
 
@@ -71,9 +66,7 @@ published. Every child uses fresh randomness.
 The intended property is statistical zero knowledge under the stated
 hash/transcript model. Local mask-transport and hiding tests are evidence for
 components, not a joint simulator proof. Adaptive openings, aborts, commitment
-hiding and Fiat–Shamir composition still need analysis. Adding a public nullifier
-hash changes the statement the simulator is given; it does not make the
-underlying nullifier a public witness.
+hiding and Fiat–Shamir composition still need analysis. The simulator receives the root, input tag and output commitment.
 
 WHIR uses Johnson bounds with a safety margin, Poly192 challenges and the
 existing conservative component budgets. VEIL binding retains its separate
@@ -94,7 +87,7 @@ half-distance cap. See [security accounting](binary-security.md).
 Statement commitments are:
 
 ```text
-child.digest = K("IMT-AGG-LEAF-V2" || root[32] || nullifier_hash[32])
+child.digest = K("IMT-AGG-LEAF-V3" || root[32] || input_tag[32] || output_commitment[32])
 child.count = 1
 parent.digest = K("IMT-AGG-NODE-V2" ||
                   left.digest[32] || left.count_u8 ||
@@ -106,7 +99,7 @@ Balanced merges require equal power-of-two counts and at most 64 total children.
 Count addition is constrained as integer doubling, not XOR. Final verification
 rehashes the complete ordered list and verifies one proof with independently
 trusted data; it needs no child or intermediate proofs. Swapping statements or
-changing a root, nullifier hash or count changes the authenticated statement.
+changing a root, tag, output commitment or count changes the authenticated statement.
 
 The merge circuit embeds the complete checkpoint verifier: product bus, AIR,
 main/preprocessing PCS, transcript checks and the linked Keccak GKR argument.
@@ -131,13 +124,12 @@ See the [implementation and acceptance plan](aggregation-tree.md).
 
 ## Formats
 
-The active statement is exactly 64 bytes: root followed by nullifier hash.
-JSON carries two 32-byte arrays and rejects extra or missing fields. Child v6
-uses the `IMTVCA06` header. The first aggregation binds its key to
-`experimental-binary-masked-checkpoint-cyclic-pair-v1`. Every higher merge uses
-`experimental-binary-checkpoint-cyclic-merge-v1`. Both carry the merge authority
-and use the same verifier layout. Flat-batch benchmarks use Flock v7 or
-checkpoint v9. Historical measurements identify the protocol used in each run.
+The JSON statement requires three 32-byte arrays and rejects missing or extra
+fields. Child proofs use the `IMTRCA01` header. Rebuild fixtures and verifier
+keys for this statement. The first aggregation binds its key to
+`experimental-binary-masked-checkpoint-cyclic-pair-v2` and every higher merge
+uses `experimental-binary-checkpoint-cyclic-merge-v2`. Flat-batch benchmarks
+use Flock v8 or checkpoint v10. Historical measurements identify the protocol used in each run.
 
 Intermediate aggregates use the `IMTPRF01` header followed by fixed-width,
 little-endian bincode 2.0.1. The tree prover compresses the final payload with
@@ -152,15 +144,14 @@ carry the same cryptographic transcript.
 The release suite checks child membership and verifier constraints. The tree demo
 also verifies the aggregate in a fresh process using the ordered statements and
 trusted verifier data.
-The complete child-verifier circuit rejects modified
-root/nullifier-hash bytes and proof data. AIR tests also splice two individually
-valid Keccak computations using different nullifiers; the shared carry rejects
-that attack.
+The complete child-verifier circuit rejects changes to each public field
+and to proof data. Splicing valid Keccak traces
+with different input nonces or mismatched output quantities fails the AIR checks.
 
 Earlier first-aggregation benchmarks passed 22 fresh-process checks, including changed
 nullifier hashes, roots, order, counts, proof encodings, keys, authorities and
 statement formats. Old root/amount artifacts are rejected. The retained
-[first-aggregation measurements](binary-veil.md#nullifier-statement) cover two children.
+[first-aggregation measurements](binary-veil.md#historical-two-field-statement) cover two children.
 
 The [four-child merge benchmark](binary-veil.md#four-child-tree-merge) records
 fresh verification and sixteen rejection checks for the earlier merge circuit.

@@ -1,9 +1,246 @@
-# One-minute aggregation for 64 child proofs
+# Under three minutes for 64 prepared children
 
-The target is 60 seconds from receiving 64 depth-32 Keccak IMT child proofs
-to independently verifying one aggregate on the M2 Pro. The stretch target
-is 20–30 seconds. The tree has 32 first aggregations and 31 higher merges.
-All five higher levels share one merge circuit and key.
+Measure from reading 64 saved depth-32 record proofs and their ordered statement
+to independent verification of one root on the 12-core, 16 GB M2 Pro. The
+acceptance threshold is strictly below 180 seconds. Record cold wall time
+including key preparation as a second result. One minute remains a stretch goal.
+
+The latest run took **566.45 s (9 min 26 s)**, down from **671.61 s** on the
+same saved child proofs. The two runs produced byte-identical 998,119-byte
+roots. Fresh-process verification took 112 ms. Including key setup, the latest
+run took 582.10 s. Reaching three minutes still requires **3.15×** the latest
+throughput. Each build ran the full tree once under ordinary laptop load.
+The alternating standalone tests below isolate the Keccak change more closely.
+[Measurements, revisions and commands](../benchmarks/binary/tree-merge/flock-leanvm-m2.json)
+
+| Prepared 64-child replay | Before | After |
+| --- | ---: | ---: |
+| 32 first aggregations, total node time | 340.24 s | 288.43 s |
+| 31 higher merges, total node time | 330.91 s | 277.56 s |
+| All outer proving, excluding witness and verification | 614.39 s | 512.60 s |
+| Saved children through fresh root verification | 671.61 s | 566.45 s |
+
+Peak physical footprint was 11.16 GiB in the latest run and 11.14 GiB in the
+earlier run. Both saw system swap activity. The smaller Keccak scratch buffer
+helps that phase, while the whole prover still uses most of the machine's
+memory budget. The latest medians were 8.94 s per first aggregation and 8.82 s
+per higher merge. A 63-node tree allows 2.86 s per node before overhead.
+
+## What transfers from FLOCK and leanVM-b
+
+Archived leanVM-b implements Succinct's Boolean R1CS reduction for BLAKE2s over
+the same Poly64 base and cubic Poly192 challenge fields used here. It packs the
+Boolean witness into a stack, reduces the hash constraints to evaluations, and
+combines ordinary word claims and ring-switched bit claims in one binary WHIR
+opening. This gives us a concrete design for retaining WHIR and wide challenges
+while borrowing FLOCK's fast prover. [Boolean reduction](https://github.com/leanEthereum/leanVM-b/blob/b7f5ba6ec2dbfd3e46fd0a3343f921db2479b240/crates/flock/src/lib.rs) · [WHIR fields](https://github.com/leanEthereum/leanVM-b/blob/b7f5ba6ec2dbfd3e46fd0a3343f921db2479b240/crates/pcs/src/whir.rs) · [Mixed openings](https://github.com/leanEthereum/leanVM-b/blob/b7f5ba6ec2dbfd3e46fd0a3343f921db2479b240/crates/pcs/src/stack_open.rs)
+
+I ran the authors' benchmarks on this 16 GiB M2 Pro. Each hash batch contains
+65,536 independent primitive calls. FLOCK reports its best of three timed
+proofs after a verified warm-up. LeanVM reports the mean of five Keccak proofs
+after warm-up and checks its proof with its own verifier. Our Keccak numbers
+are medians of four release proofs per build in alternating process order.
+The 64-child tree uses our linked Keccak prover. The flat masked demo's
+`flock` option uses the Plonky3 implementation. The first two rows below
+run Succinct's own repository.
+
+| M2 Pro workload | Proving time | What was proved |
+| --- | ---: | --- |
+| Succinct FLOCK, 8 threads | 0.106 s | 65,536 BLAKE3 compressions |
+| Succinct FLOCK, 8 threads | 0.287 s | 65,536 SHA-256 compressions |
+| Current leanVM, one 24-round segment | 0.212 s | 65,536 Keccak-f permutations, 237.1 KiB proof |
+| Current leanVM, two 12-round segments | 0.216 s | Same permutation count, 225.9 KiB proof |
+| Our standalone committed Keccak, before | 2.752 s | 65,536 Keccak-f permutations with Poly192 challenges |
+| Our standalone committed Keccak, after | 2.240 s | Same workload and identical proof bytes |
+
+LeanVM also proved a two-input recursive merge of its own prepared proofs in
+0.253 s with a 270.5 KiB proof. Verification took 13.64 ms. Each leaf covered
+1,400 leanXMSS signatures. Its 12-round checkpoint reduced the standalone Keccak
+proof's scalar count from 2,843 to 1,597 and verification from 4.7 to 3.6 ms.
+The reduction in work the parent verifies is a reason to try this approach here
+even with similar standalone proving times. [LeanVM benchmarks and parameters](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/README.md#benchmarks)
+
+In FLOCK's field benchmark, four independent scalar GF(2⁸) multiplication
+chains took 2.151 ns per element. Its 16-lane NEON kernel took 0.101 ns per
+element. Its GF(2¹²⁸) default multiplier delivered 1.962 ns per product, and
+its deferred-reduction multiply-accumulate benchmark took 0.623 ns per term.
+These are throughput measurements in tight loops. Our dense Poly192 sumcheck
+already uses carry-less multiplication and postpones reduction across products.
+[FLOCK field benchmark](https://github.com/succinctlabs/flock/blob/dcd17533128a595e475b3dbba56c3dc2ad65161f/crates/flock-prover/benches/field.rs)
+
+The local change exploits the first two multilinear folds of Boolean input.
+Each resulting value is one of at most sixteen Poly192 values. The prover
+stores a one-byte index for each, groups equal terms before multiplying, and
+expands to field elements on the next fold. At this batch size the two-fold
+column buffer drops from 600 MiB to 25 MiB. The next fold needs 300 MiB of
+dense field elements. Caching the native
+round-12 state separately costs 12.5 MiB and avoids replaying the first
+twelve rounds for every upper layer. In an alternating test of that additional
+change alone, median component time went from 2.142 s to 2.117 s. Both
+optimizations preserve the existing transcript. The local midpoint is prover
+scratch, while leanVM also authenticates its midpoint to shorten recursion.
+[Sumcheck implementation](../crates/flock-backend/src/checkpoint_keccak/rounds.rs) · [Round replay](../crates/flock-backend/src/checkpoint_keccak/mod.rs)
+
+Three experiments address different costs in a recursive node.
+
+1. **Pack Keccak's nonlinear layer across 16 permutations.** The active leanVM
+   encodes sixteen bits as a binary polynomial of degree at most 23. One
+   carry-less multiplication and a linear projection recover all sixteen
+   pairwise ANDs. The product has degree at most 46, so it fits the current
+   64-bit polynomial basis. The pinned maps passed a local check on all 256
+   ordered pairs of basis vectors and 4,096 pseudorandom pairs of 16-bit words.
+   Compare a packed chi layer against scalar chi, then port the weighted
+   sumcheck with fresh Poly192 challenges.
+   Measure a complete 65,536-permutation proof and its in-circuit verifier.
+   The active leanVM uses 128-bit challenges and an affine WHIR combiner, so
+   its protocol parameters and soundness figures require a separate analysis.
+   [Keccak construction](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/c-keccak-gkr.tex) · [Field and WHIR implementation](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/crates/experimental_prover/pcs/src/whir.rs)
+2. **Reduce the work verified by the parent.** LeanVM commits the round-12
+   state and randomly combines the two 12-round segments, halving the number
+   of sequential GKR layers in the verifier. In our prototype, bind the midpoint
+   before sampling the segment challenge and authenticate the start, midpoint
+   and output against their proper openings and the arithmetic ports. Count
+   the additional committed cells against the saved recursive constraints and
+   Keccak transcript calls. Benchmark both first aggregation and higher merge
+   before selecting a segment length. [Segment construction](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/c-keccak-gkr.tex)
+3. **Move fixed and linear work out of the recursive witness.** FLOCK walks
+   XOR wiring in reverse to obtain the weighted linear form on inputs and AND
+   outputs. Start by counting which rows of our arithmetic and fanout tables
+   implement eligible Boolean wiring. For public preprocessing shared across
+   nodes, leanVM separately demonstrates how to combine claims about one fixed
+   polynomial and check the final evaluation natively. Prototype one public
+   preprocessing block per verifier-key identity. Bind the key, statements,
+   points and claimed values before batching, and require the fresh root
+   verifier to evaluate the block. Measure total padded main cells, root
+   verification time and the cost of accessing the fixed table. [FLOCK circuit walk](https://arxiv.org/html/2607.27491v1#S4) · [Deferred public evaluation](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/10-ethereum.tex)
+
+## Record-circuit baseline and three-minute budget
+
+Before the compact Keccak changes, the record circuit took **671.61 s (11 min
+12 s)** to aggregate 64 saved children and verify the root. Including key setup
+took 687.18 s. This baseline was **3.73×** the time budget. The eight-child
+pilot took 82.57 s. Both runs used 12 threads
+and one aggregation node at a time.
+
+| Phase in the 64-child replay | Nodes | Total node time | Median per node |
+| --- | ---: | ---: | ---: |
+| Verify masked children inside first aggregates | 32 | 340.24 s | 10.30 s |
+| Prove higher merges | 31 | 330.91 s | 10.47 s |
+
+Generating the outer proofs accounted for 614.39 s, about 91% of elapsed
+aggregation time. The 998,119-byte root verified in a fresh process in 115 ms
+including process launch. Peak physical footprint was 11.14 GiB and the system
+swapped during the run. The previous statement's 750.96 s replay used different
+proofs under different machine load. These runs do not isolate a speedup.
+[Record replay measurements](../benchmarks/binary/tree-merge/record-replacement.json) · [Previous full replay](#smaller-recursive-commitments)
+
+Even eliminating either aggregation stage leaves more than 330 s. Both
+templates commit 184,549,376 initial codeword cells. A first pair uses 51,386
+Keccak permutations and a higher merge uses 47,182. The 35 application hashes
+per child run before the replay clock starts. Reducing their native cost only
+helps aggregation if the resulting proof is cheaper to verify in a circuit.
+
+1. **Attribute the recursive hashes on saved inputs.** Count calls and padded
+   instances for WHIR commitment leaves, authentication paths, transcript
+   absorption and grinding separately. Time native hashing, linked Keccak
+   proving, encoding/folding, arithmetic sumcheck, and reads/import. Use the
+   same pair and higher-merge inputs in alternating runs. The Mac reports
+   hardware SHA-3 instructions and the default Rust target already enables
+   `sha3` and `neon`. A retained merge sample already shows
+   `p3_keccak::neon_sha3::hash_many` on CPU together with memory copies, bus
+   evaluation and the additive transform. Trace which remaining call sites can
+   use that batched kernel. Compare byte-identical outputs when reusing a framing buffer or
+   batching equal-length hashes. Keep an optimization only if the full node
+   time improves reproducibly. [Domain-prefixed hash adapter](../src/binary/veil/hash.rs)
+2. **Reduce the work proved for each WHIR opening.** Count distinct parent
+   hashes across paths to each individual commitment and round. The importer
+   can expand pruned paths. Measure the remaining duplication after existing
+   stratified path sharing. Prototype computing a shared parent once in the
+   recursive circuit. Constrain indices, left/right positions, selected digests
+   and roots to the original transcript challenges. Count routing gates, padded
+   committed cells and peak memory too. A previous four-digest Merkle experiment
+   cut merge permutations from 41,406 to 32,920 but increased eight-child
+   aggregation from 72.38 to 99.89 s as the fixed layout grew.
+   Both record templates currently reserve 65,536 permutation slots. Halving
+   the reservation would require saving at least 18,618 calls in a first pair
+   and 14,414 in a merge, then rebuilding both keys with the smaller bound.
+   Profile the 134,217,728-cell main commitment alongside this change. Even
+   halving the 16,777,216-cell hash commitment alone saves only 4.5% of initial
+   cells. [Fixed recursive layout](../crates/flock-backend/src/recursive_layout.rs) ·
+   [Recursive WHIR importer](../src/binary/veil/whir/recursive.rs) · [Merkle layout measurements](../benchmarks/binary/tree-merge/merkle-commitments-eight.json)
+3. **Prototype four-input proof aggregation.** Start with four child verifiers
+   in one base proof, then benchmark a four-input merge over actual base proofs.
+   Bind every input in order, count and authority. Preserve the canonical binary
+   statement digest by computing the same internal pair digests. Compare
+   dedicated base and merge layouts against padding both to a common shape.
+   Reserve 10 s for reads, encoding and fresh verification. For a serial replay
+   the remaining 170 s implies the following budgets. These are experimental
+   gates, and a larger node can require more memory and time per input.
+
+   | Proof tree | Nodes | Time budget for measured node costs |
+   | --- | ---: | --- |
+   | Binary | 63 | 32 pairs + 31 merges, 2.70 s per node on average |
+   | Four-input base, binary merges | 31 | 16 base + 15 merge proofs, 5.48 s on average |
+   | Four inputs throughout | 21 | 16 base + 5 merge proofs, 8.10 s on average |
+
+   For example, 8 s per four-input base and 8 s per four-input merge gives
+   168 s of proving plus 10 s of overhead. Both four-input timings still
+   need measurement.
+   Stop scaling a layout if the measured weighted sum exceeds budget or if
+   it starts swapping. With concurrent nodes, measure shared-machine throughput
+   directly. Multiplying single-node throughput by the job count double-counts
+   the same CPU cores and memory bandwidth.
+4. **Validate at tree scale.** Rebuild saved child fixtures for the record
+   statement once. Compare one and two concurrent nodes at 8 and 12 total
+   threads on the same eight inputs. Record repeated timings, peak physical
+   footprint and swap delta. Promote the best candidate to three 64-child
+   replays on AC power with no competing builds. Record the range, cold setup,
+   per-level wall times, final proof size and independent verification result.
+   Keep the current Johnson analysis, child masking and half-distance cap,
+   152-bit outer PCS target, 144-bit conditional floor and grinding cap.
+   Any change to rate, folds or number of composition steps needs updated
+   error accounting. [WHIR](https://eprint.iacr.org/2024/1586) · [Security parameters](binary-security.md#parameters-and-accounting)
+
+## Which hash to use
+
+**Keep full-round Keccak-256 as the default.** The 24-round permutation has a
+long public analysis history and a working linked prover in this tree. The
+application uses original Keccak padding. SHA-256 is the longer-established
+alternative for a controlled trial. Its 64-byte blocks and mandatory length
+padding mean even an unprefixed 64-byte parent needs two compressions. Compare
+complete framed hashes at the real message lengths. [Keccak parameters](https://keccak.team/keccak_specs_summary.html) · [FIPS 202](https://csrc.nist.gov/pubs/fips/202/final) · [SHA-256 standard](https://csrc.nist.gov/pubs/fips/180-4/upd1/final)
+
+If a second long-established hash merits a gadget prototype, **BLAKE2b-256**
+fits both the 80-byte parent and 88-byte record into one 128-byte block. Use the
+unkeyed 32-byte digest configuration. Its 12 rounds include 64-bit additions
+whose carries must be proved in this binary-field circuit. Count those costs
+before investing in a recursive backend. [BLAKE2 specification (2015)](https://www.rfc-editor.org/rfc/rfc7693#section-2.1)
+
+**BLAKE3 remains a proof-commitment experiment.** In the repository's
+`blake3-testing` trial, the AIR put all seven rounds of one compression in
+one row, including the intermediate word additions and carries. The 16-byte
+domain plus two 32-byte children made an 80-byte message, requiring two
+64-byte blocks. The previous Keccak AIR used 25 rows for one permutation
+and the entire message fit one rate block. The resulting BLAKE3 trace was
+128 × 11,669 versus 1,024 × 1,630 for Keccak. The raw matrix has 1.49M cells against 1.67M for Keccak.
+Opening two views also incurs costs proportional to width. Stacking 128 columns plus a mask gave 93 oracle columns
+versus 14. The BLAKE3 trial had 11,569 verifier products, 34,937 masked
+messages and roughly 2.4 MB child proofs. Its two warm child proofs took
+13.42 and 17.18 s with other work overlapping. The branch addressed a
+Keccak-only prefixed-WHIR restriction after its first setup attempt.
+There is no verified recursive BLAKE3 tree timing in that experiment.
+[BLAKE3 trial and measurements](https://github.com/partylikeits1983/recursive-imt-prover/blob/fda1c35cbd7d91f7e686d8dd44f263994f242ce7/docs/aggregation-performance.md) · [BLAKE3 specification](https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf)
+
+For a second trial, keep the record hash and Fiat–Shamir transcript fixed and
+change only the outer proof commitments in a versioned suite. Measure the
+actual MMCS leaf lengths and internal-node framing with native and constrained
+known-answer tests. An earlier native M2 batch benchmark measured BLAKE3 at
+3.99× Keccak throughput for 64 bytes and 1.86× for the actual 80-byte record-tree
+parent. Use the same saved children, measure recursive calls,
+commitment cells, memory, and the eight-child replay. A 3× speedup even over
+the *entire* 672 s workload would give 224 s. Hash optimizations alone
+would have to remove over 73% of total elapsed time to meet 180 s. The four-input experiment tests the additional saving that fewer
+recursive proofs could provide.
 
 ## Replay precomputed children
 
@@ -135,7 +372,7 @@ and 769.15 s including setup. One merge key covered all five merge levels.
 The 997,855-byte root verified in a separate invocation in 105 ms. The
 rejection checks passed. The 60 s target remains open.
 
-## Next experiments on the M2 Pro
+## Prior experiments and the one-minute stretch budget
 
 These experiments use portable Rust on the CPU. Keep the Johnson parameters
 and the child masking configuration fixed when comparing implementations.
@@ -285,8 +522,8 @@ degree, linear claims, agreement loss and recursive verification cost.
 
 ### BLAKE3 and Keccak
 
-Keep the full-round Keccak IMT statement for the first hash experiment so the
-same saved child proofs can be reused. Prototype a versioned BLAKE3 commitment
+Keep the full-round record statement fixed across proof-hash experiments so
+they can all replay the same record proofs. Prototype a versioned BLAKE3 commitment
 suite first for recursive proof Merkle paths. Benchmark the 64-byte internal
 nodes and actual PCS leaf lengths independently. Then measure Fiat–Shamir
 separately, including absorption, challenge extraction and grinding. The
@@ -327,10 +564,8 @@ underwent the SHA-3 competition and years of public analysis. HashSmash's
 SHA3-256 contests use five or six of 24 rounds, and its BLAKE3 contests use one
 or two of seven. The scores concern those particular reduced-round targets.
 Full BLAKE3 with a 256-bit digest targets 128-bit collision security and merits
-a speed experiment. A nearer-term circuit alternative is TurboSHAKE256 with
-32-byte output and distinct domains, using the last 12 Keccak rounds as specified
-in RFC 9861. Test it as a versioned proof hash and account for its smaller round
-margin. [HashSmash](https://www.yukon.org/hashsmash)
+a speed experiment. TurboSHAKE256 uses the last 12 Keccak rounds as specified in RFC 9861.
+The current conservative benchmark uses the full 24 rounds. [HashSmash](https://www.yukon.org/hashsmash)
 · [FIPS 202](https://csrc.nist.gov/pubs/fips/202/final)
 · [BLAKE3 specification](https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf)
 · [RFC 9861](https://www.rfc-editor.org/rfc/rfc9861.html)

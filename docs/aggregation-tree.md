@@ -21,7 +21,7 @@ proofs are non-ZK; formal child ZK and end-to-end 128-bit security remain unprov
 Each node carries a 32-byte digest and one-byte leaf count:
 
 ```text
-leaf.digest = Keccak256("IMT-AGG-LEAF-V2" || root[32] || nullifier_hash[32])
+leaf.digest = Keccak256("IMT-AGG-LEAF-V3" || root[32] || input_tag[32] || output_commitment[32])
 leaf.count = 1
 
 parent.digest = Keccak256(
@@ -33,7 +33,7 @@ parent.count = left.count + right.count
 
 Tags are ASCII without a terminator. Merges constrain equal power-of-two counts,
 each at most 32. Doubling uses a binary-coordinate shift, not field addition.
-Final verification rehashes the complete ordered `(root, nullifier_hash)` vector.
+Final verification rehashes the complete ordered `(root, input_tag, output_commitment)` vector.
 Roots may differ and repeated statements are permitted.
 
 Two instances of one verifier template authenticate the two input proofs. Each
@@ -182,8 +182,7 @@ through `RAYON_NUM_THREADS`.
 
 `tree-demo` records every proof time, circuit construction count, verifier digest,
 geometry, security parameters, environment and process peak RSS. It rejects
-invalid child statements, foreign carried authorities, altered roots/nullifier
-hashes, order, counts and damaged proof encodings. The 64-child integration test
+invalid child statements, foreign carried authorities, altered roots, input tags, output commitments, order, counts and damaged proof encodings. The 64-child integration test
 also copies only final verification artifacts into an isolated directory and
 checks fresh-process verification and statement mutations there.
 

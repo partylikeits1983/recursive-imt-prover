@@ -12,7 +12,7 @@ use super::{
 
 pub mod cyclic;
 
-const LEAF_DOMAIN: &[u8] = b"IMT-AGG-LEAF-V2";
+const LEAF_DOMAIN: &[u8] = b"IMT-AGG-LEAF-V3";
 const NODE_DOMAIN: &[u8] = b"IMT-AGG-NODE-V2";
 pub const STATEMENT_BYTES: usize = 33;
 
@@ -37,8 +37,7 @@ pub struct TreeTarget {
 impl TreeStatement {
     pub fn leaf(public: &ClientPublic) -> Self {
         let mut message = LEAF_DOMAIN.to_vec();
-        message.extend(public.root);
-        message.extend(public.nullifier_hash);
+        message.extend(public.bytes());
         Self {
             digest: keccak(&message),
             count: 1,

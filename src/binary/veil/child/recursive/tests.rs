@@ -33,7 +33,7 @@ fn complete_masked_child_verifier_checks_real_proof_data() -> Result<()> {
     runner.set_public_inputs(&values)?;
     runner.set_private_inputs(&private)?;
     runner.run_witness()?;
-    for i in [0, 31, 32, 63] {
+    for i in [0, 31, 32, 63, 64, 95] {
         let mut changed = values.clone();
         changed[i] += F::ONE;
         let mut runner = circuit.runner();

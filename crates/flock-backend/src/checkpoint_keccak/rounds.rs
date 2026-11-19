@@ -40,7 +40,59 @@ enum Columns {
         states: Vec<State>,
         first: Option<E>,
     },
+    FourBits(Box<FourBitColumns>),
     Folded(Vec<E>),
+}
+
+// After two folds every entry is a subset sum of the same four challenge
+// weights. Its four-bit index adds by XOR even for degenerate challenges.
+struct FourBitColumns {
+    indices: Vec<u8>,
+    values: [E; 16],
+    products: [E; 256],
+}
+
+impl FourBitColumns {
+    fn chi_endpoint_and_quadratic(&self, i: usize, other: usize, weights: &[E]) -> [E; 2] {
+        let low = &self.indices[i * BITS..(i + 1) * BITS];
+        let high = &self.indices[other * BITS..(other + 1) * BITS];
+        // Group bit weights by their field value before multiplying. The low
+        // endpoint contributes a + c + b*c and the quadratic term db*dc.
+        let mut linear = [E::ZERO; 16];
+        let mut product = [E::ZERO; 256];
+        let mut quadratic = [E::ZERO; 256];
+        for lane in 0..25 {
+            let j = lane * 64;
+            let next = shift(j, 1);
+            let after = shift(j, 2);
+            for bit in 0..64 {
+                let a = low[j + bit];
+                let b = low[next + bit];
+                let c = low[after + bit];
+                let db = b ^ high[next + bit];
+                let dc = c ^ high[after + bit];
+                let weight = weights[j + bit];
+                linear[(a ^ c) as usize] += weight;
+                product[(b << 4 | c) as usize] += weight;
+                quadratic[(db << 4 | dc) as usize] += weight;
+            }
+        }
+        [
+            E::dot_product(&linear, &self.values) + E::dot_product(&product, &self.products),
+            E::dot_product(&quadratic, &self.products),
+        ]
+    }
+
+    fn fold(&self, half: usize, challenge: E) -> Vec<E> {
+        let low = self.values.map(|v| (E::ONE + challenge) * v);
+        let high = self.values.map(|v| challenge * v);
+        let lookup: [E; 256] = core::array::from_fn(|i| low[i & 15] + high[i >> 4]);
+        let (left, right) = self.indices.split_at(half * BITS);
+        left.par_iter()
+            .zip(right.par_iter())
+            .map(|(&a, &b)| lookup[(a | b << 4) as usize])
+            .collect()
+    }
 }
 
 impl Weights {
@@ -120,6 +172,9 @@ impl Columns {
             }
             return coefficients;
         }
+        if let Self::FourBits(columns) = self {
+            return columns.chi_endpoint_and_quadratic(i, other, &weights.values);
+        }
         let Self::Folded(values) = self else {
             unreachable!()
         };
@@ -153,11 +208,18 @@ impl Columns {
                 let low = bit(instance);
                 first.map_or(low, |r| low + r * (bit(instance + states.len() / 2) + low))
             }
+            Self::FourBits(columns) => {
+                columns.values[columns.indices[instance * BITS + position] as usize]
+            }
             Self::Folded(values) => values[instance * BITS + position],
         }
     }
 
     fn fold(&mut self, half: usize, challenge: E) {
+        if let Self::FourBits(columns) = self {
+            *self = Self::Folded(columns.fold(half, challenge));
+            return;
+        }
         if let Self::Folded(values) = self {
             let (low, high) = values.split_at_mut(half * BITS);
             let r = PackedE::from(challenge);
@@ -188,8 +250,8 @@ impl Columns {
             r * (E::ONE + challenge),
             r * challenge,
         ]);
-        let mut values = E::zero_vec(half * BITS);
-        values
+        let mut indices = vec![0u8; half * BITS];
+        indices
             .par_chunks_mut(BITS)
             .enumerate()
             .for_each(|(i, row)| {
@@ -197,10 +259,14 @@ impl Columns {
                     let index = (0..4).fold(0, |index, k| {
                         index | ((((states[i + k * half][j / 64] >> (j % 64)) & 1) as usize) << k)
                     });
-                    *value = lookup[index];
+                    *value = index as u8;
                 }
             });
-        *self = Self::Folded(values);
+        *self = Self::FourBits(Box::new(FourBitColumns {
+            indices,
+            values: lookup,
+            products: core::array::from_fn(|i| lookup[i >> 4] * lookup[i & 15]),
+        }));
     }
 }
 

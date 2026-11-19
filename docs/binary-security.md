@@ -8,19 +8,17 @@ analysis is deferred, not an implementation gate. No production or real-funds us
 
 ## Relation and trust
 
-The leaf preimage is `"IMT-KECCAK-LEAF2" || secret_num[32] || nullifier[32]`.
-The public nullifier hash is `Keccak256("IMT-KECCAK-NULL1" || nullifier[32])`.
-Nodes hash `"IMT-KECCAK-NODE1" || left[32] || right[32]`. Tags are exactly
-16 ASCII bytes; hashing is Keccak-256, not SHA3-256. The circuit constrains
-bytes, padding, permutations, all 32 private direction bits, the root and the
-nullifier hash. Four private Poly64 carry columns bind the exact same nullifier
-in the leaf and nullifier-hash preimages. See [protocol](protocol.md).
-Binary-field bytes use raw coordinates; integer field embedding would lose bits.
+The child authenticates the opening of an input record, its tag and a
+replacement commitment with the same private u64 quantity. Full-round
+Keccak-256 hashes domain-separated byte strings. The AIR constrains all
+32 private directions, both record encodings and all three public digests.
+Four private Poly64 limbs link the input nonce to its tag, and one limb links
+the two quantities. Each limb packs Boolean bits in the polynomial basis.
+[Exact relation and byte layout](protocol.md#child-statement)
 
-Fixtures include pre-existing notes and later appends, so proof roots differ
-from insertion roots. Different roots and repeated statements are valid.
-Root-history checks, spending, spent-nullifier tracking and replay prevention are
-outside scope. Reusing a nullifier gives the same public hash and is linkable.
+Proofs can refer to different roots. Accepting roots, rejecting repeat input
+tags and appending output commitments are application responsibilities.
+A repeated input nonce produces a linkable tag.
 
 Aggregation receives only proofs and public statements. It constrains transcript,
 PCS, sumcheck, AIR and consistency verification inside the outer proof. A native

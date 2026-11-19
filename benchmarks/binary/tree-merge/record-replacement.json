@@ -1,0 +1,146 @@
+{
+  "method": "One release replay per batch on saved record proofs. The timer includes imports, every node, root serialization and fresh-process verification. Child generation, key setup and subsequent rejection checks are outside the prepared timer. The 8- and 64-child runs used separate fixtures.",
+  "hardware": "Apple M2 Pro",
+  "memory_bytes": 17179869184,
+  "threads": 12,
+  "concurrent_nodes": 1,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "hash": "Keccak-256",
+  "bound": "Johnson",
+  "child_parameters": {
+    "log_inv_rate": 4,
+    "max_message_len": 2097152,
+    "min_algebraic_bits": 144,
+    "query_bits": 160
+  },
+  "geometry": {
+    "first_aggregation": {
+      "keccak_permutations": 51386,
+      "initial_codeword_cells": 184549376,
+      "main_codeword_cells": 134217728,
+      "preprocessed_codeword_cells": 33554432,
+      "checkpoint_codeword_cells": 16777216,
+      "algebraic_bits": 146.21526327706133
+    },
+    "merge": {
+      "keccak_permutations": 47182,
+      "initial_codeword_cells": 184549376,
+      "main_codeword_cells": 134217728,
+      "preprocessed_codeword_cells": 33554432,
+      "checkpoint_codeword_cells": 16777216,
+      "algebraic_bits": 146.21526327706133
+    }
+  },
+  "runs": [
+    {
+      "children": 8,
+      "protocol": "experimental-binary-checkpoint-cyclic-merge-v2",
+      "source_keccak256": "916ea0595902e4680d419726428d4dcbd83e3ed4060efc33336895ff75f79f62",
+      "statement_file_sha256": "6ab47c19c41135a98cce3fe1120fdea8587e14a4a1ee03071856c72e10d81f58",
+      "root_file_sha256": "52fdeb19f61805f187b1b60db7f821f5a5e5abbb2a73aaa7150c763d2a350534",
+      "first_verifier_digest_hex": "bdeb62356a414c5c5f8a48be2ca0f56ab272b0b1bcd4a58c1fd07622f105f2ce",
+      "merge_verifier_digest_hex": "e9f566d480ffb9ea12bff6453910f05b93e7ac1374f9facb882e4a9f62e9c42e",
+      "ready_children_to_fresh_verification_ms": 82568.710709,
+      "including_setup_ms": 102202.445167,
+      "root_file_bytes": 998972,
+      "fresh_verifier_process_ms": 115.160792,
+      "peak_rss_bytes": 5298454528,
+      "merge_levels": 2,
+      "same_key_recursion": true,
+      "fresh_verification": true,
+      "mutation_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "first_aggregation": {
+        "nodes": 4,
+        "sum_ms": 48052.472125,
+        "min_ms": 10881.819458,
+        "median_ms": 12040.689999999999,
+        "max_ms": 13089.272667,
+        "sum_prove_ms": 44095.544832,
+        "median_proof_bytes": 1063941.0
+      },
+      "higher_merge": {
+        "nodes": 3,
+        "sum_ms": 34343.200666000004,
+        "min_ms": 10586.051958,
+        "median_ms": 11041.258708000001,
+        "max_ms": 12715.89,
+        "sum_prove_ms": 31447.897625999998,
+        "median_proof_bytes": 1065909
+      },
+      "child_preparation": {
+        "threads": 12,
+        "median_prove_ms": 3559.8714170000003,
+        "median_proof_bytes": 1128805.0
+      }
+    },
+    {
+      "children": 64,
+      "protocol": "experimental-binary-checkpoint-cyclic-merge-v2",
+      "source_keccak256": "04550ced93d97523f87e2c7064f15139e3453aa36d6c699cba469dee11887248",
+      "statement_file_sha256": "6f0c4509b5f053fdf7ef46d5ed1b09cf0270523693ebac6c533a77dc005133cf",
+      "root_file_sha256": "588a4f216f44da4458ae185d05f63830837525a5f6e030c100de2beac02b0d84",
+      "first_verifier_digest_hex": "bdeb62356a414c5c5f8a48be2ca0f56ab272b0b1bcd4a58c1fd07622f105f2ce",
+      "merge_verifier_digest_hex": "e9f566d480ffb9ea12bff6453910f05b93e7ac1374f9facb882e4a9f62e9c42e",
+      "ready_children_to_fresh_verification_ms": 671613.3935420001,
+      "including_setup_ms": 687176.826958,
+      "root_file_bytes": 998119,
+      "fresh_verifier_process_ms": 114.8995,
+      "peak_rss_bytes": 5913559040,
+      "merge_levels": 5,
+      "same_key_recursion": true,
+      "fresh_verification": true,
+      "mutation_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "first_aggregation": {
+        "nodes": 32,
+        "sum_ms": 340243.245123,
+        "min_ms": 9100.733291999999,
+        "median_ms": 10298.232688,
+        "max_ms": 15912.750624999999,
+        "sum_prove_ms": 309459.57771,
+        "median_proof_bytes": 1065013.0
+      },
+      "higher_merge": {
+        "nodes": 31,
+        "sum_ms": 330910.73958399997,
+        "min_ms": 9256.196667,
+        "median_ms": 10469.714708,
+        "max_ms": 15393.141958999999,
+        "sum_prove_ms": 304932.746665,
+        "median_proof_bytes": 1064885
+      },
+      "target_ms": 180000,
+      "target_met": false,
+      "acceptance_pass": true,
+      "peak_footprint_bytes": 11966443648,
+      "system_swapins_pages": 635125,
+      "system_swapouts_pages": 868182,
+      "child_preparation": {
+        "threads": 4,
+        "median_prove_ms": 3512.0728545,
+        "median_proof_bytes": 1128741.5
+      }
+    }
+  ]
+}

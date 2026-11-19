@@ -12,7 +12,7 @@ use recursive_imt_prover::binary::engine::{PreparedAggregate, PreparedChild, Set
 use recursive_imt_prover::binary::relation::{
     ClientPublic, ClientWitness, F, PUBLIC_BYTES, membership_circuit, membership_circuit_over,
 };
-use recursive_imt_prover::binary::tree::{Imt, commitment, keccak, nullifier_hash, parent};
+use recursive_imt_prover::binary::tree::{Imt, commitment, input_tag, keccak, parent};
 
 const TEST_DEPTH: usize = 32;
 
@@ -46,17 +46,25 @@ fn keccak_is_not_sha3_and_tree_is_append_only() {
         "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
     );
     let mut tree = Imt::new(TEST_DEPTH).unwrap();
-    let note = commitment(&[1; 32], &[2; 32]);
-    assert_ne!(note, commitment(&[2; 32], &[1; 32]));
+    let note = commitment(&[1; 32], &[2; 32], 17);
+    assert_ne!(note, commitment(&[2; 32], &[1; 32], 17));
     assert_eq!(
         note,
-        keccak(&[b"IMT-KECCAK-LEAF2".as_slice(), &[1; 32], &[2; 32]].concat())
+        keccak(
+            &[
+                b"IMT-RECORD-OPEN1".as_slice(),
+                &[1; 32],
+                &[2; 32],
+                &17u64.to_le_bytes()
+            ]
+            .concat()
+        )
     );
     assert_eq!(
-        nullifier_hash(&[2; 32]),
-        keccak(&[b"IMT-KECCAK-NULL1".as_slice(), &[2; 32]].concat())
+        input_tag(&[2; 32]),
+        keccak(&[b"IMT-RECORD-USED1".as_slice(), &[2; 32]].concat())
     );
-    assert_ne!(nullifier_hash(&[2; 32]), keccak(&[2; 32]));
+    assert_ne!(input_tag(&[2; 32]), keccak(&[2; 32]));
     let index = tree.append(note).unwrap();
     tree.append([9; 32]).unwrap();
     let mut digest = note;
@@ -92,8 +100,8 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     let mut wrong_poly = poly_public.clone();
     wrong_poly[0] += BinaryField128::from_repr(1);
     assert!(!accepts(&poly, &wrong_poly, &poly_private));
-    // Secret, nullifier, direction and sibling are independent constrained inputs.
-    for position in [0, 32, 64, 65, private.len() - 1] {
+    // Check both record openings, both ends of the quantity, and the path.
+    for position in [0, 32, 64, 96, 128, 135, 136, 137, private.len() - 1] {
         let mut wrong = private.clone();
         wrong[position] += F::from_repr(1);
         assert!(
@@ -101,7 +109,7 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
             "private position {position}"
         );
     }
-    for position in [0, 31, 32, 63] {
+    for position in [0, 31, 32, 63, 64, 95] {
         let mut wrong = fields.clone();
         wrong[position] += F::from_repr(1);
         assert!(
@@ -113,7 +121,7 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     noncanonical[32] = F::from_repr(256);
     assert!(!accepts(&circuit, &noncanonical, &private));
     let mut nonboolean = private.clone();
-    nonboolean[64] = F::from_repr(2);
+    nonboolean[136] = F::from_repr(2);
     assert!(!accepts(&circuit, &fields, &nonboolean));
     let mut outside = witness.clone();
     outside.leaf_index = u32::MAX;
@@ -121,20 +129,26 @@ fn membership_constraints_reject_every_private_and_public_mutation() {
     outside = witness.clone();
     outside.merkle_path.pop();
     assert!(outside.fields(TEST_DEPTH).is_err());
-    for nullifier in [[0; 32], [255; 32]] {
+    for (nonce, quantity) in [([0; 32], 0), ([255; 32], u64::MAX)] {
         let mut tree = Imt::new(TEST_DEPTH).unwrap();
         let index = tree
-            .append(commitment(&witness.secret_num, &nullifier))
+            .append(commitment(&witness.input_label, &nonce, quantity))
             .unwrap();
         let mut updated = witness.clone();
-        updated.nullifier = nullifier;
+        updated.input_nonce = nonce;
+        updated.quantity = quantity;
         updated.leaf_index = index;
         updated.merkle_path = tree.path(index).unwrap();
         assert!(accepts(
             &circuit,
             &ClientPublic {
                 root: tree.root(),
-                nullifier_hash: nullifier_hash(&nullifier),
+                input_tag: input_tag(&nonce),
+                output_commitment: commitment(
+                    &updated.output_label,
+                    &updated.output_nonce,
+                    quantity
+                ),
             }
             .fields(),
             &witness_fields(&updated)
@@ -196,7 +210,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     let (public, proof, _) = aggregate.prove(&children).unwrap();
     aggregate.verify(&proof, &public).unwrap();
     let mut wrong = public.clone();
-    wrong.children[0].nullifier_hash[0] ^= 1;
+    wrong.children[0].input_tag[0] ^= 1;
     assert!(aggregate.verify(&proof, &wrong).is_err());
     wrong = public.clone();
     wrong.children[1].root[0] ^= 1;
@@ -221,7 +235,7 @@ fn actual_child_and_aggregate_proofs_authenticate_order_and_authority() {
     bad[0].proof[middle] ^= 1;
     assert!(aggregate.prove(&bad).is_err());
     bad = children.clone();
-    bad[0].public.nullifier_hash[0] ^= 1;
+    bad[0].public.input_tag[0] ^= 1;
     assert!(aggregate.prove(&bad).is_err());
     let foreign = PreparedChild::new(&Settings {
         log_inv_rate: 2,
