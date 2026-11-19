@@ -135,10 +135,10 @@ All runs produced the same 1,396,679-byte proof and verifier key.
 
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It constructed the merge circuit once and checked the same
-key at all five levels. A fresh process verified the 962,180-byte proof against the ordered
+key at all five levels. A fresh process verified the 976,533-byte proof against the ordered
 statements using only the trusted verifier files. The test rejected corrupted
 proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/direct-bridge-sixty-four.json).
+[Raw measurements and validation](../benchmarks/binary/tree-merge/extension-products-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.

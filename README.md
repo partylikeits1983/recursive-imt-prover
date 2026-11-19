@@ -81,19 +81,21 @@ Pro with 16 GiB of memory and eight Rayon workers. One aggregation node runs at
 a time. Child, first-pair and merge times are per-proof medians. The final
 verification time includes process startup and trusted-key loading.
 
-| Keccak wire layout | Child proving | First pair | Recursive merge | All 63 aggregations | Final file | Fresh verification |
+| Recursive verifier | Child proving | First pair | Recursive merge | All 63 aggregations | Final file | Fresh verification |
 |---|---:|---:|---:|---:|---:|---:|
-| Separate port table | 2.98 s | 16.50 s | 16.36 s | 17 min 27 s | 996,198 B | 119 ms |
-| Direct bridge | 2.55 s | 15.90 s | 15.60 s | 16 min 45 s | 962,180 B | 110 ms |
+| Scalar field gates | 2.55 s | 15.90 s | 15.60 s | 16 min 45 s | 962,180 B | 110 ms |
+| Cubic product rows | 2.60 s | 12.47 s | 12.45 s | 13 min 10 s | 976,533 B | 115 ms |
 
-The direct bridge run reused one merge key across all five higher levels.
-Merges ranged from 15.07 to 19.10 seconds. Setup, child proving and verification,
-aggregation and independent final verification took 20 min 20 s in total, excluding
-negative tests. The raw aggregate was 1,110,236 bytes before final-file compression.
-Peak process-tree physical footprint was 16.3 GB, including compressed or swapped memory.
-The performance targets are 10 seconds per merge and 60 seconds for the tree.
-[Direct bridge measurements](benchmarks/binary/tree-merge/direct-bridge-sixty-four.json)
-and [previous measurements](benchmarks/binary/tree-merge/word-openings-sixty-four.json).
+Cubic product rows reduced the largest commitment from 268,435,456 to
+134,217,728 codeword cells. Across 31 merges, latency ranged from
+12.07 to 14.53 seconds. The complete run took
+16 min 48 s, including setup, child proving, child verification and final
+verification, excluding negative tests. The final proof was 1,122,326 bytes before
+compression. Peak process-tree physical footprint was 13.0 GB, including compressed
+or swapped memory. The targets are 10 seconds per merge and 60 seconds to
+aggregate 64 existing proofs.
+[Cubic product measurements](benchmarks/binary/tree-merge/extension-products-sixty-four.json) and
+[scalar baseline](benchmarks/binary/tree-merge/direct-bridge-sixty-four.json).
 
 ## Running locally
 
