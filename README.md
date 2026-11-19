@@ -15,7 +15,7 @@ security target remain open.
 Requires Rust 1.98.1. Run from the repository root.
 
 ```sh
-cargo prove -n 16 -j 4                      # 16 leaves, up to four proofs across the tree
+cargo prove -n 16 -j 4                      # 16 leaves, up to 4 concurrent proof generations
 cargo prove --keep --out run/saved-tree    # Save the default 64-leaf run
 cargo prove --verify --out run/saved-tree  # Verify the saved root in a fresh process
 ```
@@ -32,26 +32,35 @@ public statements. First aggregation verifies two client proofs at a time.
 Recursive merges then verify two equal-sized subtrees and bind them in
 left-to-right order. One merge circuit and key cover every recursive level.
 
-| Circuit | Public inputs | Private circuit inputs |
-| --- | --- | --- |
-| **IMT child** | 32-byte Merkle root and 32-byte nullifier hash | 32-byte secret number, 32-byte nullifier, 32-bit leaf index, and 32 sibling hashes |
-| **First aggregation** | Ordered pair digest, leaf count of two, and merge authority | Two masked child proofs and their public leaf statements |
-| **Recursive merge** | Ordered subtree digest, combined leaf count, and merge authority | Two aggregate proofs and their subtree digests and counts |
+| Circuit | Public inputs | Private inputs (witness) | Shareable output from the prover |
+| --- | --- | --- | --- |
+| **IMT child** | 32-byte Merkle root and 32-byte nullifier hash | 32-byte secret number, 32-byte nullifier, 32-bit leaf index, and 32 sibling hashes of 32 bytes each | One masked membership proof and its public root and nullifier hash |
+| **First aggregation** | 32-byte ordered pair digest, leaf count fixed at two, left/right roles, and merge authority | Two masked child proofs, their root and nullifier-hash pairs, and sibling statement digests | One pair proof and the two ordered public leaf statements |
+| **Recursive merge** | 32-byte parent digest, total leaf count, left/right roles, and merge authority | Two aggregate proofs, their subtree digests and leaf counts, and sibling subtree digests | One merge proof and the combined ordered list of public leaf statements |
 
-The child hashes the secret number and nullifier into a leaf, then recomputes
-the Merkle root from the leaf and its path. It checks the public nullifier hash
-against the same private nullifier. Applications handle accepted roots and
-spent nullifiers.
+**IMT child.** The circuit hashes the secret number and nullifier into a leaf.
+Each index bit places the running hash to the left or right of its sibling.
+After 32 steps, the result must match the public Merkle root. The circuit also
+hashes the same private nullifier and checks it against the public nullifier
+hash. Applications handle accepted roots and spent nullifiers.
 
-The aggregate circuits use the same public layout. Each of two verifier
-instances receives the parent digest, count, merge authority, and a fixed
-left or right role. The authority contains a transcript identity and a
-preprocessing commitment. The first merge level verifies against the pinned
-first-aggregation key. Higher levels verify against the merge key.
+**First aggregation.** The circuit verifies both masked child proofs inside
+the circuit using the fixed child verifier. It hashes each child's root and
+nullifier hash into a statement digest. The left and right verifier instances
+must agree on the digest of the ordered pair and on a leaf count of two.
 
-The final verifier rehashes the full ordered list of leaf statements and
-checks one root proof under an independently trusted merge key. Aggregation
-proofs are non-ZK. [Protocol details](docs/protocol.md) · [Recursive design](docs/aggregation-tree.md)
+**Recursive merge.** The circuit verifies two aggregate proofs with equal
+power-of-two leaf counts. It checks that the public parent count is double
+either input count and that the parent digest binds the two subtree digests
+and counts in left-to-right order. Inputs covering two leaves use the pinned
+first-aggregation key. Larger inputs use the carried merge authority, which
+contains the merge verifier's transcript identity and preprocessing commitment.
+
+The aggregator receives proofs and statement data. The root and nullifier-hash
+pairs are witness data inside the first aggregation circuit and are also
+published in the ordered output list. Aggregation proofs are non-ZK. The final
+verifier rehashes that list and checks one root proof under an independently
+trusted merge key. [Protocol details](docs/protocol.md) · [Recursive design](docs/aggregation-tree.md)
 
 ## Proof sizes
 
