@@ -81,24 +81,26 @@ workers and one active aggregation node. Each range covers every node of that ty
 
 | Operation | Median | Range |
 |---|---:|---:|
-| Child proving (64 proofs) | 2.70 s | 2.26–3.17 s |
-| First aggregation (32 proofs) | 17.57 s | 16.66–19.82 s |
-| Recursive merge (31 proofs) | 18.01 s | 16.84–21.67 s |
+| Child proving (64 proofs) | 2.69 s | 2.29–3.45 s |
+| First aggregation (32 proofs) | 16.77 s | 16.11–18.01 s |
+| Recursive merge (31 proofs) | 17.58 s | 16.24–20.54 s |
 
-Aggregation took **18 min 53 s**. Setup, child proving and verification,
-aggregation and final verification took **22 min 39 s**
-in total, excluding negative tests. The final proof occupied **1,397,831 bytes**.
-Fresh verification took **125 ms**, including startup and key loading.
-For a merge, median witness generation took 0.72 s and median proof generation
-took 16.89 s. Peak process-tree physical footprint was 16.9 GB, including
+Aggregation took **18 min 6 s**. Setup, child proving and verification,
+aggregation and final verification took **21 min 52 s**
+in total, excluding negative tests. The final proof occupied **1,398,055 bytes**.
+Fresh verification took **127 ms**, including startup and key loading.
+The longest chain of dependent aggregation nodes took 108.1 s
+when summing their measured latencies. Actual throughput was 0.059 child proofs per second.
+For a merge, median witness generation took 0.71 s and median proof generation
+took 16.47 s. Peak process-tree physical footprint was 16.9 GB, including
 compressed or swapped memory.
-[Raw measurements](benchmarks/binary/tree-merge/direct-witness-sixty-four.json)
+[Raw measurements](benchmarks/binary/tree-merge/selector-sixty-four.json)
 
-Aggregation time was 4.4% lower than the previous 19 min 46 s run on
+Aggregation time was 4.2% lower than the previous 18 min 53 s run on
 the same machine and worker count. Each version was measured once. The proof
 meets the 1.5 MB target. The goals of 1 MB, 10 seconds per merge and 60 seconds
 for all 63 aggregation operations remain open.
-[Previous measurements](benchmarks/binary/tree-merge/fixed-gates-sixty-four.json) ·
+[Previous measurements](benchmarks/binary/tree-merge/direct-witness-sixty-four.json) ·
 [Sibling concurrency measurements](benchmarks/binary/tree-merge/paired-scheduling.json)
 
 ## Running locally

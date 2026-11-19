@@ -104,13 +104,21 @@ incompatible layouts. This component test does not replace the full tree run.
 
 ## Validation and acceptance
 
+A separate benchmark timed the same merge of two eight-child aggregates on an
+Apple M2 Pro with eight threads. The baseline took 19.16 s at the median of four warm runs.
+Selecting the boundary values directly and factoring the equality weights took
+18.38 s across four warm runs. Computing AIR column offsets once per instance
+gave 17.57 s and 18.71 s in two subsequent warm runs. The timing ranges overlap.
+All runs produced the same 1,396,679-byte proof and verifier key.
+[Measurements and baseline phase timings](../benchmarks/binary/tree-merge/merge-selectors.json).
+
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It constructed the merge circuit once and checked the same
 key at all five levels. The key also matched the eight-child run byte for
-byte. A fresh process verified the 1,397,831-byte proof against the ordered
+byte. A fresh process verified the 1,398,055-byte proof against the ordered
 statements using only the trusted verifier files. The test rejected corrupted
 proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/direct-witness-sixty-four.json).
+[Raw measurements and validation](../benchmarks/binary/tree-merge/selector-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.

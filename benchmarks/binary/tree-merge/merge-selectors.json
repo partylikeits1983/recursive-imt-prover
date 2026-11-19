@@ -1,0 +1,180 @@
+{
+  "operation": "One recursive merge of the same valid eight-child aggregate on the left and right. All 15 outer proofs were verified and byte-identical.",
+  "method": "Each process prepared the production first-aggregation circuit and the reusable merge circuit, checked the serialized verifier key, and timed three calls to PreparedCyclicMerge::prove on the same operands. Setup and compilation were excluded. The first call in each process is reported separately. The baseline logged elapsed times at five arithmetic prover phase boundaries. No sampling profiler was attached during these runs.",
+  "baseline_commit": "03e43d3fd12e668909a2594a475a00b53bedfcd2",
+  "hardware": "Apple M2 Pro",
+  "threads": 8,
+  "rustc": "1.98.1",
+  "build": "release, thin LTO, 16 codegen units, default target flags",
+  "depth": 32,
+  "parameters": "Production Poly64/Poly192, Keccak-256, Johnson",
+  "input_proof_sha256": "2f7509d67a5865fc1a04f78c9c048c3fbc8b7270d4fae7cf7863a9d0f0e046cb",
+  "verifier_key_sha256": "23432c11795d4f05d7e2aff35b54af00a2d21dd54cf6e46850d21e35f6da547e",
+  "output_proof_sha256": "141045309fffb1df3e9ac2a128829bc49fc1b30a16ab56d752e909f3e797f1d8",
+  "output_proof_bytes": 1396679,
+  "runs": [
+    {
+      "variant": "baseline",
+      "peak_process_bytes": 13181916416,
+      "samples": [
+        {
+          "first_after_setup": true,
+          "prove_ms": 18595.519,
+          "verify_ms": 107.569,
+          "wall_ms": 19920.541,
+          "arithmetic_phases_ms": {
+            "commit": 1579,
+            "product-bus": 2960,
+            "AIR_sumcheck": 5423,
+            "main_opening": 4739,
+            "preprocessing_opening": 1247
+          }
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 17275.717,
+          "verify_ms": 107.161,
+          "wall_ms": 18732.473,
+          "arithmetic_phases_ms": {
+            "commit": 985,
+            "product-bus": 2787,
+            "AIR_sumcheck": 4778,
+            "main_opening": 4944,
+            "preprocessing_opening": 1202
+          }
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 17420.749,
+          "verify_ms": 108.87,
+          "wall_ms": 18538.496,
+          "arithmetic_phases_ms": {
+            "commit": 1027,
+            "product-bus": 2938,
+            "AIR_sumcheck": 4686,
+            "main_opening": 4912,
+            "preprocessing_opening": 1270
+          }
+        }
+      ]
+    },
+    {
+      "variant": "selector_and_equality",
+      "peak_process_bytes": 13205476864,
+      "samples": [
+        {
+          "first_after_setup": true,
+          "prove_ms": 18825.459,
+          "verify_ms": 105.265,
+          "wall_ms": 20096.805
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 17629.21,
+          "verify_ms": 106.663,
+          "wall_ms": 18767.239
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 17093.499,
+          "verify_ms": 105.354,
+          "wall_ms": 18276.619
+        }
+      ]
+    },
+    {
+      "variant": "selector_and_equality",
+      "peak_process_bytes": 13270013440,
+      "samples": [
+        {
+          "first_after_setup": true,
+          "prove_ms": 18307.111,
+          "verify_ms": 105.511,
+          "wall_ms": 19598.665
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 16604.28,
+          "verify_ms": 105.382,
+          "wall_ms": 17876.02
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 17343.206,
+          "verify_ms": 105.689,
+          "wall_ms": 18477.17
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "peak_process_bytes": 13127357760,
+      "samples": [
+        {
+          "first_after_setup": true,
+          "prove_ms": 19995.096,
+          "verify_ms": 110.73,
+          "wall_ms": 21354.319,
+          "arithmetic_phases_ms": {
+            "commit": 1394,
+            "product-bus": 3186,
+            "AIR_sumcheck": 5353,
+            "main_opening": 6111,
+            "preprocessing_opening": 1311
+          }
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 19086.899,
+          "verify_ms": 107.313,
+          "wall_ms": 20320.495,
+          "arithmetic_phases_ms": {
+            "commit": 1291,
+            "product-bus": 3377,
+            "AIR_sumcheck": 5169,
+            "main_opening": 5356,
+            "preprocessing_opening": 1282
+          }
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 18448.731,
+          "verify_ms": 107.264,
+          "wall_ms": 19589.087,
+          "arithmetic_phases_ms": {
+            "commit": 1025,
+            "product-bus": 2942,
+            "AIR_sumcheck": 5004,
+            "main_opening": 5650,
+            "preprocessing_opening": 1199
+          }
+        }
+      ]
+    },
+    {
+      "variant": "selector_equality_and_air_offsets",
+      "peak_process_bytes": 13199692992,
+      "samples": [
+        {
+          "first_after_setup": true,
+          "prove_ms": 20625.625,
+          "verify_ms": 111.269,
+          "wall_ms": 22074.284
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 17417.417,
+          "verify_ms": 117.377,
+          "wall_ms": 18710.022
+        },
+        {
+          "first_after_setup": false,
+          "prove_ms": 16418.473,
+          "verify_ms": 107.628,
+          "wall_ms": 17566.474
+        }
+      ]
+    }
+  ],
+  "final_variant_commit": "aba077c7cbc311bf912259fa2a0b218eca94ae94"
+}
