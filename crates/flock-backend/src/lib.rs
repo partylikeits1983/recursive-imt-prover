@@ -26,6 +26,7 @@ mod verifier;
 mod witness;
 
 pub use config::{WHIR_CAP_HEIGHT, WHIR_FOLD, WHIR_LOG_INV_RATE};
+pub use proof_codec::compact_aggregate_proof;
 pub use verifier::{AUTHORITY_BYTES, RecursiveAggregate, RecursiveArithmetic, RecursiveAuthority};
 pub use verifier::{MAX_VERIFIER_BYTES, Verifier, verifier_key_digest};
 #[cfg(test)]

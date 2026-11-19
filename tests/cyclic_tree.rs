@@ -57,6 +57,9 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
                 .all(|earlier| earlier.nullifier_hash != statement.nullifier_hash)
         );
     }
+    let stored = fs::metadata(directory.join("aggregate.proof"))?.len();
+    assert_eq!(report["final_proof_bytes"], stored);
+    assert!(stored < report["final_uncompressed_proof_bytes"].as_u64().unwrap());
     let independent = directory.join("independent");
     fs::create_dir(&independent)?;
     for name in [

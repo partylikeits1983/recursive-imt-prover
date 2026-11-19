@@ -142,11 +142,13 @@ include the carried merge authority and have identical verifier layouts.
 Old root/amount proofs and keys are incompatible and must be regenerated. Historical measurements retain their
 original protocol identifiers and are not measurements of this relation.
 
-Aggregate files use the `IMTPRF01` header and fixed-width little-endian bincode
-2.0.1 serialization. This removes variable-integer overhead from field elements;
-it does not change transcript messages. Decoding caps input at 16 MiB and
-rejects trailing data. Verifier snapshots use v4; regenerate older aggregate
-proofs and verifier data after updating. Child encoding is unchanged.
+Intermediate aggregates use the `IMTPRF01` header followed by fixed-width,
+little-endian bincode 2.0.1. The tree prover compresses the final payload with
+zlib when that reduces its size. The `IMTPRF02` file contains the header, a
+four-byte little-endian payload length and one zlib stream. Verification
+accepts either encoding, checks the declared and decoded lengths, rejects
+trailing data and caps input and expanded proof size at 16 MiB. Both encodings
+carry the same cryptographic transcript.
 
 ## Validation
 

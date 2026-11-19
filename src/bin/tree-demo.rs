@@ -9,7 +9,8 @@ use std::{
 use anyhow::{Result, ensure};
 use clap::Parser;
 use imt_flock_backend::{
-    HashBackend, MAX_VERIFIER_BYTES, WHIR_FOLD, WHIR_LOG_INV_RATE, verifier_key_digest,
+    HashBackend, MAX_VERIFIER_BYTES, WHIR_FOLD, WHIR_LOG_INV_RATE, compact_aggregate_proof,
+    verifier_key_digest,
 };
 use mimalloc::MiMalloc;
 use rayon::{ThreadPoolBuilder, prelude::*};
@@ -288,7 +289,12 @@ fn main() -> Result<()> {
         write_json(&args.out.join("report.json"), &report)?;
         layer = next;
     }
-    let proof = layer.pop().unwrap();
+    let mut proof = layer.pop().unwrap();
+    let encoding_start = Instant::now();
+    report["final_uncompressed_proof_bytes"] = json!(proof.proof.len());
+    proof.proof = compact_aggregate_proof(&proof.proof)?;
+    report["final_encoding_ms"] = json!(ms(encoding_start));
+    report["final_proof_bytes"] = json!(proof.proof.len());
     ensure!(
         proof.public == expected,
         "final statement differs from the ordered children"

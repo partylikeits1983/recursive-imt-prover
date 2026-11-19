@@ -111,8 +111,9 @@ This is a local encoding argument, not a full proof-system security theorem.
 Tests check retained occurrences, direct pairs, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
 swap across partitions. Checkpoint uses backend identity v6; Flock uses v12.
-Both export verifier snapshot v4 and fixed-width aggregate proof encoding
-(`IMTPRF01`), rejecting older artifacts. Child proof formats are unchanged.
+Recursive pairs export v5 verifier snapshots for word openings. Other layouts
+export v4. The fixed-width aggregate proof encoding is `IMTPRF01`. Final tree
+files can use the lossless `IMTPRF02` encoding.
 
 Arithmetic partitions omit preprocessing columns that are identically zero.
 The trusted compiler records the original-to-compact column map, substitutes
