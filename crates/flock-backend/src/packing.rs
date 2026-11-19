@@ -7,7 +7,7 @@ use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 
-use crate::{F, products::Products};
+use crate::{F, products::Products, swaps::Swaps};
 
 #[cfg(test)]
 mod tests;
@@ -21,6 +21,7 @@ pub struct Packing {
     pub removed_rows: Vec<bool>,
     pub removed_uses: Vec<u32>,
     pub products: Option<Arc<Products>>,
+    pub swaps: Option<Arc<Swaps>>,
 }
 
 pub struct PackedShard {
@@ -59,6 +60,7 @@ impl Packing {
             removed_rows: vec![false; gates.len() / pp_width],
             removed_uses: vec![0; widths.len()],
             products: None,
+            swaps: None,
         };
         // The pinned full native gate schema has five IDs, a constant and eight selectors.
         // Other compact schemas keep their original rows.
@@ -163,6 +165,12 @@ impl Packing {
             result.products = Some(Arc::new(Products::extract(
                 rows,
                 &counts,
+                widths,
+                &mut result.removed_rows,
+                &mut result.removed_uses,
+            )?));
+            result.swaps = Some(Arc::new(Swaps::extract(
+                rows,
                 widths,
                 &mut result.removed_rows,
                 &mut result.removed_uses,

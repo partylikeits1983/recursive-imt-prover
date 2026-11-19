@@ -1,9 +1,6 @@
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::{AirBuilder, WindowAccess};
-use p3_binary_field::TowerLevel;
-use p3_field::PrimeCharacteristicRing;
-use p3_matrix::dense::RowMajorMatrix;
 
 use crate::F;
 
@@ -117,22 +114,6 @@ impl Products {
             }
         }
         Ok(Self { rows })
-    }
-
-    pub fn preprocessing(&self) -> RowMajorMatrix<F> {
-        let mut data = F::zero_vec((WIDTH + 1) << LOG_HEIGHT);
-        for (row, ids) in data
-            .as_chunks_mut::<{ WIDTH + 1 }>()
-            .0
-            .iter_mut()
-            .zip(&self.rows)
-        {
-            for (cell, &id) in row.iter_mut().zip(ids) {
-                *cell = F::from_repr(u64::from(id));
-            }
-            row[WIDTH] = F::ONE;
-        }
-        RowMajorMatrix::new(data, WIDTH + 1)
     }
 }
 

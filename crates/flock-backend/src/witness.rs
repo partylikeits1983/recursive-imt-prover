@@ -162,8 +162,8 @@ impl Prepared {
                             *value = read(row.id);
                         }
                     }
-                    WitnessSource::Products(shard) => {
-                        for (r, ids) in shard.rows.iter().enumerate() {
+                    WitnessSource::WireRows { ids, width, .. } => {
+                        for (r, ids) in ids.chunks_exact(width).enumerate() {
                             for (column, &id) in ids.iter().enumerate() {
                                 output[column * height + r] = read(id);
                             }

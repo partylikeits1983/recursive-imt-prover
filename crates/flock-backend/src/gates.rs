@@ -49,7 +49,7 @@ const fn constant_gates(coefficient_bits: usize) -> [usize; 14] {
 const FIVE_WIRE_GATES: [usize; 14] = [ID, ID, ID, ID, ID, 0, 0, 1, 1, 0, 1, 1, 0, 0];
 
 pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
-    GateLayout::new([16, 16, 16, 0, 16], 20, SMALL_OUTPUT),
+    GateLayout::new([16, 16, 16, 0, 16], 18, SMALL_OUTPUT),
     GateLayout::new([64, 64, 64, 0, 64], 19, FOUR_WIRE_GATES),
     GateLayout::new([64, 64, 0, 0, 64], 18, PRODUCT),
     GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(17)),
@@ -315,13 +315,18 @@ fn partition_fixed(
             layout[i].preprocessing[5],
         )
     });
-    let mut padding = false;
-    for (index, row) in preprocessing.as_chunks::<14>().0.iter().enumerate() {
-        if row.iter().all(|v| v.to_repr() == 0) {
-            padding = true;
-            continue;
-        }
-        ensure!(!padding, "noncontiguous native gate rows");
+    let rows = preprocessing.as_chunks::<14>().0;
+    let is_padding = |row: &[OldF; 14]| row.iter().all(|v| v.to_repr() == 0);
+    let live_len = rows.iter().position(is_padding).unwrap_or(rows.len());
+    let (live, padding) = rows.split_at(live_len);
+    ensure!(
+        padding.iter().all(is_padding),
+        "noncontiguous native gate rows"
+    );
+    // Only the narrow table accepts a Boolean gate. Reserve its slots before placing shared gates.
+    let rows = live.iter().enumerate();
+    let booleans = rows.clone().filter(|(_, row)| row[9].to_repr() != 0);
+    for (index, row) in booleans.chain(rows.filter(|(_, row)| row[9].to_repr() == 0)) {
         if removed_rows.get(index) == Some(&true) {
             continue;
         }

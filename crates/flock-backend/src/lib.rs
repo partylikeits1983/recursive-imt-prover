@@ -23,6 +23,7 @@ mod packing;
 mod products;
 mod proof_codec;
 mod recursive_layout;
+mod swaps;
 mod verifier;
 mod witness;
 
@@ -99,6 +100,7 @@ pub struct Geometry {
     pub template_witnesses: u32,
     pub packed_rows: usize,
     pub extension_products: usize,
+    pub conditional_swaps: usize,
     pub packed_geometric_rows: usize,
     pub packing_intermediates_removed: usize,
     pub single_use_copies_removed: usize,
@@ -228,6 +230,7 @@ impl Prepared {
             .as_ref()
             .map_or(0, |s| s.rows.iter().map(|r| r.sources.len() - 1).sum());
         let extension_products = packing.products.as_ref().map_or(0, |s| s.rows.len());
+        let conditional_swaps = packing.swaps.as_ref().map_or(0, |s| s.rows.len());
         eprintln!("Matched {extension_products} extension products per template");
         eprintln!(
             "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"
@@ -344,6 +347,10 @@ impl Prepared {
         if let Some(products) = packing.products {
             airs.push(Chip::products(products));
             log_heights.push(products::LOG_HEIGHT);
+        }
+        if let Some(shard) = packing.swaps {
+            airs.push(Chip::swaps(shard));
+            log_heights.push(swaps::LOG_HEIGHT);
         }
         let hash_index = source_hash_index + airs.len() - 2;
         for (i, air) in bus.airs().iter().enumerate().skip(2) {
@@ -474,7 +481,9 @@ impl Prepared {
                         widths.extend([64, 64]);
                         widths.repeat(instances)
                     }
-                    WitnessSource::Products(_) => vec![64; shape.width()],
+                    WitnessSource::WireRows {
+                        coordinate_width, ..
+                    } => vec![coordinate_width; shape.width()],
                     WitnessSource::Public => vec![0],
                     WitnessSource::Keccak if backend == HashBackend::Flock => {
                         vec![1; shape.width()]
@@ -572,6 +581,7 @@ impl Prepared {
             template_instances: instances,
             template_witnesses: circuit.witness_count,
             extension_products: extension_products * instances,
+            conditional_swaps: conditional_swaps * instances,
             packed_rows: packed_rows * instances,
             packed_geometric_rows: packed_geometric_rows * instances,
             packing_intermediates_removed: packing_intermediates_removed * instances,

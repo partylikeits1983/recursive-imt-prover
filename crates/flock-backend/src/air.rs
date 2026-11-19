@@ -7,6 +7,7 @@ use crate::{
     packing::{self, PackedShard},
     products::{self, Products},
     recursive_layout,
+    swaps::{self, Swaps},
 };
 use anyhow::{Result, ensure};
 use old_air::symbolic::{BaseEntry, BaseLeaf, SymbolicExpr, SymbolicExpression, SymbolicVariable};
@@ -34,7 +35,11 @@ pub(super) enum WitnessSource<'a> {
     Fanout(&'a FanoutShard),
     Gates(&'a GateShard),
     Packed(&'a PackedShard),
-    Products(&'a Products),
+    WireRows {
+        ids: &'a [u32],
+        width: usize,
+        coordinate_width: usize,
+    },
     Public,
     Keccak,
     Bridge,
@@ -67,6 +72,20 @@ enum Source {
     Native(NativeBusCircuitAir<OldF>),
     Packed(Arc<PackedShard>),
     Products(Arc<Products>),
+    Swaps(Arc<Swaps>),
+}
+
+fn wire_preprocessing<const W: usize>(rows: &[[u32; W]], log_height: usize) -> RowMajorMatrix<F> {
+    let width = W + 1;
+    let mut values = F::zero_vec(width << log_height);
+    for (index, ids) in rows.iter().enumerate() {
+        let row = &mut values[index * width..(index + 1) * width];
+        for (cell, &id) in row.iter_mut().zip(ids) {
+            *cell = F::from_repr(u64::from(id));
+        }
+        row[W] = F::ONE;
+    }
+    RowMajorMatrix::new(values, width)
 }
 
 impl ImportedAir {
@@ -84,13 +103,14 @@ impl Source {
             Self::Native(a) => a.width(),
             Self::Packed(_) => packing::WIDTH,
             Self::Products(_) => products::WIDTH,
+            Self::Swaps(_) => swaps::WIDTH,
         }
     }
 
     fn num_public_values(&self) -> usize {
         match self {
             Self::Native(a) => a.num_public_values(),
-            Self::Packed(_) | Self::Products(_) => 0,
+            Self::Packed(_) | Self::Products(_) | Self::Swaps(_) => 0,
         }
     }
 
@@ -100,7 +120,8 @@ impl Source {
                 .preprocessed_trace()
                 .map(|m| RowMajorMatrix::new(m.values.into_iter().map(convert).collect(), m.width)),
             Self::Packed(shard) => Some(shard.preprocessing()),
-            Self::Products(shard) => Some(shard.preprocessing()),
+            Self::Products(shard) => Some(wire_preprocessing(&shard.rows, products::LOG_HEIGHT)),
+            Self::Swaps(shard) => Some(wire_preprocessing(&shard.rows, swaps::LOG_HEIGHT)),
         }
     }
 }
@@ -114,7 +135,16 @@ impl Chip {
             (Some(shard), _, _) => WitnessSource::Fanout(shard),
             (_, Some(shard), _) => WitnessSource::Gates(shard),
             (_, _, Source::Packed(shard)) => WitnessSource::Packed(shard),
-            (_, _, Source::Products(s)) => WitnessSource::Products(s),
+            (_, _, Source::Products(s)) => WitnessSource::WireRows {
+                ids: s.rows.as_flattened(),
+                width: products::WIDTH,
+                coordinate_width: 64,
+            },
+            (_, _, Source::Swaps(s)) => WitnessSource::WireRows {
+                ids: s.rows.as_flattened(),
+                width: swaps::WIDTH,
+                coordinate_width: 16,
+            },
             _ if air.public_table => WitnessSource::Public,
             _ => WitnessSource::Bridge,
         }
@@ -126,6 +156,15 @@ impl Chip {
             products::LOG_HEIGHT,
             products::WIDTH + 1,
             |_| products::WIDTH,
+        )
+    }
+
+    pub fn swaps(shard: Arc<Swaps>) -> Self {
+        Self::synthetic(
+            Source::Swaps(shard),
+            swaps::LOG_HEIGHT,
+            swaps::WIDTH + 1,
+            |_| swaps::WIDTH,
         )
     }
 
@@ -377,8 +416,8 @@ impl Chip {
                 "recursive public IDs must be committed"
             );
             vec![id; a.source.num_public_values()]
-        } else if let Source::Products(_) = &a.source {
-            let mut widths = vec![id; products::WIDTH];
+        } else if matches!(&a.source, Source::Products(_) | Source::Swaps(_)) {
+            let mut widths = vec![id; a.source.width()];
             widths.push(1);
             widths
         } else if let Source::Packed(shard) = &a.source {
@@ -732,6 +771,7 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                     }
                     match &a.source {
                         Source::Products(_) => products::eval(b, main_offset),
+                        Source::Swaps(_) => swaps::eval(b, main_offset),
                         Source::Packed(shard) => shard.eval(b, main_offset),
                         Source::Native(_) => {
                             for c in &a.constraints {

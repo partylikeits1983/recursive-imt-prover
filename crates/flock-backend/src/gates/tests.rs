@@ -60,6 +60,21 @@ fn fixed_layout_preserves_empty_tables_and_every_source_row() {
 }
 
 #[test]
+fn boolean_rows_get_a_slot_before_gates_that_fit_both_tables() {
+    let mut layout = [LAYOUT[0], LAYOUT[1]];
+    layout[1].preprocessing[9] = 0;
+    let mut source = rows(17);
+    let last = &mut source.as_chunks_mut::<14>().0[16];
+    last[1] = F::from_repr(0);
+    last[8] = F::from_repr(0);
+    last[9] = F::from_repr(1);
+    let shards = partition(&[0, 64, 64, 64], &source, 14, 5, &[], Some(&layout)).unwrap();
+    assert_eq!(shards[0].source_rows.len(), 16);
+    assert_eq!(shards[0].source_rows[0], 16);
+    assert_eq!(shards[1].source_rows, [15]);
+}
+
+#[test]
 fn fixed_layout_rejects_overflow_and_invalid_sources() {
     let source = rows(17);
     let widths = [0, 64, 64, 64];

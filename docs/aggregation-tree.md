@@ -69,6 +69,13 @@ fit within the wider of the two output bounds. Constant multiply-add rows
 also bound the addend through the equation `addend = output + coefficient * input`.
 The prover omits columns whose wire ID and value are both fixed to zero.
 
+When two selects use the same selector and opposite 16-bit inputs, one row
+can check both outputs. For selector `s`, inputs `x, y` and outputs `a, b`,
+the row enforces `a = y + s(x - y)` and `a + b = x + y`. This is equivalent
+to both original equations. The wire bus links all five values. Setup matches
+the gate selectors and wire IDs before removing either row. Each template
+reserves up to 262,144 pairs and keeps unmatched selects as native gates.
+
 The four-wire table also accepts constant multiply-adds. The five-wire table
 can take ordinary multiply-adds when the four-wire table fills. Each operation
 keeps its original selector, wire IDs and coefficient in the committed layout.
