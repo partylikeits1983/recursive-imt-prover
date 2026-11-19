@@ -11,6 +11,13 @@ use super::trace_plan::TracePlan;
 use super::whir_plan::invalid;
 use crate::verifier::{VerificationError, VerifierLimits};
 
+#[derive(Clone, Copy)]
+pub enum CoordinateEncoding {
+    Bits,
+    UniformWords,
+    PreprocessedDigits,
+}
+
 /// Public MLE suffix for the little-endian polynomial basis of a Poly64 word.
 #[derive(Clone, Debug)]
 pub struct Poly64WordOpening {
@@ -18,7 +25,43 @@ pub struct Poly64WordOpening {
     pub scale: u64,
 }
 
+pub struct BinaryPolyCoordinateOpeningPlan {
+    protocol: OpeningProtocol,
+    columns: Vec<Vec<Range<usize>>>,
+    widths: Vec<usize>,
+    variables: usize,
+    claims: usize,
+    folds: Vec<Option<Poly64WordOpening>>,
+}
+
+impl CoordinateEncoding {
+    pub fn word(self, widths: &[usize], log_height: usize) -> Option<Poly64WordOpening> {
+        match self {
+            Self::Bits => None,
+            Self::UniformWords => Poly64WordOpening::for_widths(widths),
+            Self::PreprocessedDigits => {
+                let largest = widths.iter().copied().max()?;
+                if !(2..=64).contains(&largest) {
+                    return None;
+                }
+                // Short tables can pad their last digit more cheaply. The trusted
+                // preprocessing commitment binds the unused bits to zero.
+                let bits = match log_height {
+                    0..=6 => 32,
+                    7..=16 => 8,
+                    _ => 2,
+                };
+                Poly64WordOpening::for_widths(&[bits.min(largest.next_power_of_two())])
+            }
+        }
+    }
+}
+
 impl Poly64WordOpening {
+    pub fn digit_bits(&self) -> usize {
+        1 << self.suffix.len()
+    }
+
     pub fn for_widths(widths: &[usize]) -> Option<Self> {
         let &width = widths.first()?;
         if !(2..=64).contains(&width)
@@ -46,15 +89,6 @@ impl Poly64WordOpening {
     }
 }
 
-pub struct BinaryPolyCoordinateOpeningPlan {
-    protocol: OpeningProtocol,
-    columns: Vec<Vec<Range<usize>>>,
-    widths: Vec<usize>,
-    variables: usize,
-    claims: usize,
-    folds: Vec<Option<Poly64WordOpening>>,
-}
-
 impl BinaryPolyCoordinateOpeningPlan {
     /// Column widths and the opening schedule are trusted circuit metadata.
     /// This adapter supports the backend's current-only arithmetic openings.
@@ -69,6 +103,22 @@ impl BinaryPolyCoordinateOpeningPlan {
         logical: &OpeningProtocol,
         widths: &[Vec<usize>],
         fold_words: bool,
+    ) -> Result<Self, VerificationError> {
+        Self::with_encoding(
+            logical,
+            widths,
+            if fold_words {
+                CoordinateEncoding::UniformWords
+            } else {
+                CoordinateEncoding::Bits
+            },
+        )
+    }
+
+    pub fn with_encoding(
+        logical: &OpeningProtocol,
+        widths: &[Vec<usize>],
+        encoding: CoordinateEncoding,
     ) -> Result<Self, VerificationError> {
         let shapes = logical.table_shapes();
         let limits = VerifierLimits::default();
@@ -87,17 +137,14 @@ impl BinaryPolyCoordinateOpeningPlan {
             {
                 return Err(invalid("invalid coordinate column widths"));
             }
-            let fold = if fold_words {
-                Poly64WordOpening::for_widths(widths)
-            } else {
-                None
-            };
+            let fold = encoding.word(widths, shape.num_variables());
+            let digit_bits = fold.as_ref().map_or(1, Poly64WordOpening::digit_bits);
             let mut offset = 0usize;
             let columns = widths
                 .iter()
                 .map(|&width| {
                     let start = offset;
-                    offset += if fold.is_some() { 1 } else { width };
+                    offset += width.div_ceil(digit_bits);
                     start..offset
                 })
                 .collect();
@@ -222,19 +269,26 @@ impl BinaryPolyCoordinateOpeningPlan {
                 let logical = columns
                     .iter()
                     .map(|range| {
-                        if let Some(fold) = fold {
-                            let scale = b.define_const(Poly64::new(fold.scale));
+                        if let Some(word) = fold
+                            && range.len() == 1
+                        {
+                            let scale = b.define_const(Poly64::new(word.scale));
                             let coeffs = values.current()[range.start]
                                 .coefficients()
                                 .map(|v| b.mul(v, scale));
                             return Ok(b.native_poly192_from_coefficients(coeffs));
                         }
+                        let stride = fold.as_ref().map_or(1, Poly64WordOpening::digit_bits);
                         let mut result = [zero; 3];
                         for (k, value) in values.current()[range.clone()].iter().enumerate() {
                             for (slot, &coordinate) in result.iter_mut().zip(value.coefficients()) {
-                                let term = b.mul(basis[k], coordinate);
+                                let term = b.mul(basis[k * stride], coordinate);
                                 *slot = b.add(*slot, term);
                             }
+                        }
+                        if let Some(fold) = fold {
+                            let scale = b.define_const(Poly64::new(fold.scale));
+                            result = result.map(|v| b.mul(v, scale));
                         }
                         b.check_construction_limits()?;
                         Ok(b.native_poly192_from_coefficients(result))

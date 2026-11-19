@@ -202,6 +202,9 @@ impl<EF: ExtensionField<F>, B> MixedTraceCommitment<EF, B> {
                 };
                 let encoding = &self.encodings[table];
                 if let Some(word) = &encoding.word {
+                    if !encoding.columns.iter().all(|range| range.len() == 1) {
+                        return Ok(None);
+                    }
                     let inverse = F::new(word.scale).inverse();
                     return Ok(Some(OpeningBatch::new(
                         values.current().iter().map(|&v| v * inverse).collect(),
@@ -235,7 +238,17 @@ impl<EF: ExtensionField<F>, B> MixedTraceCommitment<EF, B> {
                         .iter()
                         .map(|&column| {
                             if let Some(word) = &encoding.word {
-                                return values[column] * F::new(word.scale);
+                                let stride = word.digit_bits();
+                                let range = encoding.columns[column].clone();
+                                if range.len() == 1 {
+                                    return values[range.start] * F::new(word.scale);
+                                }
+                                let digit_sum = values[range]
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(k, &v)| v * self.basis[k * stride])
+                                    .sum::<EF>();
+                                return digit_sum * F::new(word.scale);
                             }
                             let range = encoding.columns[column].clone();
                             if encoding.widths[column] == 0 {
@@ -271,28 +284,35 @@ impl<EF: ExtensionField<F>, B> MixedTraceCommitment<EF, B> {
         let width = table.num_polys();
         let encoding = &self.encodings[index];
         if let Some(word) = &encoding.word {
-            let word_width = encoding.widths[0];
-            let lanes = WORD_BITS / word_width;
-            let mut packed = vec![0; height.div_ceil(lanes) * width];
+            let digit_bits = word.digit_bits();
+            let lanes = WORD_BITS / digit_bits;
+            let committed = encoding.committed_width;
+            let mask = u64::MAX >> (WORD_BITS - digit_bits);
+            let mut packed = vec![0; height.div_ceil(lanes) * committed];
             packed
-                .par_chunks_mut(width)
+                .par_chunks_mut(committed)
                 .enumerate()
                 .try_for_each(|(block, out)| {
-                    for (col, slot) in out.iter_mut().enumerate() {
+                    for (col, range) in encoding.columns.iter().enumerate() {
                         let view = table.column(col);
+                        let width = encoding.widths[col];
                         for row in block * lanes..((block + 1) * lanes).min(height) {
-                            let value = view.value(row).to_repr();
-                            if word_width < WORD_BITS && value >> word_width != 0 {
+                            let mut value = view.value(row).to_repr();
+                            if width < WORD_BITS && value >> width != 0 {
                                 return Err(());
                             }
-                            *slot |= value << ((row % lanes) * word_width);
+                            let offset = (row % lanes) * digit_bits;
+                            for slot in &mut out[range.clone()] {
+                                *slot |= (value & mask) << offset;
+                                value = value.checked_shr(digit_bits as u32).unwrap_or(0);
+                            }
                         }
                     }
                     Ok(())
                 })
                 .map_err(|()| BooleanTraceCommitmentError::InvalidOpeningProtocol)?;
             return Ok(Table::from_packed_bits(
-                RowMajorMatrix::new(packed, width),
+                RowMajorMatrix::new(packed, committed),
                 num_variables + word.suffix.len(),
             ));
         }

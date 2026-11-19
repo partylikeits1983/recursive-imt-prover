@@ -50,7 +50,7 @@ mod boolean_whir;
 mod boolean_whir_poly;
 mod byte_mmcs;
 mod coordinate_poly;
-pub use coordinate_poly::{BinaryPolyCoordinateOpeningPlan, Poly64WordOpening};
+pub use coordinate_poly::{BinaryPolyCoordinateOpeningPlan, CoordinateEncoding, Poly64WordOpening};
 mod deferred_whir_poly;
 pub use deferred_whir_poly::{BinaryPolyDeferredWhirTraceVerifier, DeferredWhirTargets};
 mod fields;

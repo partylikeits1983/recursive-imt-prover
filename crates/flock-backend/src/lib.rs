@@ -54,6 +54,7 @@ use p3_multi_stark::{
     MultiStarkProof, ProverInstance, ProverInstances, ProvingKey, VerifierInstance,
     VerifierInstances, VerifyingKey, prove, security_report, setup, verify,
 };
+use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_sumcheck::TableShape;
 use packing::Packing;
 use serde::{Deserialize, Serialize};
@@ -397,7 +398,7 @@ impl Prepared {
             }
         });
         if recursive {
-            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1");
+            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1");
         }
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
@@ -430,7 +431,16 @@ impl Prepared {
                         .map(|v| 64 - v.leading_zeros() as usize)
                         .collect()
                 };
-                pp_encoding.push(TableEncoding::new(widths)?);
+                let mode = if recursive {
+                    CoordinateEncoding::PreprocessedDigits
+                } else {
+                    CoordinateEncoding::Bits
+                };
+                pp_encoding.push(TableEncoding::with_encoding(
+                    widths,
+                    (pp.values.len() / pp.width).ilog2() as usize,
+                    mode,
+                )?);
             } else {
                 identity.update(0u64.to_le_bytes());
             }

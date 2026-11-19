@@ -17,6 +17,7 @@ use old_whir::{
     pcs::proof::{PcsProof, WhirProof},
 };
 use p3_circuit::{CircuitBuilder, ExprId};
+use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_recursion::{
     BinaryTower128Challenger,
     pcs::binary::{BinaryPolyCoordinateOpeningPlan, BinaryPolyDeferredWhirTraceVerifier},
@@ -79,9 +80,18 @@ impl Verifier {
             .filter(|(a, _)| a.preprocessed_width() > 0)
             .map(|(a, &h)| TableShape::new(h, a.preprocessed_width()))
             .collect();
-        let fold = self.data.format != super::FORMAT;
-        let main = plan(&shapes, &self.data.main_coordinates, fold)?;
-        let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates, false)?;
+        let main_encoding = if self.data.format == super::FORMAT {
+            CoordinateEncoding::Bits
+        } else {
+            CoordinateEncoding::UniformWords
+        };
+        let pp_encoding = if self.data.format == super::DIGIT_FORMAT {
+            CoordinateEncoding::PreprocessedDigits
+        } else {
+            CoordinateEncoding::Bits
+        };
+        let main = plan(&shapes, &self.data.main_coordinates, main_encoding)?;
+        let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates, pp_encoding)?;
         let configs = [config(main.num_variables())?, config(pp.num_variables())?];
         let parameters =
             |i, plan: &BinaryPolyCoordinateOpeningPlan, widths| CoordinatePcsParameters {
@@ -95,7 +105,7 @@ impl Verifier {
             .key
             .preprocessed_commitment()
             .ok_or_else(|| anyhow::anyhow!("missing checkpoint preprocessing"))?;
-        let verifier = BinaryPolyCoordinateWhirVerifier::with_word_openings(
+        let verifier = BinaryPolyCoordinateWhirVerifier::with_encodings(
             &airs.iter().collect::<Vec<_>>(),
             &heights,
             parameters(0, &main, &self.data.main_coordinates),
@@ -108,7 +118,7 @@ impl Verifier {
                 max_rounds: 320,
                 ..VerifierLimits::default()
             },
-            fold,
+            [main_encoding, pp_encoding],
         )?;
         Ok(RecursiveArithmetic {
             verifier,
@@ -220,7 +230,7 @@ impl RecursiveArithmetic {
 fn plan(
     shapes: &[TableShape],
     widths: &[Vec<usize>],
-    fold: bool,
+    mode: CoordinateEncoding,
 ) -> Result<BinaryPolyCoordinateOpeningPlan> {
     let protocol = OpeningProtocol::new(
         shapes
@@ -228,8 +238,8 @@ fn plan(
             .map(|&s| TableSpec::new(s, vec![OpeningBatch::new((0..s.width()).collect(), vec![])]))
             .collect(),
     );
-    Ok(BinaryPolyCoordinateOpeningPlan::with_word_openings(
-        &protocol, widths, fold,
+    Ok(BinaryPolyCoordinateOpeningPlan::with_encoding(
+        &protocol, widths, mode,
     )?)
 }
 

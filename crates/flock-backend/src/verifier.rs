@@ -12,6 +12,7 @@ use old_binary_field::Poly64 as OldF;
 use p3_field::PrimeCharacteristicRing;
 use p3_flock::Circuit as BooleanCircuit;
 use p3_multi_stark::{VerifierInstance, VerifierInstances, VerifyingKey, security_report, verify};
+use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_sumcheck::TableShape;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
@@ -28,6 +29,7 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const DIGIT_FORMAT: &str = "imt-binary-trusted-verifier-v7";
 const BRIDGE_FORMAT: &str = "imt-binary-trusted-verifier-v6";
 const WORD_FORMAT: &str = "imt-binary-trusted-verifier-v5";
 const FORMAT: &str = "imt-binary-trusted-verifier-v4";
@@ -73,7 +75,7 @@ impl Prepared {
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
             format: if self.direct_bridge {
-                BRIDGE_FORMAT
+                DIGIT_FORMAT
             } else {
                 FORMAT
             }
@@ -106,7 +108,7 @@ impl Verifier {
             self.data.backend == output.backend
                 && self.data.format
                     == if output.direct_bridge {
-                        BRIDGE_FORMAT
+                        DIGIT_FORMAT
                     } else {
                         FORMAT
                     }
@@ -154,8 +156,10 @@ impl Verifier {
         ensure!(rest.is_empty(), "trailing trusted verifier data");
         ensure!(
             (data.format == FORMAT
-                || (matches!(data.format.as_str(), WORD_FORMAT | BRIDGE_FORMAT)
-                    && data.backend == HashBackend::Checkpoint))
+                || (matches!(
+                    data.format.as_str(),
+                    WORD_FORMAT | BRIDGE_FORMAT | DIGIT_FORMAT
+                ) && data.backend == HashBackend::Checkpoint))
                 && data.binding == binding,
             "trusted verifier configuration mismatch"
         );
@@ -221,7 +225,18 @@ impl Verifier {
             data.preprocessed_coordinates
                 .iter()
                 .cloned()
-                .map(TableEncoding::new)
+                .zip(&pp)
+                .map(|(widths, shape)| {
+                    TableEncoding::with_encoding(
+                        widths,
+                        shape.num_variables(),
+                        if data.format == DIGIT_FORMAT {
+                            CoordinateEncoding::PreprocessedDigits
+                        } else {
+                            CoordinateEncoding::Bits
+                        },
+                    )
+                })
                 .collect::<Result<_>>()?,
         )?;
         let public_count = data.airs.iter().map(|a| a.public_count).max().unwrap();
@@ -239,7 +254,7 @@ impl Verifier {
             let scheme = LinkedBatch::with_bridge(
                 data.airs[data.hash_index].log_height,
                 config.main_log2_candidates,
-                data.format == BRIDGE_FORMAT,
+                matches!(data.format.as_str(), BRIDGE_FORMAT | DIGIT_FORMAT),
             )?;
             ensure!(
                 config.initial_codeword_cells + scheme.initial_codeword_cells <= 1 << 30,

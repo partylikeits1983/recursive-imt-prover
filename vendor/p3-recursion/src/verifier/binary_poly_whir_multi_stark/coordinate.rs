@@ -23,7 +23,7 @@ use crate::{
     BinaryTower128Challenger,
     pcs::binary::{
         BinaryPolyCoordinateOpeningPlan, BinaryPolyDeferredWhirTraceVerifier,
-        BinaryPolyGenericSumcheckProofTargets, DeferredWhirTargets,
+        BinaryPolyGenericSumcheckProofTargets, CoordinateEncoding, DeferredWhirTargets,
     },
 };
 
@@ -93,6 +93,33 @@ impl BinaryPolyCoordinateWhirVerifier {
         A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
         C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
     {
+        let main_encoding = if fold_main {
+            CoordinateEncoding::UniformWords
+        } else {
+            CoordinateEncoding::Bits
+        };
+        Self::with_encodings(
+            airs,
+            heights,
+            main,
+            preprocessing,
+            limits,
+            [main_encoding, CoordinateEncoding::Bits],
+        )
+    }
+
+    pub fn with_encodings<A, C>(
+        airs: &[&A],
+        heights: &[usize],
+        main: CoordinatePcsParameters<'_, C>,
+        preprocessing: Option<(CoordinatePcsParameters<'_, C>, MerkleCap<F, [u8; 32]>)>,
+        limits: &VerifierLimits,
+        encodings: [CoordinateEncoding; 2],
+    ) -> Result<Self, VerificationError>
+    where
+        A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
+        C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+    {
         let (relation, main_protocol, pp_protocol) = PolyMultiStarkRelation::build(
             airs,
             heights,
@@ -107,11 +134,8 @@ impl BinaryPolyCoordinateWhirVerifier {
             ));
         }
         let build = |protocol, parameters: CoordinatePcsParameters<'_, C>, fold| {
-            let columns = BinaryPolyCoordinateOpeningPlan::with_word_openings(
-                &protocol,
-                parameters.widths,
-                fold,
-            )?;
+            let columns =
+                BinaryPolyCoordinateOpeningPlan::with_encoding(&protocol, parameters.widths, fold)?;
             let pcs = BinaryPolyDeferredWhirTraceVerifier::new(
                 parameters.config,
                 columns.protocol().clone(),
@@ -125,7 +149,7 @@ impl BinaryPolyCoordinateWhirVerifier {
             .checked_shl(main.cap_height as u32)
             .filter(|&n| n <= limits.max_cap_roots)
             .ok_or_else(|| invalid("invalid coordinate cap height"))?;
-        let main = build(main_protocol, main, fold_main)?;
+        let main = build(main_protocol, main, encodings[0])?;
         let preprocessed = match (preprocessing, pp_protocol) {
             (Some((parameters, cap)), Some(protocol)) => {
                 if parameters.cap_height >= usize::BITS as usize
@@ -133,7 +157,7 @@ impl BinaryPolyCoordinateWhirVerifier {
                 {
                     return Err(invalid("incorrect preprocessing cap size"));
                 }
-                Some((build(protocol, parameters, false)?, cap))
+                Some((build(protocol, parameters, encodings[1])?, cap))
             }
             (None, None) => None,
             _ => return Err(invalid("coordinate preprocessing mismatch")),
@@ -269,7 +293,10 @@ impl BinaryPolyCoordinateWhirVerifier {
             proof.preprocessed.as_ref(),
             reduction.preprocessed_points.as_ref(),
         ) {
-            let (coordinates, next) = verifier.pcs.verify_at_native(b, ch, cap, points, proof)?;
+            let points = verifier
+                .columns
+                .opening_points(points, |raw| b.native_poly192_constant([raw, 0, 0]))?;
+            let (coordinates, next) = verifier.pcs.verify_at_native(b, ch, cap, &points, proof)?;
             ch = next;
             Some(verifier.columns.recombine_native(b, &coordinates)?)
         } else {
@@ -343,12 +370,20 @@ impl BinaryPolyCoordinateWhirVerifier {
             .into_iter()
             .map(Point::new)
             .collect();
-        let preprocessed_points = self.relation.input.preprocessed_schedule.as_ref().map(|s| {
-            s.points(&heights, reduction.point.as_slice(), None)
-                .into_iter()
-                .map(Point::new)
-                .collect()
-        });
+        let preprocessed_points = self
+            .relation
+            .input
+            .preprocessed_schedule
+            .as_ref()
+            .zip(self.preprocessed.as_ref())
+            .map(|(schedule, (verifier, _))| {
+                let points = schedule.points(&heights, reduction.point.as_slice(), None);
+                verifier
+                    .columns
+                    .opening_points(&points, |v| E::from(F::new(v)))
+                    .map(|points| points.into_iter().map(Point::new).collect())
+            })
+            .transpose()?;
         Ok(CoordinateWhirInput {
             private_values,
             main_points,

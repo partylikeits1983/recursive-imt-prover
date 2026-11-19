@@ -4,6 +4,7 @@ use p3_commit::MultilinearPcs;
 use p3_field::{BasedVectorSpace, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_multilinear_util::{point::Point, poly::Poly};
+use p3_recursion::pcs::binary::CoordinateEncoding;
 use p3_sumcheck::{
     OpeningBatch, OpeningEvals, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec,
     layout::Table,
@@ -305,6 +306,60 @@ fn word_openings_authenticate_logical_values_and_reject_invalid_requests() {
             invalid[250] = F::new(1u64 << bits);
             let invalid = Table::new(RowMajorMatrix::new(invalid, 512));
             assert!(scheme.commit(vec![invalid], &mut ch).is_err());
+        }
+    }
+}
+
+#[test]
+fn preprocessing_digits_preserve_zero_and_partial_columns() {
+    let widths = vec![0, 1, 17, 24, 64];
+    let shape = TableShape::new(7, widths.len());
+    let points = [Point::new(
+        (1..=7).map(|i| E::from(F::new(37 * i))).collect(),
+    )];
+    let protocol = OpeningProtocol::new(vec![TableSpec::new(
+        shape,
+        vec![OpeningBatch::new(vec![4, 2, 0, 3, 1], vec![])],
+    )]);
+    let values: Vec<_> = widths
+        .iter()
+        .flat_map(|&width| {
+            (0..128u64).map(move |i| {
+                F::new(
+                    i.wrapping_mul(0x9e3779b97f4a7c15)
+                        & u64::MAX.checked_shr((64 - width) as u32).unwrap_or(0),
+                )
+            })
+        })
+        .collect();
+    let expected = [4, 2, 0, 3, 1]
+        .map(|col| Poly::new(values[col * 128..(col + 1) * 128].to_vec()).eval_base(&points[0]));
+    for (height, bits) in [(4, 32), (16, 8), (17, 2)] {
+        let encoding = TableEncoding::with_encoding(
+            widths.clone(),
+            height,
+            CoordinateEncoding::PreprocessedDigits,
+        )
+        .unwrap();
+        assert_eq!(1usize << encoding.word.as_ref().unwrap().suffix.len(), bits);
+        let scheme = pcs(&[shape], vec![encoding]).unwrap();
+        let table = |values| Table::new(RowMajorMatrix::new(values, 128));
+        let mut ch = challenger(b"fixed preprocessing");
+        let (cap, data) = scheme.commit(vec![table(values.clone())], &mut ch).unwrap();
+        let proof = scheme.open_at(data, &protocol, &points, &mut ch).unwrap();
+        let mut ch = challenger(b"fixed preprocessing");
+        scheme.observe_commitment(&cap, &mut ch);
+        assert_eq!(
+            scheme
+                .verify_at(&cap, &proof, &protocol, &points, &mut ch)
+                .unwrap()[0]
+                .current(),
+            expected
+        );
+        for col in [0, 1, 2] {
+            let mut wrong = values.clone();
+            wrong[col * 128] = F::new(1 << widths[col]);
+            assert!(scheme.commit(vec![table(wrong)], &mut ch).is_err());
         }
     }
 }

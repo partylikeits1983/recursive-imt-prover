@@ -26,7 +26,9 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_recursion::{
     BinaryTower128Challenger,
-    pcs::binary::{BinaryPolyCoordinateOpeningPlan, BinaryPolyDeferredWhirTraceVerifier},
+    pcs::binary::{
+        BinaryPolyCoordinateOpeningPlan, BinaryPolyDeferredWhirTraceVerifier, CoordinateEncoding,
+    },
 };
 use p3_sumcheck::{
     OpeningBatch, OpeningProtocol, PrescribedPointPcs, TableShape, TableSpec, layout::Table,
@@ -68,6 +70,16 @@ fn accepts(circuit: &Circuit<CF>, public: &[CF], private: &[CF]) -> bool {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "recursive PCS proof; run with --release")]
 fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
+    for mode in [
+        CoordinateEncoding::UniformWords,
+        CoordinateEncoding::PreprocessedDigits,
+    ] {
+        verify_encoded_openings(mode)?;
+    }
+    Ok(())
+}
+
+fn verify_encoded_openings(mode: CoordinateEncoding) -> Result<()> {
     let widths = vec![
         vec![0, 1, 16, 64],
         vec![1, 1, 0],
@@ -117,13 +129,14 @@ fn coordinate_adapter_authenticates_real_mixed_pcs_openings() -> Result<()> {
             })
             .collect(),
     );
-    let plan = BinaryPolyCoordinateOpeningPlan::with_word_openings(&logical, &widths, true)?;
+    let plan = BinaryPolyCoordinateOpeningPlan::with_encoding(&logical, &widths, mode)?;
     let pcs = pcs(
         &shapes,
         widths
             .iter()
             .cloned()
-            .map(|widths| TableEncoding::with_word_openings(widths, true))
+            .zip(logs)
+            .map(|(widths, log)| TableEncoding::with_encoding(widths, log, mode))
             .collect::<Result<_>>()?,
     )?;
     let mut random = challenger(b"coordinate-test-witness");

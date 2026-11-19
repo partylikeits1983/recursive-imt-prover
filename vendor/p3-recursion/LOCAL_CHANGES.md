@@ -99,3 +99,9 @@ Unused development dependencies removed: `p3-poseidon2`.
 The coordinate verifier can open uniform 2–64-bit Poly64 columns at a fixed
 multilinear suffix and recover each field value with one scaling factor.
 The verifier key selects the encoding.
+
+The binary coordinate verifier can open trusted preprocessing in fixed-width
+digits. For digit width `k`, it authenticates each digit at the word-opening
+point and combines the results using the Poly64 basis weights `X^(j*k)`.
+The trusted preprocessing commitment fixes padding to zero. Main witness
+columns continue to use their declared coordinate bounds.

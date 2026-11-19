@@ -1,7 +1,7 @@
 //! Trusted, injective coordinate encodings for Poly64 trace columns.
 use anyhow::{Result, ensure};
 use core::ops::Range;
-use p3_recursion::pcs::binary::Poly64WordOpening;
+use p3_recursion::pcs::binary::{CoordinateEncoding, Poly64WordOpening};
 use p3_sumcheck::TableShape;
 
 #[derive(Clone, Debug)]
@@ -19,25 +19,39 @@ impl TableEncoding {
     }
 
     pub fn with_word_openings(widths: Vec<usize>, fold: bool) -> Result<Self> {
-        ensure!(!widths.is_empty(), "empty coordinate encoding");
-        let word = if fold {
-            Poly64WordOpening::for_widths(&widths)
+        let encoding = if fold {
+            CoordinateEncoding::UniformWords
         } else {
-            None
+            CoordinateEncoding::Bits
         };
+        Self::with_encoding(widths, 0, encoding)
+    }
+
+    pub fn with_encoding(
+        widths: Vec<usize>,
+        log_height: usize,
+        mode: CoordinateEncoding,
+    ) -> Result<Self> {
+        ensure!(!widths.is_empty(), "empty coordinate encoding");
+        let word = mode.word(&widths, log_height);
+        let digit_bits = word.as_ref().map_or(1, Poly64WordOpening::digit_bits);
         let mut committed_width = 0usize;
         let mut columns = Vec::with_capacity(widths.len());
         for &width in &widths {
             ensure!(width <= 64, "coordinate width outside 0..=64");
             let end = committed_width
-                .checked_add(if word.is_some() { 1 } else { width })
+                .checked_add(width.div_ceil(digit_bits))
                 .ok_or_else(|| anyhow::anyhow!("coordinate width overflow"))?;
             columns.push(committed_width..end);
             committed_width = end;
         }
         Ok(Self {
+            boolean_columns: if word.is_some() {
+                0
+            } else {
+                widths.iter().take_while(|&&width| width == 1).count()
+            },
             word,
-            boolean_columns: widths.iter().take_while(|&&width| width == 1).count(),
             widths,
             columns,
             // An all-zero table keeps one dummy committed bit column.
