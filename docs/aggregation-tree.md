@@ -90,7 +90,7 @@ The arithmetic PCS authenticates the left side. The Keccak proof checks a random
 combination of the 116 right sides using seven fresh port coordinates. Both
 commitments precede the row challenges. The extra row coordinate and one fewer
 port coordinate preserve the degree bound used for the linkage check. Snapshot
-version 6 selects this layout and its transcript domain. Earlier snapshots keep
+versions 6 and 7 use this bridge layout. Earlier snapshots keep
 their original verification rules.
 
 ## Authenticated cyclic authority
@@ -139,10 +139,10 @@ All runs produced the same 1,396,679-byte proof and verifier key.
 
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It constructed the merge circuit once and checked the same
-key at all five levels. A fresh process verified the 976,533-byte proof against the ordered
+key at all five levels. A fresh process verified the 895,139-byte proof against the ordered
 statements using only the trusted verifier files. The test rejected corrupted
 proofs, altered statements and a foreign authority.
-[Raw measurements and validation](../benchmarks/binary/tree-merge/extension-products-sixty-four.json).
+[Raw measurements and validation](../benchmarks/binary/tree-merge/preprocessing-digits-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.

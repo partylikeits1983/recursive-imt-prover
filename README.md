@@ -76,31 +76,30 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Each row measures a complete depth-32 tree with 64 child proofs on an Apple M2
-Pro with 16 GiB of memory and eight Rayon workers. One aggregation node runs at
-a time. Child, first-pair and merge times are per-proof medians. The final
-verification time includes process startup and trusted-key loading.
+Each row is one complete 64-child tree on an Apple M2 Pro with 16 GiB of memory.
+One node ran at a time. Child, first-pair and merge times are per-proof
+medians. Fresh verification includes process startup and trusted-key loading.
 
-| Recursive verifier | Child proving | First pair | Recursive merge | All 63 aggregations | Final file | Fresh verification |
-|---|---:|---:|---:|---:|---:|---:|
-| Scalar field gates | 2.55 s | 15.90 s | 15.60 s | 16 min 45 s | 962,180 B | 110 ms |
-| Cubic product rows | 2.60 s | 12.47 s | 12.45 s | 13 min 10 s | 976,533 B | 115 ms |
+| Recursive verifier | Workers | Child proving | First pair | Merge | All 63 aggregations | Final file | Fresh verification |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Cubic product rows | 8 | 2.60 s | 12.47 s | 12.45 s | 13 min 10 s | 976,533 B | 115 ms |
+| Preprocessing digits and shared gate tables | 12 | 2.33 s | 11.38 s | 10.85 s | 11 min 47 s | 895,139 B | 110 ms |
 
-Cubic product rows reduced the largest commitment from 268,435,456 to
-134,217,728 codeword cells. Across 31 merges, latency ranged from
-12.07 to 14.53 seconds. The complete run took
-16 min 48 s, including setup, child proving, child verification and final
-verification, excluding negative tests. The final proof was 1,122,326 bytes before
-compression. Peak process-tree physical footprint was 13.0 GB, including compressed
-or swapped memory. The targets are 10 seconds per merge and 60 seconds to
-aggregate 64 existing proofs.
-[Cubic product measurements](benchmarks/binary/tree-merge/extension-products-sixty-four.json) and
-[scalar baseline](benchmarks/binary/tree-merge/direct-bridge-sixty-four.json).
+With eight workers in both eight-child runs, the new layout reduced the median
+merge from 12.60 s to 10.88 s. In the 64-child run with 12 workers, merges
+ranged from 10.40 to 12.56 s. The longest chain of six dependent aggregation
+nodes took 68.81 s when their individual timings were added. Setup, child proving
+and verification, aggregation and independent verification took 15 min 08 s in
+total, excluding negative tests. The final proof was 954,927 bytes before
+compression. Peak process-tree physical footprint was 13.0 GB. The targets are
+10 seconds per merge and 60 seconds to aggregate 64 existing proofs.
+[Measurements and layout comparisons](benchmarks/binary/tree-merge/preprocessing-digits-sixty-four.json)
+and [previous 64-child run](benchmarks/binary/tree-merge/extension-products-sixty-four.json).
 
 ## Running locally
 
 Requires Rust 1.98.1. The tree prover uses the available CPU count, up to 64
-workers. Use `--threads 8` to reproduce the benchmark. Use fresh output directories.
+workers. Use `--threads 12` to reproduce the latest benchmark. Use fresh output directories.
 The full tree test is expensive and is excluded from routine CI.
 
 ```sh
@@ -110,7 +109,7 @@ cargo test --locked --release --workspace
 cargo run --locked --release --bin tree-demo -- --batch-size 8 --out run/tree8
 
 # Full acceptance test: 64 children, five merge levels and isolated verification.
-RAYON_NUM_THREADS=8 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
+RAYON_NUM_THREADS=12 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 
 # Requires only the final proof, ordered statements and trusted final key files.
 cargo run --locked --release --bin tree-demo -- --verify --out run/tree8
