@@ -56,6 +56,13 @@ the previous accumulator plus `s` times the packed word. Active inputs are
 bits and unused inputs are zero. If the table fills, the longest chains take
 priority. The remaining operations and their copy constraints use native gates.
 
+The recursive verifier multiplies Poly192 elements as triples of Poly64 words
+with `Y³ = Y + 1`. One row checks the three product coefficients and links the
+six input words and three outputs to the wire bus. Setup matches each native
+gate, wire and coefficient before replacing a nine- or ten-gate sequence. Every
+intermediate must occur only within that sequence. Shared wires keep their
+external copy constraints. Both templates reserve 131,072 rows for products.
+
 Setup checks each gate's wire IDs, coefficient and operation against its fixed
 table layout. For a pair of Boolean selects that swap two inputs, both inputs
 fit within the wider of the two output bounds. Constant multiply-add rows

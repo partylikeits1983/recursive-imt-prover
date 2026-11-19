@@ -50,11 +50,11 @@ const FIVE_WIRE_GATES: [usize; 14] = [ID, ID, ID, ID, ID, 0, 0, 0, 0, 0, 0, 1, 0
 
 pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
     GateLayout::new([16, 16, 16, 0, 16], 20, SMALL_OUTPUT),
-    GateLayout::new([64, 64, 64, 0, 64], 21, SELECT_OR_PRODUCT),
-    GateLayout::new([64, 64, 0, 0, 64], 19, PRODUCT),
+    GateLayout::new([64, 64, 64, 0, 64], 20, SELECT_OR_PRODUCT),
+    GateLayout::new([64, 64, 0, 0, 64], 18, PRODUCT),
     GateLayout::new([64, 0, 64, 0, 64], 20, constant_gates(17)),
     GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(64)),
-    GateLayout::new([64, 64, 64, 64, 64], 18, FIVE_WIRE_GATES),
+    GateLayout::new([64, 64, 64, 64, 64], 17, FIVE_WIRE_GATES),
 ];
 
 impl GateShard {

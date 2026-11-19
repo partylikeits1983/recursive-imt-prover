@@ -5,6 +5,7 @@ use crate::{
     fanout::FanoutShard,
     gates::GateShard,
     packing::{self, PackedShard},
+    products::{self, Products},
     recursive_layout,
 };
 use anyhow::{Result, ensure};
@@ -33,6 +34,7 @@ pub(super) enum WitnessSource<'a> {
     Fanout(&'a FanoutShard),
     Gates(&'a GateShard),
     Packed(&'a PackedShard),
+    Products(&'a Products),
     Public,
     Keccak,
     Bridge,
@@ -64,6 +66,7 @@ struct InstanceBinding {
 enum Source {
     Native(NativeBusCircuitAir<OldF>),
     Packed(Arc<PackedShard>),
+    Products(Arc<Products>),
 }
 
 impl ImportedAir {
@@ -80,13 +83,14 @@ impl Source {
         match self {
             Self::Native(a) => a.width(),
             Self::Packed(_) => packing::WIDTH,
+            Self::Products(_) => products::WIDTH,
         }
     }
 
     fn num_public_values(&self) -> usize {
         match self {
             Self::Native(a) => a.num_public_values(),
-            Self::Packed(_) => 0,
+            Self::Packed(_) | Self::Products(_) => 0,
         }
     }
 
@@ -96,6 +100,7 @@ impl Source {
                 .preprocessed_trace()
                 .map(|m| RowMajorMatrix::new(m.values.into_iter().map(convert).collect(), m.width)),
             Self::Packed(shard) => Some(shard.preprocessing()),
+            Self::Products(shard) => Some(shard.preprocessing()),
         }
     }
 }
@@ -109,9 +114,43 @@ impl Chip {
             (Some(shard), _, _) => WitnessSource::Fanout(shard),
             (_, Some(shard), _) => WitnessSource::Gates(shard),
             (_, _, Source::Packed(shard)) => WitnessSource::Packed(shard),
+            (_, _, Source::Products(s)) => WitnessSource::Products(s),
             _ if air.public_table => WitnessSource::Public,
             _ => WitnessSource::Bridge,
         }
+    }
+
+    pub fn products(shard: Arc<Products>) -> Self {
+        let main =
+            |i| SymbolicExpression::from(SymbolicVariable::new(BaseEntry::Main { offset: 0 }, i));
+        let pp = |i| {
+            SymbolicExpression::from(SymbolicVariable::new(
+                BaseEntry::Preprocessed { offset: 0 },
+                i,
+            ))
+        };
+        let cross = main(1) * main(5) + main(2) * main(4);
+        let high = main(2) * main(5);
+        let constraints = vec![
+            main(6) - main(0) * main(3) - cross.clone(),
+            main(7) - main(0) * main(4) - main(1) * main(3) - cross - high.clone(),
+            main(8) - main(0) * main(5) - main(1) * main(4) - main(2) * main(3) - high,
+        ];
+        let interactions = (0..products::WIDTH)
+            .map(|i| SymbolicBusInteraction {
+                bus_name: "imt.witness".to_owned(),
+                direction: OldDirection::Push,
+                fields: vec![pp(i), main(i)],
+                activation: OldActivation::Boolean(pp(products::WIDTH)),
+            })
+            .collect();
+        Self::synthetic(
+            Source::Products(shard),
+            products::LOG_HEIGHT,
+            products::WIDTH + 1,
+            constraints,
+            interactions,
+        )
     }
 
     pub fn packed(shard: Arc<PackedShard>) -> Self {
@@ -141,6 +180,32 @@ impl Chip {
             }
         }
         constraints.push(equation);
+        let interactions = (0..packing::WIDTH)
+            .map(|i| SymbolicBusInteraction {
+                bus_name: "imt.witness".to_owned(),
+                direction: OldDirection::Push,
+                fields: vec![pp(i), main(i)],
+                activation: OldActivation::Boolean(pp(active + i)),
+            })
+            .collect();
+        let log_height = shard.log_height;
+        let pp_width = shard.pp_width();
+        Self::synthetic(
+            Source::Packed(shard),
+            log_height,
+            pp_width,
+            constraints,
+            interactions,
+        )
+    }
+
+    fn synthetic(
+        source: Source,
+        log_height: usize,
+        pp_width: usize,
+        constraints: Vec<SymbolicExpression<OldF>>,
+        interactions: Vec<SymbolicBusInteraction<OldF>>,
+    ) -> Self {
         Self::Native(Box::new(ImportedAir {
             copies: CopySelectors {
                 columns: vec![],
@@ -155,18 +220,11 @@ impl Chip {
             shard: None,
             gates: None,
             successor_bus: String::new(),
-            preprocessed_map: (0..shard.pp_width()).map(Some).collect(),
-            log_height: shard.log_height,
+            preprocessed_map: (0..pp_width).map(Some).collect(),
+            log_height,
             constraints,
-            interactions: (0..packing::WIDTH)
-                .map(|i| SymbolicBusInteraction {
-                    bus_name: "imt.witness".to_owned(),
-                    direction: OldDirection::Push,
-                    fields: vec![pp(i), main(i)],
-                    activation: OldActivation::Boolean(pp(active + i)),
-                })
-                .collect(),
-            source: Source::Packed(shard),
+            interactions,
+            source,
         }))
     }
 
@@ -373,6 +431,10 @@ impl Chip {
                 "recursive public IDs must be committed"
             );
             vec![id; a.source.num_public_values()]
+        } else if let Source::Products(_) = &a.source {
+            let mut widths = vec![id; products::WIDTH];
+            widths.push(1);
+            widths
         } else if let Source::Packed(shard) = &a.source {
             let mut widths = vec![1; shard.pp_width()];
             widths[..packing::WIDTH].fill(id);

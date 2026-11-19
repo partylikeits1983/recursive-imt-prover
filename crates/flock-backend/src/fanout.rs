@@ -20,9 +20,9 @@ pub const RECURSIVE_LAYOUT: [(usize, usize, usize, bool); 10] = [
     (16, 4, 19, false),
     (16, 8, 11, false),
     (16, 16, 15, true),
-    (64, 4, 20, false),
+    (64, 4, 19, false),
     (64, 8, 18, false),
-    (64, 16, 18, true),
+    (64, 16, 17, true),
 ];
 
 pub struct FanoutShard {
@@ -148,7 +148,7 @@ pub fn coordinate_widths(
 pub fn partition(
     widths: &[u8],
     fanout: &[OldF],
-    removed_ids: &[bool],
+    removed_uses: &[u32],
     recursive: bool,
 ) -> Result<(Vec<Arc<FanoutShard>>, CopyPruner)> {
     ensure!(fanout.len().is_multiple_of(3), "incomplete fanout row");
@@ -189,7 +189,7 @@ pub fn partition(
                 &mut shards,
                 &mut copies,
                 widths,
-                removed_ids,
+                removed_uses,
                 (previous, start, count),
             )?;
             count = 0;
@@ -205,7 +205,7 @@ pub fn partition(
             &mut shards,
             &mut copies,
             widths,
-            removed_ids,
+            removed_uses,
             (previous, start, count),
         )?;
     }
@@ -295,12 +295,16 @@ fn record_group(
     shards: &mut [FanoutShard],
     copies: &mut CopyPruner,
     widths: &[u8],
-    removed_ids: &[bool],
+    removed_uses: &[u32],
     (id, start, count): (usize, usize, usize),
 ) -> Result<()> {
-    if removed_ids.get(id) == Some(&true) {
-        ensure!(id != 0 && count == 2, "packing removed a live witness");
-    } else if !copies.remove_group(id, count) {
+    let removed = removed_uses.get(id).copied().unwrap_or(0) as usize;
+    ensure!(
+        removed <= count && (id != 0 || removed == 0),
+        "invalid removed wire uses"
+    );
+    let count = count - removed;
+    if count > 0 && !copies.remove_group(id, count) {
         append_group(shards, widths[id], id, start, count)?;
     }
     Ok(())

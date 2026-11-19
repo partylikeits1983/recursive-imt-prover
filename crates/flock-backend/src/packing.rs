@@ -6,7 +6,7 @@ use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
 
-use crate::F;
+use crate::{F, products::Products};
 
 #[cfg(test)]
 mod tests;
@@ -18,7 +18,8 @@ pub const COEFFICIENTS: usize = WIDTH;
 pub struct Packing {
     pub shard: Option<Arc<PackedShard>>,
     pub removed_rows: Vec<bool>,
-    pub removed_ids: Vec<bool>,
+    pub removed_uses: Vec<u32>,
+    pub products: Option<Arc<Products>>,
 }
 
 pub struct PackedShard {
@@ -55,7 +56,8 @@ impl Packing {
         let mut result = Self {
             shard: None,
             removed_rows: vec![false; gates.len() / pp_width],
-            removed_ids: vec![false; widths.len()],
+            removed_uses: vec![0; widths.len()],
+            products: None,
         };
         // The pinned full native gate schema has five IDs, a constant and eight selectors.
         // Other compact schemas keep their original rows.
@@ -143,7 +145,7 @@ impl Packing {
         }
         for row in &packed {
             for &source in &row.sources[..row.sources.len() - 1] {
-                result.removed_ids[rows[source as usize][4].to_repr() as usize] = true;
+                result.removed_uses[rows[source as usize][4].to_repr() as usize] = 2;
             }
         }
         if geometric || !packed.is_empty() {
@@ -155,6 +157,15 @@ impl Packing {
                 log_height,
                 geometric,
             }));
+        }
+        if geometric {
+            result.products = Some(Arc::new(Products::extract(
+                rows,
+                &counts,
+                widths,
+                &mut result.removed_rows,
+                &mut result.removed_uses,
+            )?));
         }
         Ok(result)
     }

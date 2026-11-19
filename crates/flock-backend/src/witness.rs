@@ -157,6 +157,13 @@ impl Prepared {
                             *value = read(row.id);
                         }
                     }
+                    WitnessSource::Products(shard) => {
+                        for (r, ids) in shard.rows.iter().enumerate() {
+                            for (column, &id) in ids.iter().enumerate() {
+                                output[column * height + r] = read(id);
+                            }
+                        }
+                    }
                     WitnessSource::Packed(shard) => {
                         for (r, row) in shard.rows.iter().enumerate() {
                             for (column, &id) in row.ids.iter().enumerate() {

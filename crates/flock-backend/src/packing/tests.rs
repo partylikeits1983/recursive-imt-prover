@@ -100,7 +100,7 @@ fn packed_chains_preserve_equations_and_every_retained_copy() -> Result<()> {
             .collect::<Vec<_>>(),
         [16, 16, 5]
     );
-    assert_eq!(packing.removed_ids.iter().filter(|&&v| v).count(), 34);
+    assert_eq!(packing.removed_uses.iter().filter(|&&v| v != 0).count(), 34);
     assert_eq!(packing.removed_rows.iter().filter(|&&v| v).count(), 37);
 
     let air = Chip::packed(shard.clone());
@@ -110,7 +110,7 @@ fn packed_chains_preserve_equations_and_every_retained_copy() -> Result<()> {
     for row in fixture.gates.as_chunks::<14>().0.iter().take(37) {
         for column in [0, 2, 4] {
             let id = row[column].to_repr() as usize;
-            if !packing.removed_ids[id] {
+            if packing.removed_uses[id] == 0 {
                 original.push((id, fixture.values[id].to_repr()));
             }
         }
@@ -151,7 +151,7 @@ fn shared_intermediates_and_other_gate_shapes_are_preserved() -> Result<()> {
         .fanout
         .extend([live as u64, 1, 0].map(OldF::from_repr));
     let packing = fixture.pack(14, 5, None)?;
-    assert!(!packing.removed_ids[live]);
+    assert!(packing.removed_uses[live] == 0);
     assert!(
         packing
             .shard
@@ -189,7 +189,7 @@ fn scaled_bit_words_preserve_partial_rows_and_general_coefficients() -> Result<(
     assert!(limited.removed_rows[16..].iter().all(|v| !v));
     for row in &f.gates.as_chunks::<14>().0[16..37] {
         for column in [0, 2, 4] {
-            assert!(!limited.removed_ids[row[column].to_repr() as usize]);
+            assert!(limited.removed_uses[row[column].to_repr() as usize] == 0);
         }
     }
     let packing = f.pack(14, 5, Some(4))?;
@@ -207,7 +207,7 @@ fn scaled_bit_words_preserve_partial_rows_and_general_coefficients() -> Result<(
         if !removed {
             let row = &f.gates.as_chunks::<14>().0[i];
             for slot in [0, 2, 4] {
-                assert!(!packing.removed_ids[row[slot].to_repr() as usize]);
+                assert!(packing.removed_uses[row[slot].to_repr() as usize] == 0);
             }
         }
     }
@@ -234,7 +234,7 @@ fn a_full_packing_table_keeps_the_longer_chain() -> Result<()> {
     );
     assert!(packed.removed_rows[..4].iter().all(|removed| !removed));
     for row in &f.gates.as_chunks::<14>().0[..4] {
-        assert!(!packed.removed_ids[row[4].to_repr() as usize]);
+        assert!(packed.removed_uses[row[4].to_repr() as usize] == 0);
     }
     Ok(())
 }

@@ -20,6 +20,7 @@ mod keccak;
 mod known_openings_tests;
 mod mixed;
 mod packing;
+mod products;
 mod proof_codec;
 mod recursive_layout;
 mod verifier;
@@ -96,6 +97,7 @@ pub struct Geometry {
     pub template_instances: usize,
     pub template_witnesses: u32,
     pub packed_rows: usize,
+    pub extension_products: usize,
     pub packed_geometric_rows: usize,
     pub packing_intermediates_removed: usize,
     pub single_use_copies_removed: usize,
@@ -220,12 +222,17 @@ impl Prepared {
                 .as_ref()
                 .map_or(0, |s| s.rows.iter().filter(|r| r.is_geometric()).count())
         };
-        let packing_intermediates_removed = packing.removed_ids.iter().filter(|&&v| v).count();
+        let packing_intermediates_removed = packing
+            .shard
+            .as_ref()
+            .map_or(0, |s| s.rows.iter().map(|r| r.sources.len() - 1).sum());
+        let extension_products = packing.products.as_ref().map_or(0, |s| s.rows.len());
+        eprintln!("Matched {extension_products} extension products per template");
         eprintln!(
             "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"
         );
         let (shards, mut copies) =
-            fanout::partition(&widths, &fanout_pp.values, &packing.removed_ids, recursive)?;
+            fanout::partition(&widths, &fanout_pp.values, &packing.removed_uses, recursive)?;
         drop(fanout_pp);
         let gates = gates::partition(
             &widths,
@@ -235,7 +242,7 @@ impl Prepared {
             &packing.removed_rows,
             recursive.then_some(gates::RECURSIVE_LAYOUT.as_slice()),
         )?;
-        drop(packing.removed_ids);
+        drop(packing.removed_uses);
         drop(packing.removed_rows);
         drop(gates_pp);
         drop(widths);
@@ -332,6 +339,10 @@ impl Prepared {
         if let Some(shard) = packing.shard {
             airs.push(Chip::packed(shard.clone()));
             log_heights.push(shard.log_height);
+        }
+        if let Some(products) = packing.products {
+            airs.push(Chip::products(products));
+            log_heights.push(products::LOG_HEIGHT);
         }
         let hash_index = source_hash_index + airs.len() - 2;
         for (i, air) in bus.airs().iter().enumerate().skip(2) {
@@ -453,6 +464,7 @@ impl Prepared {
                         widths.extend([64, 64]);
                         widths.repeat(instances)
                     }
+                    WitnessSource::Products(_) => vec![64; shape.width()],
                     WitnessSource::Public => vec![0],
                     WitnessSource::Keccak if backend == HashBackend::Flock => {
                         vec![1; shape.width()]
@@ -549,6 +561,7 @@ impl Prepared {
             witnesses,
             template_instances: instances,
             template_witnesses: circuit.witness_count,
+            extension_products: extension_products * instances,
             packed_rows: packed_rows * instances,
             packed_geometric_rows: packed_geometric_rows * instances,
             packing_intermediates_removed: packing_intermediates_removed * instances,
