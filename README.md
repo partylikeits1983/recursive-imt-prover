@@ -83,18 +83,19 @@ startup and trusted-key loading.
 
 | Prover | Child proving | First pair | Merge | All 63 aggregations | Final file | Fresh verification |
 |---|---:|---:|---:|---:|---:|---:|
-| Previous | 2.33 s | 11.38 s | 10.85 s | 11 min 47 s | 895,139 B | 110 ms |
-| Current | 2.55 s | 10.06 s | 10.01 s | 10 min 37 s | 893,611 B | 102 ms |
+| Previous | 2.55 s | 10.06 s | 10.01 s | 10 min 37 s | 893,611 B | 102 ms |
+| Conditional swaps | 2.50 s | 9.74 s | 9.61 s | 10 min 15 s | 909,023 B | 112 ms |
 
-15 of 31 merges finished within 10 seconds. Merge times ranged from
-9.63 to 11.97 seconds. The longest chain of six dependent nodes summed to
-63.70 seconds. The target for aggregating 64 existing child proofs is one minute.
+29 of 32 first pairs and 28 of 31 higher merges finished within
+10 seconds. Higher merges ranged from 9.19 to 11.03 seconds. The longest chain of
+six dependent nodes summed to 60.03 seconds. The wall-time target for the whole
+tree is one minute.
 
 Setup, child proving and verification, aggregation and fresh verification took
-14 min 07 s, excluding negative tests. The final proof was 953,487 bytes
-before compression. Peak process-tree physical footprint was 12.8 GB.
-[Current measurements](benchmarks/binary/tree-merge/affine-bus-sixty-four.json) and
-[previous measurements](benchmarks/binary/tree-merge/preprocessing-digits-sixty-four.json).
+13 min 42 s, excluding negative tests. The final proof was 978,474 bytes
+before compression. Peak process-tree physical footprint was 12.4 GB.
+[Current measurements](benchmarks/binary/tree-merge/conditional-swaps-sixty-four.json) and
+[previous measurements](benchmarks/binary/tree-merge/affine-bus-sixty-four.json).
 
 ## Running locally
 

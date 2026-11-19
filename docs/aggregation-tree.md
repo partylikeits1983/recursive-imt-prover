@@ -154,8 +154,8 @@ and [earlier prover profiles](../benchmarks/binary/tree-merge/merge-selectors.js
 
 The integration test verified 64 distinct child proofs, 32 first aggregates
 and 31 merges. It used one merge key across all five levels. A fresh process
-verified the 893,611-byte aggregate in 102 ms. The median merge took
-10.01 s. [Full measurements and validation](../benchmarks/binary/tree-merge/affine-bus-sixty-four.json).
+verified the 909,023-byte aggregate in 112 ms. The median merge took
+9.61 s. [Full measurements and validation](../benchmarks/binary/tree-merge/conditional-swaps-sixty-four.json).
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
