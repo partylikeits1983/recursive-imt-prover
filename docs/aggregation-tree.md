@@ -97,8 +97,9 @@ The arithmetic PCS authenticates the left side. The Keccak proof checks a random
 combination of the 116 right sides using seven fresh port coordinates. Both
 commitments precede the row challenges. The extra row coordinate and one fewer
 port coordinate preserve the degree bound used for the linkage check. Snapshot
-versions 6 and 7 use this bridge layout. Earlier snapshots keep
-their original verification rules.
+versions 6 through 8 use this bridge layout. Version 8 uses code rate 1/2 for
+the recursive preprocessing commitment. Earlier snapshots keep their original
+verification rules.
 
 ## Authenticated cyclic authority
 

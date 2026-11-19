@@ -85,14 +85,13 @@ impl Verifier {
         } else {
             CoordinateEncoding::UniformWords
         };
-        let pp_encoding = if self.data.format == super::DIGIT_FORMAT {
-            CoordinateEncoding::PreprocessedDigits
-        } else {
-            CoordinateEncoding::Bits
-        };
+        let pp_encoding = self.data.preprocessed_encoding();
         let main = plan(&shapes, &self.data.main_coordinates, main_encoding)?;
         let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates, pp_encoding)?;
-        let configs = [config(main.num_variables())?, config(pp.num_variables())?];
+        let configs = [
+            config(main.num_variables(), WHIR_LOG_INV_RATE)?,
+            config(pp.num_variables(), self.data.preprocessed_log_inv_rate())?,
+        ];
         let parameters =
             |i, plan: &BinaryPolyCoordinateOpeningPlan, widths| CoordinatePcsParameters {
                 config: &configs[i],
@@ -251,7 +250,7 @@ fn plan(
     )?)
 }
 
-fn config(arity: usize) -> Result<WhirConfig<E, F, Ch>> {
+fn config(arity: usize, log_inv_rate: usize) -> Result<WhirConfig<E, F, Ch>> {
     Ok(WhirConfig::new_with_domain(
         arity - 6,
         ProtocolParameters {
@@ -260,7 +259,7 @@ fn config(arity: usize) -> Result<WhirConfig<E, F, Ch>> {
             round_log_inv_rates: vec![],
             folding_factor: FoldingFactor::Constant(WHIR_FOLD),
             soundness_type: SecurityAssumption::JohnsonBound,
-            starting_log_inv_rate: WHIR_LOG_INV_RATE,
+            starting_log_inv_rate: log_inv_rate,
         },
         &BinaryWhirDomain::<F>::default(),
     )?)

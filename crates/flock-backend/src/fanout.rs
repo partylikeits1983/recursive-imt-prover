@@ -20,7 +20,7 @@ pub const RECURSIVE_LAYOUT: [(usize, usize, usize, bool); 10] = [
     (16, 4, 16, false),
     (16, 8, 11, false),
     (16, 16, 15, true),
-    (64, 4, 19, false),
+    (64, 4, 18, false),
     (64, 8, 18, false),
     (64, 16, 17, true),
 ];

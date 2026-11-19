@@ -19,6 +19,7 @@ use p3_whir::{FoldingFactor, ProtocolParameters, SecurityAssumption, WhirConfig}
 type Hash = SerializingHasher<Keccak256Hash>;
 pub const WHIR_FOLD: usize = 4;
 pub const WHIR_LOG_INV_RATE: usize = 2;
+pub(crate) const RECURSIVE_PP_LOG_INV_RATE: usize = 1;
 pub const WHIR_CAP_HEIGHT: usize = 0;
 type Compress = CompressionFunctionFromHasher<Keccak256Hash, 2, 32>;
 pub type Mmcs = MerkleTreeMmcs<Poly64, u8, Hash, Compress, 2, 32>;
@@ -42,15 +43,16 @@ impl Config {
         main_encoding: Vec<TableEncoding>,
         pp: &[TableShape],
         pp_encoding: Vec<TableEncoding>,
+        pp_log_inv_rate: usize,
     ) -> Result<Self> {
-        let cells = |shapes: &[TableShape], encoding: &[TableEncoding]| {
+        let cells = |shapes: &[TableShape], encoding: &[TableEncoding], log_inv_rate| {
             let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, encoding));
             1usize
-                .checked_shl((arity - 6 + WHIR_LOG_INV_RATE) as u32)
+                .checked_shl((arity - 6 + log_inv_rate) as u32)
                 .ok_or_else(|| anyhow::anyhow!("codeword size overflow"))
         };
-        let main_codeword_cells = cells(main, &main_encoding)?;
-        let preprocessed_codeword_cells = cells(pp, &pp_encoding)?;
+        let main_codeword_cells = cells(main, &main_encoding, WHIR_LOG_INV_RATE)?;
+        let preprocessed_codeword_cells = cells(pp, &pp_encoding, pp_log_inv_rate)?;
         let initial_codeword_cells = main_codeword_cells
             .checked_add(preprocessed_codeword_cells)
             .ok_or_else(|| anyhow::anyhow!("codeword budget overflow"))?;
@@ -78,7 +80,7 @@ impl Config {
         );
         Ok(Self {
             main: main_pcs,
-            preprocessed: pcs(pp, pp_encoding)?,
+            preprocessed: pcs_with_rate(pp, pp_encoding, pp_log_inv_rate)?,
             initial_codeword_cells,
             main_codeword_cells,
             preprocessed_codeword_cells,
@@ -88,6 +90,14 @@ impl Config {
 }
 
 pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result<Pcs> {
+    pcs_with_rate(shapes, encoding, WHIR_LOG_INV_RATE)
+}
+
+fn pcs_with_rate(
+    shapes: &[TableShape],
+    encoding: Vec<TableEncoding>,
+    log_inv_rate: usize,
+) -> Result<Pcs> {
     let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, &encoding));
     let domain = BinaryWhirDomain::default();
     let config = WhirConfig::<Poly192, Poly64, Challenger>::new_with_domain(
@@ -98,7 +108,7 @@ pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result
             round_log_inv_rates: vec![],
             folding_factor: FoldingFactor::Constant(WHIR_FOLD),
             soundness_type: SecurityAssumption::JohnsonBound,
-            starting_log_inv_rate: WHIR_LOG_INV_RATE,
+            starting_log_inv_rate: log_inv_rate,
         },
         &domain,
     )?;

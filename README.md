@@ -81,8 +81,9 @@ public statements and verifier key are separate files. Fresh verification took
   [Implementation map](docs/development.md)
 
 WHIR uses the **Johnson bound** with a safety margin. The child uses a code
-rate of 1/16 and the outer commitments start at 1/4. The pinned analysis
-uses Dao, Kominers, and Thaler's improved bound within the Johnson regime.
+rate of 1/16. The recursive prover starts at rate 1/4 for the main and Keccak
+commitments and 1/2 for preprocessing. The pinned analysis uses Dao, Kominers,
+and Thaler's improved bound within the Johnson regime.
 [Security accounting](docs/binary-security.md#parameters-and-accounting)
 
 Dao, Kominers, and Thaler also show that going beyond Johnson can shrink

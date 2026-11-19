@@ -19,16 +19,17 @@ use sha3::{Digest, Keccak256};
 
 use self::air::VerifierAir;
 use crate::{
-    F, HashBackend, Prepared, Proof,
+    F, HashBackend, Prepared, Proof, WHIR_LOG_INV_RATE,
     air::convert,
     checkpoint,
     checkpoint_keccak::linked::LinkedBatch,
-    config::{Config, challenger},
+    config::{Config, RECURSIVE_PP_LOG_INV_RATE, challenger},
     encoding::TableEncoding,
     keccak,
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const HALF_RATE_PP_FORMAT: &str = "imt-binary-trusted-verifier-v8";
 const DIGIT_FORMAT: &str = "imt-binary-trusted-verifier-v7";
 const BRIDGE_FORMAT: &str = "imt-binary-trusted-verifier-v6";
 const WORD_FORMAT: &str = "imt-binary-trusted-verifier-v5";
@@ -45,6 +46,24 @@ struct VerifierData<K> {
     main_coordinates: Vec<Vec<usize>>,
     preprocessed_coordinates: Vec<Vec<usize>>,
     key: K,
+}
+
+impl<K> VerifierData<K> {
+    fn preprocessed_encoding(&self) -> CoordinateEncoding {
+        if matches!(self.format.as_str(), DIGIT_FORMAT | HALF_RATE_PP_FORMAT) {
+            CoordinateEncoding::PreprocessedDigits
+        } else {
+            CoordinateEncoding::Bits
+        }
+    }
+
+    fn preprocessed_log_inv_rate(&self) -> usize {
+        if self.format == HALF_RATE_PP_FORMAT {
+            RECURSIVE_PP_LOG_INV_RATE
+        } else {
+            WHIR_LOG_INV_RATE
+        }
+    }
 }
 
 pub struct Verifier {
@@ -75,7 +94,7 @@ impl Prepared {
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
             format: if self.direct_bridge {
-                DIGIT_FORMAT
+                HALF_RATE_PP_FORMAT
             } else {
                 FORMAT
             }
@@ -108,7 +127,7 @@ impl Verifier {
             self.data.backend == output.backend
                 && self.data.format
                     == if output.direct_bridge {
-                        DIGIT_FORMAT
+                        HALF_RATE_PP_FORMAT
                     } else {
                         FORMAT
                     }
@@ -158,7 +177,7 @@ impl Verifier {
             (data.format == FORMAT
                 || (matches!(
                     data.format.as_str(),
-                    WORD_FORMAT | BRIDGE_FORMAT | DIGIT_FORMAT
+                    WORD_FORMAT | BRIDGE_FORMAT | DIGIT_FORMAT | HALF_RATE_PP_FORMAT
                 ) && data.backend == HashBackend::Checkpoint))
                 && data.binding == binding,
             "trusted verifier configuration mismatch"
@@ -230,14 +249,11 @@ impl Verifier {
                     TableEncoding::with_encoding(
                         widths,
                         shape.num_variables(),
-                        if data.format == DIGIT_FORMAT {
-                            CoordinateEncoding::PreprocessedDigits
-                        } else {
-                            CoordinateEncoding::Bits
-                        },
+                        data.preprocessed_encoding(),
                     )
                 })
                 .collect::<Result<_>>()?,
+            data.preprocessed_log_inv_rate(),
         )?;
         let public_count = data.airs.iter().map(|a| a.public_count).max().unwrap();
         ensure!(
@@ -254,7 +270,10 @@ impl Verifier {
             let scheme = LinkedBatch::with_bridge(
                 data.airs[data.hash_index].log_height,
                 config.main_log2_candidates,
-                matches!(data.format.as_str(), BRIDGE_FORMAT | DIGIT_FORMAT),
+                matches!(
+                    data.format.as_str(),
+                    BRIDGE_FORMAT | DIGIT_FORMAT | HALF_RATE_PP_FORMAT
+                ),
             )?;
             ensure!(
                 config.initial_codeword_cells + scheme.initial_codeword_cells <= 1 << 30,

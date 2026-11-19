@@ -54,7 +54,7 @@ pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
     GateLayout::new([64, 64, 0, 0, 64], 18, PRODUCT),
     GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(17)),
     GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(64)),
-    GateLayout::new([64, 64, 64, 64, 64], 17, FIVE_WIRE_GATES),
+    GateLayout::new([64, 64, 64, 64, 64], 18, FIVE_WIRE_GATES),
 ];
 
 impl GateShard {

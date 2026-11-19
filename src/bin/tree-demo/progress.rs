@@ -64,7 +64,7 @@ impl TreeProgress {
         }
     }
 
-    pub fn show(&self) {
+    pub fn show(&self, message: &str) {
         let mut state = self.state.lock().unwrap();
         eprintln!("\nProof tree   · waiting   ◇ proving   ● proved   × failed");
         if self.color {
@@ -75,7 +75,7 @@ impl TreeProgress {
         }
         if self.interactive {
             eprint!(
-                "{}Proving child proofs\n{}\n",
+                "{}{message}\n{}\n",
                 tree(&state.rows, self.color),
                 state.peak_line
             );
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn sibling_progress_follows_completion_order() {
         let display = TreeProgress::new(4);
-        display.show();
+        display.show("Proving child proofs");
         let barrier = Barrier::new(2);
         thread::scope(|scope| {
             let first = scope.spawn(|| {

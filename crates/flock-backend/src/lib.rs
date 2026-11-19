@@ -395,7 +395,7 @@ impl Prepared {
             }
         });
         if recursive {
-            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1");
+            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1/pp-rate-half");
         }
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
@@ -499,7 +499,12 @@ impl Prepared {
             }
         }
         let seed = identity.finalize().to_vec();
-        let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
+        let pp_log_inv_rate = if recursive {
+            config::RECURSIVE_PP_LOG_INV_RATE
+        } else {
+            WHIR_LOG_INV_RATE
+        };
+        let config = Config::new(&shapes, main_encoding, &pp, pp_encoding, pp_log_inv_rate)?;
         let checkpoint = if backend == HashBackend::Checkpoint {
             Some(LinkedBatch::with_bridge(
                 log_calls,
