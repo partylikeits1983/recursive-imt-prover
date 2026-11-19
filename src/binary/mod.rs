@@ -1,4 +1,4 @@
-//! Native Poly64/Poly192/Keccak research baseline. Child proofs are NOT zero knowledge.
+//! Depth-32 binary-field Keccak IMT proofs and recursive aggregation.
 pub mod aggregation_tree;
 pub mod checkpoint;
 pub mod cli;
@@ -10,7 +10,6 @@ pub mod veil;
 
 pub const IMT_DEPTH: usize = 32;
 
-/// Fixed-batch research target. Recursive aggregation of aggregates is separate.
 pub const MAX_CHILDREN: usize = 64;
 
 pub use engine::{ChildInput, PreparedAggregate, PreparedChild, Settings};

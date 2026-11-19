@@ -109,13 +109,13 @@ The full tree test is expensive and is excluded from routine CI.
 cargo test --locked --release --workspace
 
 # Eight children, four first aggregates, then two levels of the same merge.
-cargo run --locked --release --bin tree-demo -- --batch-size 8 --out run/tree8
+cargo run --locked --release -- --batch-size 8 --out run/tree8
 
 # Full acceptance test: 64 children, five merge levels and isolated verification.
 RAYON_NUM_THREADS=12 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 
 # Requires only the final proof, ordered statements and trusted final key files.
-cargo run --locked --release --bin tree-demo -- --verify --out run/tree8
+cargo run --locked --release -- --verify --out run/tree8
 ```
 
 The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
@@ -123,12 +123,10 @@ and a timing report. Keep the verifier key and `trusted.json` with independently
 trusted verifier data. A key and matching digest supplied only by an untrusted
 prover do not establish authority.
 
-Aggregate encoding and verifier snapshots have changed; regenerate older artifacts.
-
-`demo` and `bench` retain the original **non-ZK child** baseline.
-`masked-demo --components` produces a diagnostic proof bundle, not one aggregate.
-`masked-demo --tree-pair` and `merge-demo` retain the earlier fixed-source-key
-diagnostic path. Omitting `--tree-pair` selects flat-batch aggregation.
+The default binary is `tree-demo`. For comparisons, `--bin masked-demo` proves
+a flat batch of masked children with either aggregation backend. Its
+`--components` option writes a diagnostic proof bundle. The `demo` and `bench`
+binaries measure the non-ZK child baseline.
 
 ## Implementation and dependencies
 

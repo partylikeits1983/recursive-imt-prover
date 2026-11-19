@@ -2,6 +2,3 @@
 pub mod benchmark;
 pub mod binary;
 pub mod files;
-
-#[cfg(feature = "legacy-prime")]
-pub mod legacy;

@@ -17,16 +17,11 @@ use super::{
 use crate::{
     benchmark::ms,
     binary::{
-        aggregation_tree::{
-            STATEMENT_BYTES, TreeStatement, TreeTarget, cyclic, merge::TreeVerifier,
-        },
+        aggregation_tree::{STATEMENT_BYTES, TreeStatement, TreeTarget, cyclic},
         engine::Settings,
         relation::{AggregatePublic, ClientPublic, F, PUBLIC_BYTES},
     },
 };
-
-#[cfg(test)]
-mod tests;
 
 pub const PROTOCOL: &str = "experimental-binary-masked-flock-aggregate-v7";
 pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-aggregate-v9";
@@ -36,7 +31,6 @@ pub const CHECKPOINT_PROTOCOL: &str = "experimental-binary-masked-checkpoint-agg
 pub enum StatementFormat {
     #[default]
     Ordered,
-    TreePair,
     CyclicPair,
 }
 
@@ -57,7 +51,6 @@ pub struct PreparedMaskedAggregate {
 pub struct MaskedAggregateVerifier {
     outer: Verifier,
     count: usize,
-    format: StatementFormat,
 }
 
 #[derive(Serialize)]
@@ -93,10 +86,6 @@ pub(crate) fn import_children<T: Sync>(
 }
 
 impl PreparedMaskedAggregate {
-    pub fn new(settings: &Settings, parameters: Parameters) -> Result<Self> {
-        Self::with_backend(settings, parameters, HashBackend::Flock)
-    }
-
     pub fn with_backend(
         settings: &Settings,
         parameters: Parameters,
@@ -116,9 +105,7 @@ impl PreparedMaskedAggregate {
         let verifier = PreparedMaskedVerifier::new(settings.depth, parameters)?;
         let circuit = match format {
             StatementFormat::Ordered => verifier.circuit()?,
-            StatementFormat::TreePair | StatementFormat::CyclicPair => {
-                tree_pair_circuit(&verifier, format == StatementFormat::CyclicPair)?
-            }
+            StatementFormat::CyclicPair => tree_pair_circuit(&verifier)?,
         };
         eprintln!(
             "Child verifier template: {} witnesses, {} instances",
@@ -130,7 +117,7 @@ impl PreparedMaskedAggregate {
             settings.depth,
             settings.batch_size
         );
-        let outer = if format != StatementFormat::Ordered && backend == HashBackend::Checkpoint {
+        let outer = if format == StatementFormat::CyclicPair {
             Prepared::recursive_pair(circuit, domain.as_bytes())?
         } else {
             Prepared::repeated(circuit, settings.batch_size, domain.as_bytes(), backend)?
@@ -193,7 +180,7 @@ impl PreparedMaskedAggregate {
         ensure!(children.len() == self.count, "incorrect child count");
         let start = Instant::now();
         let (private, imports) = import_children(children, |index, child, private| {
-            if self.format != StatementFormat::Ordered {
+            if self.format == StatementFormat::CyclicPair {
                 private.extend(child.public.fields());
                 private.extend(
                     TreeStatement::leaf(&children[1 - index].public)
@@ -227,23 +214,6 @@ impl PreparedMaskedAggregate {
 }
 
 impl MaskedAggregateVerifier {
-    pub fn from_bytes(
-        settings: &Settings,
-        parameters: &Parameters,
-        bytes: &[u8],
-        digest: &[u8; 32],
-        identity: &str,
-    ) -> Result<Self> {
-        Self::with_backend(
-            settings,
-            parameters,
-            bytes,
-            digest,
-            identity,
-            HashBackend::Flock,
-        )
-    }
-
     pub fn with_backend(
         settings: &Settings,
         parameters: &Parameters,
@@ -252,55 +222,23 @@ impl MaskedAggregateVerifier {
         identity: &str,
         backend: HashBackend,
     ) -> Result<Self> {
-        Self::with_format(
-            settings,
-            parameters,
-            bytes,
-            digest,
-            identity,
-            backend,
-            StatementFormat::Ordered,
-        )
-    }
-
-    pub fn with_format(
-        settings: &Settings,
-        parameters: &Parameters,
-        bytes: &[u8],
-        digest: &[u8; 32],
-        identity: &str,
-        backend: HashBackend,
-        format: StatementFormat,
-    ) -> Result<Self> {
         validate_configuration(settings, parameters)?;
         Ok(Self {
             outer: Verifier::from_bytes(
                 bytes,
                 digest,
                 identity,
-                &configuration_binding(settings, parameters, backend, format)?,
+                &configuration_binding(settings, parameters, backend, StatementFormat::Ordered)?,
             )?,
             count: settings.batch_size,
-            format,
         })
-    }
-
-    pub fn into_tree_verifier(self) -> Result<TreeVerifier> {
-        ensure!(
-            self.format == StatementFormat::TreePair && self.count == 2,
-            "expected first tree aggregate authority"
-        );
-        Ok(TreeVerifier { outer: self.outer })
     }
 
     pub fn verify(&self, proof: &[u8], public: &AggregatePublic) -> Result<()> {
         ensure!(public.children.len() == self.count, "incorrect child count");
-        self.outer.verify(proof, &self.format.fields(public, None)?)
+        self.outer
+            .verify(proof, &StatementFormat::Ordered.fields(public, None)?)
     }
-}
-
-pub const fn protocol(backend: HashBackend) -> &'static str {
-    StatementFormat::Ordered.protocol(backend)
 }
 
 impl StatementFormat {
@@ -308,10 +246,6 @@ impl StatementFormat {
         match (self, backend) {
             (Self::Ordered, HashBackend::Flock) => PROTOCOL,
             (Self::Ordered, HashBackend::Checkpoint) => CHECKPOINT_PROTOCOL,
-            (Self::TreePair, HashBackend::Flock) => "experimental-binary-masked-flock-tree-pair-v2",
-            (Self::TreePair, HashBackend::Checkpoint) => {
-                "experimental-binary-masked-checkpoint-tree-pair-v3"
-            }
             (Self::CyclicPair, _) => "experimental-binary-masked-checkpoint-cyclic-pair-v1",
         }
     }
@@ -327,13 +261,6 @@ impl StatementFormat {
                 .iter()
                 .flat_map(ClientPublic::fields)
                 .collect()),
-            Self::TreePair => {
-                ensure!(
-                    public.children.len() == 2,
-                    "first aggregation requires two children"
-                );
-                Ok(TreeStatement::from_public(public)?.verifier_fields())
-            }
             Self::CyclicPair => {
                 ensure!(
                     public.children.len() == 2,
@@ -350,7 +277,7 @@ impl StatementFormat {
     }
 }
 
-fn tree_pair_circuit(verifier: &PreparedMaskedVerifier, cyclic: bool) -> Result<Circuit<F>> {
+fn tree_pair_circuit(verifier: &PreparedMaskedVerifier) -> Result<Circuit<F>> {
     let mut b = CircuitBuilder::with_construction_limits(CircuitConstructionLimits {
         max_expression_nodes: 1 << 27,
         max_pending_connects: 1 << 26,
@@ -361,9 +288,7 @@ fn tree_pair_circuit(verifier: &PreparedMaskedVerifier, cyclic: bool) -> Result<
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("tree-statement");
     let side = b.alloc_public_input("side");
     b.assert_bool(side);
-    if cyclic {
-        b.alloc_public_input_array::<AUTHORITY_BYTES>("merge authority");
-    }
+    b.alloc_public_input_array::<AUTHORITY_BYTES>("merge authority");
     let public = b.alloc_private_input_array::<PUBLIC_BYTES>("root-and-nullifier-hash");
     let sibling = b.alloc_private_input_array::<32>("sibling-statement-digest");
     verifier.verify_in(&mut b, public)?;

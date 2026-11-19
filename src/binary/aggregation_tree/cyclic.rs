@@ -7,7 +7,7 @@ use imt_flock_backend::{
 };
 use p3_circuit::{Circuit, CircuitBuilder, CircuitConstructionLimits, ExprId};
 
-use super::{STATEMENT_BYTES, TreeStatement, TreeTarget, merge::TreeProof};
+use super::{STATEMENT_BYTES, TreeProof, TreeStatement, TreeTarget};
 use crate::{
     benchmark::ms,
     binary::{

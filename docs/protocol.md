@@ -133,14 +133,11 @@ See the [implementation and acceptance plan](aggregation-tree.md).
 
 The active statement is exactly 64 bytes: root followed by nullifier hash.
 JSON carries two 32-byte arrays and rejects extra or missing fields. Child v6
-uses the `IMTVCA06` header. Flock tree-pair v2, checkpoint tree-pair v3, flat
-Flock v7 and flat checkpoint v9 bind the relation and trusted configuration.
-Fixed-authority merging uses `experimental-binary-checkpoint-tree-merge-v1`.
-Cyclic first aggregation uses `experimental-binary-masked-checkpoint-cyclic-pair-v1`;
-cyclic merging uses `experimental-binary-checkpoint-cyclic-merge-v1`. These formats
-include the carried merge authority and have identical verifier layouts.
-Old root/amount proofs and keys are incompatible and must be regenerated. Historical measurements retain their
-original protocol identifiers and are not measurements of this relation.
+uses the `IMTVCA06` header. The first aggregation binds its key to
+`experimental-binary-masked-checkpoint-cyclic-pair-v1`. Every higher merge uses
+`experimental-binary-checkpoint-cyclic-merge-v1`. Both carry the merge authority
+and use the same verifier layout. Flat-batch benchmarks use Flock v7 or
+checkpoint v9. Historical measurements identify the protocol used in each run.
 
 Intermediate aggregates use the `IMTPRF01` header followed by fixed-width,
 little-endian bincode 2.0.1. The tree prover compresses the final payload with
@@ -152,24 +149,21 @@ carry the same cryptographic transcript.
 
 ## Validation
 
-The updated child, Flock/checkpoint first aggregates and flat checkpoint
-aggregate generate real proofs. Fresh processes verify the aggregates without
-original child proofs or witnesses. The release workspace suite passes.
+The release suite checks child membership and verifier constraints. The tree demo
+also verifies the aggregate in a fresh process using the ordered statements and
+trusted verifier data.
 The complete child-verifier circuit rejects modified
 root/nullifier-hash bytes and proof data. AIR tests also splice two individually
 valid Keccak computations using different nullifiers; the shared carry rejects
 that attack.
 
-Each first-aggregation backend passed 22 fresh-process checks, including changed
+Earlier first-aggregation benchmarks passed 22 fresh-process checks, including changed
 nullifier hashes, roots, order, counts, proof encodings, keys, authorities and
 statement formats. Old root/amount artifacts are rejected. The retained
 [first-aggregation measurements](binary-veil.md#nullifier-statement) cover two children.
 
-The four-child merge passes fresh verification with only the final proof,
-statement and trusted key files. Sixteen mutations of ordering, statements,
-counts, proof encoding and authority are rejected. The real depth-32 source
-proof also passes the verifier circuit directly; changed public data fails.
-See the [merge measurements](binary-veil.md#four-child-tree-merge).
+The [four-child merge benchmark](binary-veil.md#four-child-tree-merge) records
+fresh verification and sixteen rejection checks for the earlier merge circuit.
 
 The cyclic 64-child integration test passes independent final verification with
 one merge circuit/key reused at all five higher levels. It rejects invalid child

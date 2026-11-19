@@ -66,9 +66,6 @@ struct Args {
     /// Run the three-proof correctness baseline; this is not a compressed aggregate.
     #[arg(long)]
     components: bool,
-    /// Produce the first tree aggregate with a fixed-size statement; exactly two children.
-    #[arg(long, conflicts_with = "components")]
-    tree_pair: bool,
     /// Aggregate Keccak prover; checkpoint is an experimental memory/time comparison.
     #[arg(long, value_enum, default_value_t = KeccakBackend::Flock)]
     keccak_backend: KeccakBackend,
@@ -130,13 +127,8 @@ impl PreparedBatch {
         parameters: Parameters,
         components: bool,
         backend: KeccakBackend,
-        format: StatementFormat,
     ) -> Result<Self> {
         if components {
-            ensure!(
-                format == StatementFormat::Ordered,
-                "components do not produce tree pairs"
-            );
             ensure!(
                 matches!(backend, KeccakBackend::Flock),
                 "components use the Flock backend"
@@ -146,7 +138,7 @@ impl PreparedBatch {
             )?)))
         } else {
             Ok(Self::Recursive(Box::new(
-                PreparedMaskedAggregate::with_format(settings, parameters, backend.into(), format)?,
+                PreparedMaskedAggregate::with_backend(settings, parameters, backend.into())?,
             )))
         }
     }
@@ -219,15 +211,7 @@ fn main() -> Result<()> {
         max_codeword_cells: 1 << 29,
         ..Settings::default()
     };
-    let statement_format = if args.tree_pair {
-        ensure!(
-            args.batch_size == 2,
-            "first aggregation requires two children"
-        );
-        StatementFormat::TreePair
-    } else {
-        StatementFormat::Ordered
-    };
+    let statement_format = StatementFormat::Ordered;
     let protocol = if args.components {
         COMPONENT_PROTOCOL
     } else {
@@ -261,7 +245,6 @@ fn main() -> Result<()> {
         parameters.clone(),
         args.components,
         args.keccak_backend,
-        statement_format,
     )?;
     report["setup_ms"] = json!(ms(start));
     report["geometry"] = aggregate.geometry();
@@ -291,14 +274,13 @@ fn main() -> Result<()> {
     write_json(&args.out.join("trusted.json"), &trusted)?;
     let cached = if let Some(digest) = trusted.verifier_digest {
         let key = read_bounded(&args.out.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-        Some(MaskedAggregateVerifier::with_format(
+        Some(MaskedAggregateVerifier::with_backend(
             &trusted.settings,
             &trusted.child_parameters,
             &key,
             &digest,
             &trusted.identities[0],
             trusted.keccak_backend.into(),
-            trusted.statement_format,
         )?)
     } else {
         None
@@ -407,6 +389,10 @@ fn make_children(
 
 fn verify_files(directory: &Path) -> Result<()> {
     let trusted: Trusted = read_json(&directory.join("trusted.json"))?;
+    ensure!(
+        trusted.statement_format == StatementFormat::Ordered,
+        "expected a flat batch"
+    );
     trusted.settings.validate()?;
     let expected_protocol = if trusted.components {
         COMPONENT_PROTOCOL
@@ -444,14 +430,13 @@ fn verify_files(directory: &Path) -> Result<()> {
             "invalid cached verifier authority"
         );
         let key = read_bounded(&directory.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-        let verifier = MaskedAggregateVerifier::with_format(
+        let verifier = MaskedAggregateVerifier::with_backend(
             &trusted.settings,
             &trusted.child_parameters,
             &key,
             &digest,
             &trusted.identities[0],
             trusted.keccak_backend.into(),
-            trusted.statement_format,
         )?;
         let setup_ms = ms(start);
         let check = Instant::now();
@@ -467,7 +452,6 @@ fn verify_files(directory: &Path) -> Result<()> {
         trusted.child_parameters,
         trusted.components,
         trusted.keccak_backend,
-        trusted.statement_format,
     )?;
     ensure!(
         aggregate.identities() == trusted.identities,

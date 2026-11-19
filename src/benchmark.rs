@@ -23,7 +23,6 @@ pub fn environment() -> Value {
         "rustflags_runtime":std::env::var("RUSTFLAGS").unwrap_or_default(),
         "source_keccak256":env!("IMT_SOURCE_KECCAK256"),
         "profile":if cfg!(debug_assertions) {"debug"} else {"release"},
-        "legacy_prime_enabled":cfg!(feature = "legacy-prime"),
         "compile_time_included":false,
         "plonky3_crates":"0.9.0-rc.2", "plonky3_revision":"fe5e46d755b8a7d9069778361e21b33e5978b377",
         "flock_revision":"708900d7a730d6ce4d5421d43e2193f2301920fa",

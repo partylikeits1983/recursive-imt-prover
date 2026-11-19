@@ -22,8 +22,8 @@ use recursive_imt_prover::{
     binary::{
         IMT_DEPTH, MAX_CHILDREN,
         aggregation_tree::{
+            TreeProof,
             cyclic::{CyclicVerifier, PROTOCOL, PreparedCyclicMerge},
-            merge::TreeProof,
         },
         cli::fixtures,
         engine::Settings,

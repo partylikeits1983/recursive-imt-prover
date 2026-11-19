@@ -11,12 +11,11 @@ See [security limits](binary-security.md) and [measurements](binary-veil.md).
 | Location | Purpose |
 |---|---|
 | `src/binary/tree.rs`, `relation.rs` | Keccak IMT and membership statement |
-| `src/binary/aggregation_tree.rs`, `aggregation_tree/` | Statement binding, cyclic and fixed-authority merges, artifact I/O |
+| `src/binary/aggregation_tree.rs`, `aggregation_tree/` | Ordered statement commitments and the reusable merge prover and verifier |
 | `src/binary/veil/` | Masked child, recursive verifier and aggregation |
 | `crates/flock-backend/` | Native product-bus prover and linked Keccak backends |
 | `src/binary/engine.rs`, `security.rs` | Non-ZK baseline and conditional security budgets |
 | `src/bin/`, `src/benchmark.rs`, `src/files.rs` | CLI, measurements and bounded file I/O |
-| `src/legacy/`, `tests/legacy/` | Archived prime-field PoC, enabled by `legacy-prime` |
 | `scripts/`, `benchmarks/` | Benchmark drivers and retained measurements |
 | `vendor/` | Pinned sources required by documented upstream patches |
 
@@ -65,7 +64,6 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --release --workspace
 ```
 
-Use `--all-features` for changes affecting the archived prime implementation.
 Vendored prover patches have targeted checks in their `LOCAL_CHANGES.md` files.
 GitHub CI runs formatting, default-feature Clippy and library tests in one job.
 The full depth-32 child proof is release-only; debug CI skips it.

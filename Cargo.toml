@@ -8,11 +8,7 @@ name = "recursive-imt-prover"
 version = "0.1.0"
 edition = "2024"
 publish = false
-default-run = "demo"
-
-[features]
-default = []
-legacy-prime = ["dep:p3-koala-bear", "dep:p3-uni-stark"]
+default-run = "tree-demo"
 
 [dependencies]
 imt-flock-backend = { path = "crates/flock-backend" }
@@ -28,7 +24,6 @@ postcard = { version = "1", features = ["alloc"] }
 p3-air = "=0.9.0-rc.2"
 p3-matrix = "=0.9.0-rc.2"
 p3-keccak-air = "=0.9.0-rc.2"
-p3-uni-stark = { version = "=0.9.0-rc.2", optional = true }
 p3-field = "=0.9.0-rc.2"
 p3-security = "=0.9.0-rc.2"
 p3-binary-field = "=0.9.0-rc.2"
@@ -46,28 +41,12 @@ p3-sumcheck = "=0.9.0-rc.2"
 p3-whir = "=0.9.0-rc.2"
 mimalloc = { version = "0.1", default-features = false }
 libc = "0.2"
-p3-koala-bear = { version = "=0.9.0-rc.2", optional = true }
 p3-circuit = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-circuit-prover = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
 p3-recursion = { path = "vendor/p3-recursion", features = ["parallel"] }
 
-[dev-dependencies]
-p3-baby-bear = "=0.9.0-rc.2"
-p3-koala-bear = "=0.9.0-rc.2"
-p3-poseidon2-circuit-air = { git = "https://github.com/Plonky3/Plonky3-recursion", rev = "3a69ba61f713c8400b14eb3d8f0e52caa13512c7" }
-
 [build-dependencies]
 sha3 = "0.10.8"
-
-[[bin]]
-name = "recursive-imt-prover"
-path = "src/legacy/main.rs"
-required-features = ["legacy-prime"]
-
-[[test]]
-name = "legacy"
-path = "tests/legacy.rs"
-required-features = ["legacy-prime"]
 
 [profile.release]
 codegen-units = 16

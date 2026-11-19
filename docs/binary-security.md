@@ -30,7 +30,7 @@ requires the aggregate, ordered public list and trusted verifier data.
 `verifier.key` is checked against an independently trusted digest and authority
 identity before use. The key and matching digest cannot both come from an
 untrusted prover. The key also fixes the backend, statement format and parameters.
-The tree-pair format hashes the complete ordered list and constrains the parent
+The recursive tree hashes the complete ordered list and constrains the parent
 commitment inside the proof. See [tree binding](aggregation-tree.md).
 
 ## Parameters and accounting

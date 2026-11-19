@@ -219,9 +219,8 @@ Keccak argument with four authenticated boundary openings. Only the source
 statement is public; proof messages are private circuit inputs. The outer proof
 need not hide those messages.
 
-`verify_in` embeds this relation using caller-supplied public targets; `circuit`
-builds a standalone verifier circuit. The four-child `merge-demo` uses two
-instances and constrains their ordered parent digest and count.
+`verify_in` embeds this relation using caller-supplied public targets.
+`circuit` builds a standalone verifier circuit.
 
 `verify_with_authority` accepts an identity and preprocessing commitment that
 the enclosing circuit must authenticate. Both enter the transcript; the supplied

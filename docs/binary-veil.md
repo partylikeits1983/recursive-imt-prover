@@ -59,15 +59,12 @@ checkpoint backend constrains the complete child verifier inside one non-ZK
 proof. Final verification needs that aggregate, its public statement and trusted
 verifier data, without the child proofs.
 
-The ordered-vector format supports measured batches through eight children.
-The new `--tree-pair` format verifies two children and authenticates a fixed-size
-Keccak commitment plus count. Both template instances bind the same parent and
-have fixed left/right roles. The full ordered public list remains available.
-`tree-demo` adds the cyclic format: first aggregation and merge share a fixed
-verifier layout and carry authenticated merge-authority metadata. The 64-child
-integration test passed five merge levels with one circuit/key, including
-independent final verification and tamper checks; see the
-[three-circuit design](aggregation-tree.md).
+The flat-batch benchmark has measurements through eight children.
+In the recursive tree, the first aggregation verifies two children and binds
+their ordered statements to a Keccak digest and count. The first aggregation
+and merge share a verifier layout and carry the merge authority. The 64-child
+integration test verified the full ordered list in a fresh process, used the same
+merge key at five levels and rejected altered inputs. [Three-circuit design](aggregation-tree.md)
 
 The backend imports actual symbolic constraints and product-bus declarations.
 It never substitutes a native verifier Boolean. Its independently trusted key
