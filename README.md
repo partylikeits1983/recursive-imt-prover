@@ -108,7 +108,8 @@ before compression. Peak process-tree physical footprint was 12.4 GB.
 
 ## Running locally
 
-From the repository root, run `cargo prove` for an eight-child release demo.
+From the repository root, run `cargo prove -j 3` for the 64-child release demo
+with up to three child proofs in parallel.
 Each invocation writes completed proofs to a unique temporary directory under
 the git-ignored `run/`, reads sibling proofs from disk when needed, and removes
 the directory on completion, error or Ctrl-C. The final verifier runs in a
@@ -116,9 +117,9 @@ fresh process. Use `--keep` with `--out` to save the verified result. An
 existing `--out` path is left alone during an ordinary demo. Requires Rust 1.98.1.
 
 ```sh
-cargo prove
+cargo prove -j 3                            # 64 children, three at a time
 cargo prove --help
-cargo prove -n 8 -j 3                        # Up to three child proofs at once
+cargo prove -n 8 -j 3                        # Shorter eight-child demo
 cargo prove --keep --out run/saved-tree      # Keep the verified files
 cargo prove --verify --out run/saved-tree    # Verify them independently
 ```

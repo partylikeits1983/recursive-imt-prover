@@ -55,11 +55,11 @@ static ALLOCATOR: MiMalloc = MiMalloc;
     name = "cargo prove",
     bin_name = "cargo prove",
     about = "Prove a tree of independent child proofs and verify its root. Temporary proofs are written to disk and cleaned up.",
-    after_help = "Examples:\n  cargo prove                   Eight children, two at a time\n  cargo prove -n 8 -j 3         Prove three children in parallel\n  cargo prove --parallel-nodes 2  Prove two sibling pairs in parallel"
+    after_help = "Examples:\n  cargo prove -j 3                Prove 64 children, up to three at a time\n  cargo prove -n 8 -j 3           Prove a smaller eight-child tree\n  cargo prove --parallel-nodes 2  Prove two aggregate pairs in parallel"
 )]
 struct Args {
     /// Number of child proofs (4, 8, 16, 32 or 64).
-    #[arg(short = 'n', long, default_value_t = 8)]
+    #[arg(short = 'n', long, default_value_t = MAX_CHILDREN)]
     batch_size: usize,
     /// Total CPU worker threads shared by all proofs.
     #[arg(long, default_value_t = available_parallelism().map_or(1, usize::from).min(64))]

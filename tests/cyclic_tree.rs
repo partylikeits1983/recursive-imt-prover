@@ -54,14 +54,7 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     let threads = env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "4".to_owned());
     ensure!(
         Command::new(executable)
-            .args([
-                "--batch-size",
-                "64",
-                "--threads",
-                &threads,
-                "--keep",
-                "--out"
-            ])
+            .args(["-j", "3", "--threads", &threads, "--keep", "--out"])
             .arg(&directory)
             .status()?
             .success(),
@@ -69,6 +62,11 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     );
     let report: Value = read_json(&directory.join("report.json"))?;
     assert_eq!(report["depth"], IMT_DEPTH);
+    assert_eq!(report["batch_size"], 64);
+    assert_eq!(
+        report["parallel_children"],
+        threads.parse::<usize>()?.min(3)
+    );
     assert_eq!(report["children"].as_array().unwrap().len(), 64);
     assert_eq!(report["first_aggregates"].as_array().unwrap().len(), 32);
     assert_eq!(report["circuit_constructions"]["merge"], 1);
