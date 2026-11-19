@@ -168,14 +168,16 @@ cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 cargo prove --verify --out run/tree8
 ```
 
-`--threads` sets the total Rayon worker count. `--parallel-children` sets
-the maximum number of simultaneous leaf proofs and defaults to two, capped by
-the worker and leaf counts. Each proof samples its own masks. `--parallel-nodes` sets how
-many sibling pairs may use that pool at once and defaults to one. Siblings
-share the prepared key and retain their input order. The report gives wall
-time for each level and latency for each node. Imports of sibling proofs run
-concurrently, so their individual timings overlap. The integration test uses four
-threads by default and accepts an override through `RAYON_NUM_THREADS`.
+`--threads` sets the total Rayon worker count. `-j N` limits concurrent proofs
+across the tree and defaults to two. `--parallel-children` caps the leaf slots
+and `--parallel-nodes` caps the aggregate slots within that limit. Each parent
+becomes ready when both input proofs are saved. The scheduler prioritizes
+ready aggregates closest to the root. Each leaf samples its own masks and
+the final statement retains input order. The report gives total tree wall
+time, overlapping level spans, and node start and finish times measured from
+the start of the tree. Imports of sibling proofs can also run concurrently.
+The integration test uses four threads by default and accepts an override
+through `RAYON_NUM_THREADS`.
 
 `tree-demo` records every proof time, circuit construction count, verifier digest,
 geometry, security parameters, environment and process peak RSS. It rejects

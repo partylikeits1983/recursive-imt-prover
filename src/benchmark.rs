@@ -17,8 +17,8 @@ pub fn statistics(mut values: Vec<f64>) -> Value {
 }
 
 pub fn environment() -> Value {
-    json!({"hardware":command("sysctl", &["-n", "machdep.cpu.brand_string"]),
-        "memory_bytes":command("sysctl", &["-n", "hw.memsize"]), "os":command("uname", &["-a"]),
+    json!({"hardware":cpu_model(), "memory_bytes":memory_bytes(),
+        "logical_cpus":sysconf(libc::_SC_NPROCESSORS_ONLN), "os":command("uname", &["-a"]),
         "rustc":command("rustc", &["-Vv"]), "threads":rayon::current_num_threads(),
         "rustflags_runtime":std::env::var("RUSTFLAGS").unwrap_or_default(),
         "source_keccak256":env!("IMT_SOURCE_KECCAK256"),
@@ -29,6 +29,46 @@ pub fn environment() -> Value {
         "recursion_revision":"3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
         "memory_method":"getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
         "release_profile":{"lto":"thin","codegen_units":16}})
+}
+
+#[cfg(not(target_os = "linux"))]
+fn cpu_model() -> Option<String> {
+    command("sysctl", &["-n", "machdep.cpu.brand_string"])
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_model() -> Option<String> {
+    fn model_name(info: &str) -> Option<String> {
+        info.lines().find_map(|line| {
+            let (field, value) = line.split_once(':')?;
+            let value = value.trim();
+            (field.trim().eq_ignore_ascii_case("model name") && !value.is_empty())
+                .then(|| value.to_owned())
+        })
+    }
+
+    std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .as_deref()
+        .and_then(model_name)
+        .or_else(|| command("lscpu", &[]).as_deref().and_then(model_name))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn memory_bytes() -> Option<String> {
+    command("sysctl", &["-n", "hw.memsize"])
+}
+
+#[cfg(target_os = "linux")]
+fn memory_bytes() -> Option<String> {
+    let bytes = sysconf(libc::_SC_PHYS_PAGES)?.checked_mul(sysconf(libc::_SC_PAGESIZE)?)?;
+    Some(bytes.to_string())
+}
+
+fn sysconf(name: libc::c_int) -> Option<u64> {
+    // These queries take an integer selector and do not access caller memory.
+    let value = unsafe { libc::sysconf(name) };
+    (value > 0).then_some(value as u64)
 }
 
 pub fn peak_rss() -> u64 {
@@ -43,7 +83,11 @@ pub fn peak_rss() -> u64 {
 }
 
 fn command(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
+    let output = Command::new(program)
+        .args(args)
+        .env("LC_ALL", "C")
+        .output()
+        .ok()?;
     output
         .status
         .success()

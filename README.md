@@ -109,7 +109,7 @@ before compression. Peak process-tree physical footprint was 12.4 GB.
 ## Running locally
 
 From the repository root, run `cargo prove -j 3` for the 64-child release demo
-with up to three child proofs in parallel.
+with up to three proofs running across the tree.
 Each invocation writes completed proofs to a unique temporary directory under
 the git-ignored `run/`, reads sibling proofs from disk when needed, and removes
 the directory on completion, error or Ctrl-C. The final verifier runs in a
@@ -117,37 +117,58 @@ fresh process. Use `--keep` with `--out` to save the verified result. An
 existing `--out` path is left alone during an ordinary demo. Requires Rust 1.98.1.
 
 ```sh
-cargo prove -j 3                            # 64 children, three at a time
+cargo prove -j 3                             # 64-child tree, up to three proofs at once
 cargo prove --help
 cargo prove -n 8 -j 3                        # Shorter eight-child demo
 cargo prove --keep --out run/saved-tree      # Keep the verified files
 cargo prove --verify --out run/saved-tree    # Verify them independently
 ```
 
-In a terminal the demo updates one tree in place. Each row counts completed
-proofs. A hollow diamond marks a proof being generated and a filled circle
-marks a completed proof. This four-child run has one pair still proving.
-`--parallel-children N` sets how many child proofs may run at once. The
-default is two. Use one for serial children or three for three at a time.
-`--parallel-nodes N` independently sets how many aggregate pairs may run at
-once and defaults to one. All proofs share the `--threads` budget. The
-statement order follows the original inputs even when siblings finish out of order.
+The demo prints the machine's CPU model, logical CPU count, prover thread
+count, and total RAM before building the circuits. In a terminal it updates
+the proof tree and the prover's peak RAM and CPU in place. Each row counts
+completed proofs. A hollow diamond marks a proof being generated and a filled circle
+marks a completed proof. Cyan marks the IMT child circuit, yellow the first
+aggregation circuit, and magenta the recursive merge circuit through the root.
+Set `NO_COLOR=1` for a monochrome tree. The example shows two pairs and one
+merge proving at the same time.
+`-j N` (`--jobs N`) sets the shared concurrency across the tree and defaults
+to two. A parent can start as soon as both input proofs are saved. Free slots
+go first to ready aggregates closest to the root, then to remaining leaves.
+Use `--parallel-children N` or `--parallel-nodes N` to limit leaves or aggregates
+within that budget. All proofs share the `--threads` pool. Near the root,
+there may be fewer than `N` proofs ready. The final statement preserves input
+order even when siblings finish out of order.
 
 ```text
-Leaves   4/4   ● ● ● ●
-               └┬┘ └┬┘
-Pairs    1/2    ●   ◇
-                └─┬─┘
-Root     0/1      ·
+Leaves   8/8   ● ● ● ● ● ● ● ●
+               └┬┘ └┬┘ └┬┘ └┬┘
+Pairs    2/4    ●   ●   ◇   ◇
+                └─┬─┘   └─┬─┘
+Merge 1  0/2      ◇       ·
+                  └───┬───┘
+Root     0/1          ·
 ```
 
-After a fresh process verifies the root, the demo prints wall times for setup,
-children, first pairs and each higher level. **Ready children to verified root**
-includes encoding, file I/O and fresh verification, with both proving keys
-prepared and the demo's rejection tests timed separately. Circuit geometry
-and per-proof measurements are in `report.json` when using `--keep`. Redirecting stdout produces
-the JSON result, and `--json` also prints it in a terminal. Progress and timings
-go to stderr.
+After a fresh process verifies the root, the demo prints overall tree time and
+each level's span from its first proof start to its last proof finish. Level
+spans can overlap. **All leaves ready to verified root** starts when the last
+leaf finishes and includes encoding, file I/O and fresh verification. The demo
+runs its rejection checks after proving the tree and times them separately.
+
+The per-proof averages give each tree node equal weight within its group.
+The client average covers witness generation and proving for one leaf. The
+aggregation average covers one call to the pair or merge prover, including
+witness import and its built-in proof check. Both averages exclude setup,
+disk I/O, extra rejection checks and fresh verification.
+
+On macOS and Linux the demo includes the prover's peak resident RAM and CPU in
+the final summary. CPU is sampled every 250 ms across all its threads, so 400%
+means four fully occupied cores over one sample. The fresh verifier reports its
+own peaks. Redirect stdout or pass `--json` to get `average_proof_ms`,
+`peak_rss_bytes` and `peak_cpu_percent` in the JSON summary. Progress and
+human-readable timings go to stderr. With `--keep`, `report.json` also contains
+the circuit geometry and individual proof measurements.
 
 A kept run contains `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
 and a timing report. Keep the verifier key and `trusted.json` with independently

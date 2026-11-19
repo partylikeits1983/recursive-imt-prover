@@ -92,8 +92,8 @@ and the child masking configuration fixed when comparing implementations.
    concurrent nodes on an eight-child tree using a single shared pool.
    Record elapsed time, physical footprint and swap activity. An older layout
    took 164 s with one node and 230 s with two on eight threads. Compilation
-   overlapped part of the two-node run. Retest on the current layout before
-   changing the default. [Earlier scheduling measurements](../benchmarks/binary/tree-merge/paired-scheduling.json)
+   overlapped part of the two-node run. Use `--parallel-nodes` to vary aggregate
+   concurrency while holding the leaf cap fixed. [Earlier scheduling measurements](../benchmarks/binary/tree-merge/paired-scheduling.json)
 4. **Test four masked children in the first aggregation.** If parameter and
    layout checks permit it, a 64-child tree would need 16 first aggregations
    and 15 binary merges. Compare measured totals including any change to
@@ -113,8 +113,8 @@ speed and the six-level dependency path answer different questions.
 ## Independent workers
 
 Prepare one copy of each required circuit per worker. Dispatch a parent when
-both proofs for its assigned left and right positions arrive. The demo already
-runs independent pairs in one thread pool and waits at level boundaries. The
+both proofs for its assigned left and right positions arrive. The demo uses
+the same dependency rule in a single shared thread pool. The
 earlier 64-child node timings simulate 70.15 s on 16 slots and 60.79 s on 32,
 with a barrier at each level. Each slot in that calculation has the throughput
 of the entire M2 Pro. Worker setup, queueing, transfers and final verification

@@ -25,8 +25,9 @@ fn interrupted_demo_cleans_its_files_and_can_rerun() -> Result<()> {
             .current_dir(root.path())
             .stderr(Stdio::piped())
             .spawn()?;
+        let mut stderr = BufReader::new(child.stderr.take().unwrap());
         let mut message = String::new();
-        BufReader::new(child.stderr.take().unwrap()).read_line(&mut message)?;
+        stderr.read_line(&mut message)?;
         let interrupted = Command::new("kill")
             .arg("-INT")
             .arg(child.id().to_string())
@@ -63,10 +64,10 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     let report: Value = read_json(&directory.join("report.json"))?;
     assert_eq!(report["depth"], IMT_DEPTH);
     assert_eq!(report["batch_size"], 64);
-    assert_eq!(
-        report["parallel_children"],
-        threads.parse::<usize>()?.min(3)
-    );
+    let jobs = threads.parse::<usize>()?.min(3);
+    assert_eq!(report["jobs"], jobs);
+    assert_eq!(report["parallel_children"], jobs);
+    assert_eq!(report["parallel_nodes"], jobs);
     assert_eq!(report["children"].as_array().unwrap().len(), 64);
     assert_eq!(report["first_aggregates"].as_array().unwrap().len(), 32);
     assert_eq!(report["circuit_constructions"]["merge"], 1);
@@ -79,17 +80,34 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     assert_eq!(report["negative_checks"].as_array().unwrap().len(), 9);
     let levels = report["merge_levels"].as_array().unwrap();
     assert_eq!(levels.len(), 5);
-    let timed_stages = report["first_aggregation_wall_ms"].as_f64().unwrap()
-        + levels
+    let mut inputs = report["children"].as_array().unwrap();
+    let last_leaf = inputs
+        .iter()
+        .map(|node| node["finished_ms"].as_f64().unwrap())
+        .fold(0.0, f64::max);
+    for parents in std::iter::once(report["first_aggregates"].as_array().unwrap()).chain(
+        levels
             .iter()
-            .map(|l| l["wall_ms"].as_f64().unwrap())
-            .sum::<f64>()
-        + report["fresh_verifier_wall_ms"].as_f64().unwrap();
+            .map(|level| level["nodes"].as_array().unwrap()),
+    ) {
+        assert_eq!(inputs.len(), 2 * parents.len());
+        for (pair, parent) in inputs.as_chunks::<2>().0.iter().zip(parents) {
+            let started = parent["started_ms"].as_f64().unwrap();
+            assert!(
+                pair.iter()
+                    .all(|node| node["finished_ms"].as_f64().unwrap() <= started)
+            );
+        }
+        inputs = parents;
+    }
+    let root_finished = inputs[0]["finished_ms"].as_f64().unwrap();
+    let rest_of_tree =
+        root_finished - last_leaf + report["fresh_verifier_wall_ms"].as_f64().unwrap();
     assert!(
         report["prepared_aggregation_to_fresh_verification_ms"]
             .as_f64()
             .unwrap()
-            >= timed_stages
+            >= rest_of_tree
     );
     for (index, level) in levels.iter().enumerate() {
         assert_eq!(level["verifier_digest"], report["merge_verifier_digest"]);

@@ -6,6 +6,9 @@ use std::{
 };
 
 use anyhow::Result;
+use clap::builder::styling::{AnsiColor, Style};
+
+use super::resources::ProcessPeaks;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Node {
@@ -27,8 +30,15 @@ impl Node {
 }
 
 pub(super) struct TreeProgress {
-    rows: Mutex<Vec<Vec<Node>>>,
+    state: Mutex<ProgressState>,
     interactive: bool,
+    color: bool,
+}
+
+struct ProgressState {
+    rows: Vec<Vec<Node>>,
+    peak_line: String,
+    visible: bool,
 }
 
 impl TreeProgress {
@@ -39,17 +49,52 @@ impl TreeProgress {
         let columns = env::var("COLUMNS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok());
-        let interactive = io::stderr().is_terminal()
-            && env::var("TERM").as_deref() != Ok("dumb")
-            && columns.is_none_or(|n| n >= 40.max(16 + position(leaves, 0, leaves - 1)));
-        eprintln!("\nProof tree   · waiting   ◇ proving   ● proved   × failed");
-        if interactive {
-            eprint!("{}", tree(&rows));
-            eprintln!("Proving child proofs");
-        }
+        let terminal = io::stderr().is_terminal() && env::var("TERM").as_deref() != Ok("dumb");
+        let interactive =
+            terminal && columns.is_none_or(|n| n >= 40.max(16 + position(leaves, 0, leaves - 1)));
+        let color = terminal && env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
         Self {
-            rows: Mutex::new(rows),
+            state: Mutex::new(ProgressState {
+                rows,
+                peak_line: ProcessPeaks::default().status_line(),
+                visible: false,
+            }),
             interactive,
+            color,
+        }
+    }
+
+    pub fn show(&self) {
+        let mut state = self.state.lock().unwrap();
+        eprintln!("\nProof tree   · waiting   ◇ proving   ● proved   × failed");
+        if self.color {
+            let [leaf, pair, merge] = [0, 1, 2].map(|level| circuit_style(level, self.color));
+            eprintln!(
+                "Circuits     {leaf}IMT child{leaf:#}   {pair}First aggregation{pair:#}   {merge}Recursive merge{merge:#}"
+            );
+        }
+        if self.interactive {
+            eprint!(
+                "{}Proving child proofs\n{}\n",
+                tree(&state.rows, self.color),
+                state.peak_line
+            );
+            state.visible = true;
+        }
+    }
+
+    pub fn update_peaks(&self, peaks: ProcessPeaks) {
+        if !self.interactive {
+            return;
+        }
+        let peak_line = peaks.status_line();
+        let mut state = self.state.lock().unwrap();
+        if state.peak_line == peak_line {
+            return;
+        }
+        state.peak_line = peak_line;
+        if state.visible {
+            eprintln!("\x1b[1A\r\x1b[2K{}", state.peak_line);
         }
     }
 
@@ -73,18 +118,19 @@ impl TreeProgress {
         result
     }
 
-    fn update(&self, level: usize, index: usize, state: Node) {
-        let mut rows = self.rows.lock().unwrap();
-        rows[level][index] = state;
+    fn update(&self, level: usize, index: usize, node: Node) {
+        let mut state = self.state.lock().unwrap();
+        state.rows[level][index] = node;
+        let rows = &state.rows;
         if self.interactive {
-            let action = match state {
+            let action = match node {
                 Node::Proving => "Proving",
                 Node::Done => "Proved",
                 Node::Failed => "Failed",
                 Node::Waiting => unreachable!(),
             };
             self.redraw(
-                &rows,
+                &state,
                 &format!(
                     "{action}  {}  {}/{}",
                     label(level, rows.len()),
@@ -92,38 +138,44 @@ impl TreeProgress {
                     rows[level].len()
                 ),
             );
-        } else if state == Node::Failed
-            || (state == Node::Done && rows[level].iter().all(|&n| n == Node::Done))
+        } else if node == Node::Failed
+            || (node == Node::Done && rows[level].iter().all(|&n| n == Node::Done))
         {
-            eprintln!("{}", row(&rows, level));
+            eprintln!("{}", row(rows, level, self.color));
         }
     }
 
     pub fn message(&self, message: &str) {
-        let rows = self.rows.lock().unwrap();
+        let state = self.state.lock().unwrap();
         if self.interactive {
-            self.redraw(&rows, message);
+            self.redraw(&state, message);
         } else {
             eprintln!("{message}");
         }
     }
 
-    pub fn finish(&self) {
-        if !self.interactive {
-            eprint!("{}", tree(&self.rows.lock().unwrap()));
+    pub fn finish(&self, peaks: ProcessPeaks) {
+        let mut state = self.state.lock().unwrap();
+        if self.interactive {
+            state.peak_line = peaks.status_line();
+            self.redraw(&state, "Root verified");
+            state.visible = false;
+        } else {
+            eprint!("{}", tree(&state.rows, self.color));
+            eprintln!("Root verified");
         }
-        self.message("Root verified");
     }
 
-    fn redraw(&self, rows: &[Vec<Node>], message: &str) {
-        // One row per level, one connector per gap and a phase line. A single
-        // locked write keeps concurrent sibling completions in display order.
+    fn redraw(&self, state: &ProgressState, message: &str) {
+        // One row per level, one connector per gap, a phase line and a peak line.
+        // The state lock serializes redraws with the sampler.
         let mut out = io::stderr().lock();
         let _ = writeln!(
             out,
-            "\x1b[{}A\r{}\x1b[2K{message}",
-            2 * rows.len(),
-            tree(rows)
+            "\x1b[{}A\r{}\x1b[2K{message}\n\x1b[2K{}",
+            2 * state.rows.len() + 1,
+            tree(&state.rows, self.color),
+            state.peak_line
         );
     }
 }
@@ -145,7 +197,19 @@ fn position(leaves: usize, level: usize, index: usize) -> usize {
     index * span * spacing + (span - 1) * spacing / 2
 }
 
-fn row(rows: &[Vec<Node>], level: usize) -> String {
+fn circuit_style(level: usize, color: bool) -> Style {
+    if !color {
+        return Style::new();
+    }
+    match level {
+        0 => AnsiColor::Cyan,
+        1 => AnsiColor::Yellow,
+        _ => AnsiColor::Magenta,
+    }
+    .on_default()
+}
+
+fn row(rows: &[Vec<Node>], level: usize, color: bool) -> String {
     let nodes = &rows[level];
     let leaves = rows[0].len();
     let mut marks = vec![' '; position(leaves, level, nodes.len() - 1) + 1];
@@ -153,8 +217,9 @@ fn row(rows: &[Vec<Node>], level: usize) -> String {
         marks[position(leaves, level, index)] = node.glyph();
     }
     let done = nodes.iter().filter(|&&n| n == Node::Done).count();
+    let style = circuit_style(level, color);
     format!(
-        "{:<7} {:>2}/{:<2}  {}",
+        "{style}{:<7} {:>2}/{:<2}  {}{style:#}",
         label(level, rows.len()),
         done,
         nodes.len(),
@@ -162,7 +227,7 @@ fn row(rows: &[Vec<Node>], level: usize) -> String {
     )
 }
 
-fn tree(rows: &[Vec<Node>]) -> String {
+fn tree(rows: &[Vec<Node>], color: bool) -> String {
     let leaves = rows[0].len();
     let mut lines = Vec::new();
     for level in 0..rows.len() {
@@ -187,7 +252,7 @@ fn tree(rows: &[Vec<Node>]) -> String {
                 edges.into_iter().collect::<String>()
             ));
         }
-        lines.push(row(rows, level));
+        lines.push(row(rows, level, color));
     }
     lines.push(String::new());
     lines.join("\n")
@@ -206,7 +271,7 @@ mod tests {
             vec![Node::Proving, Node::Done],
             vec![Node::Waiting],
         ];
-        let diagram = tree(&rows);
+        let diagram = tree(&rows, false);
         assert_eq!(
             diagram.lines().collect::<Vec<_>>(),
             [
@@ -225,15 +290,32 @@ mod tests {
             let rows: Vec<_> = (0..=depth)
                 .map(|i| vec![Node::Waiting; 1 << (depth - i)])
                 .collect();
-            let diagram = tree(&rows);
+            let diagram = tree(&rows, false);
             assert!(diagram.lines().all(|line| line.chars().count() <= 80));
             assert_eq!(diagram.lines().count(), 2 * depth + 1);
         }
     }
 
     #[test]
+    fn colors_follow_circuit_reuse_through_the_root() {
+        let rows: Vec<_> = [8, 4, 2, 1].map(|n| vec![Node::Done; n]).into();
+        let plain = tree(&rows, false);
+        let colored = tree(&rows, true);
+        let mut colors = ["\x1b[36m", "\x1b[33m", "\x1b[35m", "\x1b[35m"].into_iter();
+        for (i, (line, expected)) in colored.lines().zip(plain.lines()).enumerate() {
+            if i % 2 == 0 {
+                assert_eq!(line, format!("{}{expected}\x1b[0m", colors.next().unwrap()));
+            } else {
+                assert_eq!(line, expected);
+            }
+        }
+        assert_eq!(colors.next(), None);
+    }
+
+    #[test]
     fn sibling_progress_follows_completion_order() {
         let display = TreeProgress::new(4);
+        display.show();
         let barrier = Barrier::new(2);
         thread::scope(|scope| {
             let first = scope.spawn(|| {
@@ -245,11 +327,14 @@ mod tests {
             });
             barrier.wait();
             display.track(1, 1, || Ok(())).unwrap();
-            let active = display.rows.lock().unwrap()[1].clone();
+            let active = display.state.lock().unwrap().rows[1].clone();
             barrier.wait();
             assert!(first.join().unwrap().is_err());
             assert_eq!(active, [Node::Proving, Node::Done]);
-            assert_eq!(display.rows.lock().unwrap()[1], [Node::Failed, Node::Done]);
+            assert_eq!(
+                display.state.lock().unwrap().rows[1],
+                [Node::Failed, Node::Done]
+            );
         });
     }
 }

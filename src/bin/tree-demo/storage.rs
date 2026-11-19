@@ -37,6 +37,7 @@ pub(super) fn scratch_directory(parent: &Path) -> Result<TempDir> {
     Ok(scratch)
 }
 
+#[derive(Clone)]
 pub(super) struct StoredProof<P> {
     pub public: P,
     path: PathBuf,
