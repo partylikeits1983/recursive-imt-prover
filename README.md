@@ -97,6 +97,8 @@ before compression. Peak process-tree physical footprint was 12.4 GB.
 [Current measurements](benchmarks/binary/tree-merge/conditional-swaps-sixty-four.json) and
 [previous measurements](benchmarks/binary/tree-merge/affine-bus-sixty-four.json).
 
+[Plan for one-minute aggregation](docs/aggregation-performance.md)
+
 ## Running locally
 
 Requires Rust 1.98.1. The tree prover uses the available CPU count, up to 64

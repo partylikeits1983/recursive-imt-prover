@@ -33,15 +33,11 @@ generation, setup, aggregation and final verification separately, as well as ful
 elapsed time. Keep aggregate proofs below 1.5 MB and work toward 1 MB. The
 64-child correctness run is a baseline, not completion of the performance goal.
 
-Optimize in this order:
-
-1. Reduce committed linear intermediates and fixed-layout padding. The current
-   format uses 218,103,808 initial codeword cells. Preserve one merge key.
-2. Improve the measured arithmetic, bus and coordinate-conversion hot loops;
-   reduce large copies and keep working sets within memory.
-3. Run independent pairs concurrently with an explicit memory budget and shared
-   setup. Measure total work and elapsed time; do not report an ideal parallel
-   schedule as a measured result.
+The [aggregation performance plan](aggregation-performance.md) covers worker
+scheduling, the Keccak sumcheck experiment and commitment-opening costs.
+For single-machine work, track committed linear intermediates and padding
+against the current 218,103,808 initial codeword cells. Measure the memory
+cost of running sibling pairs concurrently.
 
 The recursive packing table now stores one scale per geometric coefficient run.
 Native gates handle the remaining coefficients. An extra table for those rows
