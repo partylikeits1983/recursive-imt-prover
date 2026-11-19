@@ -2,6 +2,7 @@ use std::{cmp::Reverse, sync::Arc};
 
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
+use p3_air::{AirBuilder, WindowAccess};
 use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
@@ -185,6 +186,29 @@ impl PackedRow {
 }
 
 impl PackedShard {
+    pub(super) fn eval<AB: AirBuilder<F = F>>(&self, builder: &mut AB, offset: usize) {
+        let row = builder.main();
+        let main = |i| row.current(offset + i).unwrap();
+        let pp = |b: &AB, i| b.preprocessed().current(i).unwrap();
+        let mut equation = main(TERMS + 1) - main(TERMS);
+        if self.geometric {
+            let mut word = AB::Expr::ZERO;
+            for i in 0..TERMS {
+                let bit = main(i);
+                word += bit * F::from_repr(1 << i);
+                builder.assert_zero(bit * (bit - pp(builder, self.active_offset() + i)));
+            }
+            equation -= pp(builder, COEFFICIENTS) * word;
+        } else {
+            for i in 0..TERMS {
+                let bit = main(i);
+                equation -= bit * pp(builder, COEFFICIENTS + i);
+                builder.assert_zero(bit * (bit - F::ONE));
+            }
+        }
+        builder.assert_zero(equation);
+    }
+
     pub fn active_offset(&self) -> usize {
         COEFFICIENTS + if self.geometric { 1 } else { TERMS }
     }

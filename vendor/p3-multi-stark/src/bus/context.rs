@@ -488,22 +488,30 @@ where
                 self.plan.product_shape().log_height(),
                 len,
                 move |range: Range<usize>| {
-                    let mut leaves = Vec::with_capacity(range.len());
-                    for block in self.plan.blocks(direction) {
-                        let start = range.start.max(block.offset);
-                        let end = range.end.min(block.offset + (1usize << block.log_height));
-                        if start < end {
-                            leaves.extend(self.materialize_block_range(
+                    let blocks = self.plan.blocks(direction);
+                    let first =
+                        blocks.partition_point(|b| b.offset + (1 << b.log_height) <= range.start);
+                    let mut chunks = blocks[first..]
+                        .iter()
+                        .take_while(|block| block.offset < range.end)
+                        .map(|block| {
+                            let start = range.start.saturating_sub(block.offset);
+                            let end = (range.end - block.offset).min(1 << block.log_height);
+                            self.materialize_block_range(
                                 block,
-                                start - block.offset..end - block.offset,
+                                start..end,
                                 tables,
                                 preprocessed,
                                 periodic,
                                 public_values,
                                 &weights,
                                 offset,
-                            ));
-                        }
+                            )
+                        });
+                    let mut leaves = chunks.next().unwrap_or_default();
+                    leaves.reserve_exact(range.len() - leaves.len());
+                    for chunk in chunks {
+                        leaves.extend(chunk);
                     }
                     assert_eq!(leaves.len(), range.len());
                     leaves
@@ -552,7 +560,6 @@ where
         })
     }
 
-    /// Prepare a Boolean affine evaluator only when columns and live rows provide reuse.
     #[inline(never)]
     fn try_affine_leaves(
         factor: &BusFactorPlan<'_, F, EF>,
@@ -562,18 +569,10 @@ where
         height: usize,
         range: Range<usize>,
     ) -> Option<Vec<EF>> {
-        if height < 8 || matches!(selector, RowSelector::Boundary(_)) {
+        if range.len() < 8 || matches!(selector, RowSelector::Boundary(_)) {
             return None;
         }
         let columns = || sources.iter().flat_map(|(_, columns)| columns.iter());
-        if columns()
-            .filter(|column| matches!(column, SourceColumn::Trace(ColumnView::Boolean { .. })))
-            .take(8)
-            .count()
-            < 8
-        {
-            return None;
-        }
         // Inspect all original views before consulting zero-pruned coefficients.
         if sources
             .iter()
@@ -583,31 +582,33 @@ where
         {
             return None;
         }
-        if let RowSelector::Column(column) = selector
-            && range
-                .clone()
-                .map(|row| column.value(row))
-                .filter(|value| !value.is_zero())
-                .take(8)
-                .count()
-                < 8
-        {
-            return None;
-        }
         let affine = factor.affine(public).ok().flatten()?;
         let difference = AffineRow::bind(affine.factor_minus_one, sources)?;
+        if let RowSelector::Column(column) = selector {
+            return Some(
+                range
+                    .into_par_iter()
+                    .map(|row| {
+                        let active = column.value(row);
+                        if active.is_zero() {
+                            EF::ONE
+                        } else if active.is_one() {
+                            EF::ONE + difference.evaluate(row, height)
+                        } else {
+                            EF::ONE + difference.evaluate(row, height) * active
+                        }
+                    })
+                    .collect(),
+            );
+        }
         let activation = match affine.activation {
             Some(expression) => Some(AffineRow::bind(expression, sources)?),
             None => None,
         };
         Some(
             range
-                .clone()
                 .into_par_iter()
                 .map(|row| {
-                    if selector.is_inactive(row, height) {
-                        return EF::ONE;
-                    }
                     let difference = difference.evaluate(row, height);
                     EF::ONE
                         + activation.as_ref().map_or(difference, |activation| {
@@ -693,24 +694,18 @@ where
             _ => RowSelector::General,
         };
 
-        // Dense tables cannot use the Boolean coefficient lookup. Check table storage
-        // before scanning the declaration's columns or preparing affine coefficients.
-        let has_packed_sources = tables[air].packed_bits().is_some()
-            || preprocessed[air].is_some_and(|table| table.packed_bits().is_some());
-        if has_packed_sources
-            && let Some(leaves) = Self::try_affine_leaves(
-                &factor,
-                public,
-                [
-                    (main_indices.as_slice(), main_columns.as_slice()),
-                    (fixed_indices.as_slice(), fixed_columns.as_slice()),
-                    (periodic_indices.as_slice(), periodic_columns.as_slice()),
-                ],
-                &selector,
-                height,
-                range.clone(),
-            )
-        {
+        if let Some(leaves) = Self::try_affine_leaves(
+            &factor,
+            public,
+            [
+                (main_indices.as_slice(), main_columns.as_slice()),
+                (fixed_indices.as_slice(), fixed_columns.as_slice()),
+                (periodic_indices.as_slice(), periodic_columns.as_slice()),
+            ],
+            &selector,
+            height,
+            range.clone(),
+        ) {
             return leaves;
         }
 
@@ -1651,7 +1646,7 @@ mod tests {
         use super::{BusContext, RowSelector, SourceColumn};
 
         #[test]
-        fn packed_affine_route_requires_reused_columns_and_live_rows() {
+        fn affine_route_supports_mixed_storage_and_sparse_selectors() {
             let main_indices: Vec<_> = (0..8).collect();
             let fixed_indices = [0];
             let packed = Table::<F>::from_packed_bits(RowMajorMatrix::new(vec![0x55; 8], 8), 3);
@@ -1718,7 +1713,7 @@ mod tests {
                         );
                         assert_eq!(
                             result.is_some(),
-                            !boundary && active == 8 && packed_count == 8,
+                            !boundary,
                             "boundary={boundary}, active={active}, packed={packed_count}"
                         );
                     }

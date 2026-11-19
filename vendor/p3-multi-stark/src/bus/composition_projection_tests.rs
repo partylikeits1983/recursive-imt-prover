@@ -397,19 +397,7 @@ fn check<F, EF, R>(
                             &generic.fingerprint_weights,
                             generic.offset,
                         );
-                        let weighted_claim = |air: &AirState<'_, F, R>| {
-                            air.terms
-                                .iter()
-                                .map(|term| term.coefficient * term.row_claim)
-                                .sum::<R>()
-                        };
-                        assert_eq!(
-                            actual.projected.as_ref().map_or_else(
-                                || weighted_claim(actual),
-                                |projection| projection.row_claim
-                            ),
-                            weighted_claim(reference),
-                        );
+                        assert_eq!(actual.row_claim, reference.row_claim);
                     }
                 }
                 for round in 0..num_variables {
@@ -537,7 +525,7 @@ where
         let mut generic = make();
         let projection = projected.airs[0].projected.as_ref().unwrap();
         assert_eq!(projection.groups.len(), 1);
-        assert_eq!(projection.row_claim, R::ZERO);
+        assert_eq!(projected.airs[0].row_claim, R::ZERO);
         assert!(
             projection.groups[0]
                 .difference

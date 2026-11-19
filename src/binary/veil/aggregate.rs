@@ -7,6 +7,7 @@ use imt_flock_backend::{
     verifier_key_digest,
 };
 use p3_circuit::{Circuit, CircuitBuilder, CircuitConstructionLimits};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -64,6 +65,31 @@ pub struct AggregationMetrics {
     pub witness_import_ms: Vec<f64>,
     pub aggregate: Metrics,
     pub aggregation_wall_ms: f64,
+}
+
+pub(crate) fn import_children<T: Sync>(
+    children: &[T],
+    import: impl Fn(usize, &T, &mut Vec<F>) -> Result<()> + Sync,
+) -> Result<(Vec<F>, Vec<f64>)> {
+    let mut private = Vec::new();
+    let mut times = Vec::with_capacity(children.len());
+    for (pair, children) in children.chunks(2).enumerate() {
+        let inputs = children
+            .par_iter()
+            .enumerate()
+            .map(|(side, child)| {
+                let start = Instant::now();
+                let mut values = Vec::new();
+                import(2 * pair + side, child, &mut values)?;
+                Ok((values, ms(start)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (values, time) in inputs {
+            private.extend(values);
+            times.push(time);
+        }
+    }
+    Ok((private, times))
 }
 
 impl PreparedMaskedAggregate {
@@ -166,10 +192,7 @@ impl PreparedMaskedAggregate {
     ) -> Result<(AggregatePublic, Vec<u8>, AggregationMetrics)> {
         ensure!(children.len() == self.count, "incorrect child count");
         let start = Instant::now();
-        let mut private = Vec::new();
-        let mut imports = Vec::new();
-        for (index, child) in children.iter().enumerate() {
-            let t = Instant::now();
+        let (private, imports) = import_children(children, |index, child, private| {
             if self.format != StatementFormat::Ordered {
                 private.extend(child.public.fields());
                 private.extend(
@@ -179,8 +202,8 @@ impl PreparedMaskedAggregate {
                 );
             }
             private.extend(self.verifier.import(&child.public, &child.proof)?);
-            imports.push(ms(t));
-        }
+            Ok(())
+        })?;
         let public = AggregatePublic {
             children: children.iter().map(|c| c.public.clone()).collect(),
         };

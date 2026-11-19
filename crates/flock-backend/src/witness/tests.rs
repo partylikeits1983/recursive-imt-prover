@@ -62,9 +62,10 @@ fn direct_bridge_matches_both_native_output_formats() {
         let read = |id: u32| convert(*witness.get_value(WitnessId(id - 1)).unwrap());
         let call = &calls[0];
         let mut direct = F::zero_vec(116 * height);
+        let input = keccak_limbs_to_state(&limbs);
         assert_eq!(
             call.fill(&read, &mut direct, height, 0).unwrap(),
-            limbs.map(u64::from)
+            (input, KeccakF.permute(input))
         );
         for (i, values) in direct.chunks_exact(height).enumerate() {
             for (r, &value) in values.iter().enumerate() {

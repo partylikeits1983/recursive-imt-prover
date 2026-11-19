@@ -12,14 +12,15 @@ use p3_sumcheck::layout::Table;
 use p3_symmetric::Permutation;
 
 use crate::{
-    F, Prepared,
+    F, HashBackend, Prepared,
     air::{WitnessSource, convert},
+    checkpoint_keccak::{State, linked::BoundaryWitness},
 };
 
 #[cfg(test)]
 mod tests;
 
-type WitnessTables = (Vec<Option<Table<F>>>, Vec<[u64; 100]>);
+type WitnessTables = (Vec<Option<Table<F>>>, BoundaryWitness);
 
 pub(super) struct KeccakWires {
     input: [u32; 100],
@@ -72,14 +73,14 @@ impl KeccakWires {
         table: &mut [F],
         height: usize,
         row: usize,
-    ) -> Result<[u64; 100]> {
+    ) -> Result<(State, State)> {
         let mut limbs = [0u16; 100];
         for (limb, &id) in limbs.iter_mut().zip(&self.input) {
             *limb = u16::try_from(read(id).to_repr())?;
         }
-        let mut state = keccak_limbs_to_state(&limbs);
-        KeccakF.permute_mut(&mut state);
-        let result = keccak_state_to_limbs(&state);
+        let input = keccak_limbs_to_state(&limbs);
+        let output = KeccakF.permute(input);
+        let result = keccak_state_to_limbs(&output);
         for (i, (&value, &id)) in result.iter().zip(&self.output).enumerate() {
             ensure!(
                 id == 0 || read(id).to_repr() == u64::from(value),
@@ -92,7 +93,7 @@ impl KeccakWires {
                 table[(100 + i) * height + row + 1] = F::from_repr(u64::from(value.swap_bytes()));
             }
         }
-        Ok(limbs.map(u64::from))
+        Ok((input, output))
     }
 }
 
@@ -112,7 +113,11 @@ impl Prepared {
             private.len() == private_width * self.instances,
             "incorrect private input count"
         );
-        let mut rows = Vec::with_capacity(self.calls);
+        let mut boundaries = BoundaryWitness {
+            inputs: Vec::with_capacity(self.calls),
+            outputs: Vec::with_capacity(self.calls),
+        };
+        let zero_output = KeccakF.permute([0; 25]);
         let mut values: Vec<_> = self
             .airs
             .iter()
@@ -179,22 +184,24 @@ impl Prepared {
                             "invalid Keccak bridge table"
                         );
                         for (r, call) in self.keccak_wires.iter().enumerate() {
-                            rows.push(call.fill(&read, output, height, 2 * r)?);
+                            let (before, after) = call.fill(&read, output, height, 2 * r)?;
+                            boundaries.inputs.push(before);
+                            boundaries.outputs.push(after);
                         }
                         if self.direct_bridge {
                             let count = self.keccak_wires.len();
-                            let zero_output = keccak_state_to_limbs(&KeccakF.permute([0; 25]));
+                            let limbs = keccak_state_to_limbs(&zero_output);
                             for (column, words) in output.chunks_exact_mut(height).enumerate() {
                                 let value = if column < 100 {
-                                    zero_output[column]
+                                    limbs[column]
                                 } else {
-                                    zero_output[column - 100].swap_bytes()
+                                    limbs[column - 100].swap_bytes()
                                 };
                                 for pair in words[2 * count..].as_chunks_mut::<2>().0 {
                                     pair[1] = F::from_repr(u64::from(value));
                                 }
                             }
-                            rows.resize((instance + 1) * (height / 2), [0; 100]);
+                            boundaries.pad((instance + 1) * (height / 2), zero_output);
                         }
                     }
                 }
@@ -213,6 +220,9 @@ impl Prepared {
                     .then(|| Table::new(RowMajorMatrix::new(values, 1 << self.log_heights[i])))
             })
             .collect();
-        Ok((tables, rows))
+        if self.backend == HashBackend::Checkpoint {
+            boundaries.pad(1 << self.log_heights[self.hash_index], zero_output);
+        }
+        Ok((tables, boundaries))
     }
 }

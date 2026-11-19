@@ -31,6 +31,10 @@ impl<F: Field> FactoredEquality<F> {
         1usize << self.point.len()
     }
 
+    pub(super) fn first_coordinate(&self) -> F {
+        self.point[0]
+    }
+
     pub(super) fn num_variables(&self) -> usize {
         self.point.len()
     }

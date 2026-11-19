@@ -218,7 +218,10 @@ impl RecursiveAggregate {
         )?;
         let mut private = self.boundary.public_inputs(&proof.statement)?;
         let seed = scheme.arithmetic_seed(&self.authority.data.seed, &proof.statement)?;
-        private.extend(self.arithmetic.private_inputs(bytes, public, &seed)?);
+        private.extend(
+            self.arithmetic
+                .import_proof(proof.arithmetic, public, &seed)?,
+        );
         let seed = scheme.transcript_seed(&self.authority.data.seed);
         let mut ch = self.boundary.native_challenger(&proof.statement, &seed)?;
         let input = scheme.recursive_input(&proof.keccak, &ports, &mut ch)?;

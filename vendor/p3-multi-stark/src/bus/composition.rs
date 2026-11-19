@@ -43,7 +43,6 @@ struct CompositionTerm<R> {
     owner: p3_bus::BusBlockOwner,
     bus: usize,
     coefficient: R,
-    row_claim: R,
 }
 
 struct ProjectedTerm<R> {
@@ -54,7 +53,6 @@ struct ProjectedTerm<R> {
 struct ProjectedAir<R> {
     groups: Vec<ProjectedTerm<R>>,
     equality_prefix: R,
-    row_claim: R,
 }
 
 struct AffineGroup<R> {
@@ -92,6 +90,8 @@ struct AirState<'a, F: Field, R> {
     terms: Vec<CompositionTerm<R>>,
     projected: Option<ProjectedAir<R>>,
     affine: Vec<AffineGroup<R>>,
+    initial_coefficients: Option<[R; 3]>,
+    row_claim: R,
     unused_prefix: usize,
     prefix_evaluation: R,
     public_values: Vec<F>,
@@ -155,13 +155,6 @@ impl<R: Field> AffineSum<R> {
 }
 
 impl<R: Field> ProjectedTerm<R> {
-    fn at(&self, row: usize) -> R {
-        let difference = self.difference.as_slice()[row];
-        self.activation
-            .as_ref()
-            .map_or(difference, |poly| difference * poly.as_slice()[row])
-    }
-
     fn fold(&mut self, challenge: R) {
         self.difference.fix_prefix_var_mut(challenge);
         compact_poly(&mut self.difference);
@@ -453,7 +446,6 @@ where
                         .map(|a| self.materialize_affine(a)),
                 })
                 .collect(),
-            row_claim: R::ZERO,
         });
         // Borrowed committed views cost no column buffers. Period vectors are owned.
         self.periodic.clear();
@@ -513,17 +505,22 @@ where
         Poly::new(values)
     }
 
-    fn affine_value(&self, expression: &BusAffineExpression<R>, row: usize) -> R {
-        let boundary = BoundaryEvals::from_row_with_prefix(row, self.equality.len(), self.boundary);
-        let mut value = expression.constant;
-        for (coefficient, selector) in [
-            (expression.first_row, boundary.first),
-            (expression.last_row, boundary.last),
-            (expression.transition, boundary.transition),
-        ] {
-            if coefficient != R::ZERO {
-                value += coefficient * selector;
-            }
+    fn affine_endpoints(
+        &self,
+        expression: &BusAffineExpression<R>,
+        row: usize,
+        half: usize,
+    ) -> [R; 2] {
+        let interior = expression.constant + expression.transition;
+        let mut low = interior;
+        let mut high = interior;
+        if row == 0 {
+            low += expression.first_row * self.boundary.first;
+        }
+        if row + 1 == half {
+            high = expression.constant
+                + expression.last_row * self.boundary.last
+                + expression.transition * self.boundary.transition;
         }
         for (entries, sources) in [
             (&expression.main, &self.main),
@@ -531,21 +528,27 @@ where
             (&expression.periodic, &self.periodic),
         ] {
             for &(index, coefficient) in entries {
-                value += sources[index].weighted_at(coefficient, row);
+                let source = &sources[index];
+                low += source.weighted_at(coefficient, row);
+                high += source.weighted_at(coefficient, row + half);
             }
         }
-        value
+        [low, high]
     }
 
     fn affine_coefficients(&self) -> [R; 3] {
         quadratic_coefficients(&self.equality, |row, half| {
             let mut sums = [R::ZERO; 3];
             for group in &self.affine {
-                let low = self.affine_value(&group.difference, row);
-                let high = self.affine_value(&group.difference, row + half);
-                if let Some(activation) = &group.activation {
-                    let a_low = self.affine_value(activation, row);
-                    let a_high = self.affine_value(activation, row + half);
+                let activation = group
+                    .activation
+                    .as_ref()
+                    .map(|a| self.affine_endpoints(a, row, half));
+                if activation == Some([R::ZERO; 2]) {
+                    continue;
+                }
+                let [low, high] = self.affine_endpoints(&group.difference, row, half);
+                if let Some([a_low, a_high]) = activation {
                     sums[0] += low * a_low;
                     sums[1] += high * a_high;
                     sums[2] += (high - low) * (a_high - a_low);
@@ -558,6 +561,13 @@ where
         })
     }
 
+    fn round_coefficients(&self) -> Option<[R; 3]> {
+        self.projected
+            .as_ref()
+            .map(|projection| projection.round_coefficients(&self.equality))
+            .or_else(|| (!self.affine.is_empty()).then(|| self.affine_coefficients()))
+    }
+
     fn initialize_claims<EF: ExtensionField<F>>(
         &mut self,
         context: &BusContext<F, EF>,
@@ -566,18 +576,11 @@ where
     ) {
         let height = self.equality.len();
 
-        if let Some(projected) = &mut self.projected {
-            projected.row_claim = (0..height)
-                .into_par_iter()
-                .map(|row| {
-                    self.equality.at(row)
-                        * projected
-                            .groups
-                            .iter()
-                            .map(|group| group.at(row))
-                            .sum::<R>()
-                })
-                .sum();
+        self.initial_coefficients = self.round_coefficients();
+        if let Some([constant, linear, quadratic]) = self.initial_coefficients {
+            // The initial Boolean sum weighs q(0) and q(1) by 1 - anchor and anchor.
+            let anchor = self.equality.first_coordinate();
+            self.row_claim = constant + anchor * (linear + quadratic);
             return;
         }
 
@@ -607,19 +610,19 @@ where
         let (periodic_indices, periodic_width) = (&self.periodic_layout.0, self.periodic_layout.1);
         let equality = &self.equality;
         let public_values = &self.public_values;
-        let claims = (0..height)
+        self.row_claim = (0..height)
             .into_par_iter()
             .par_fold_reduce(
                 || {
                     (
-                        R::zero_vec(factors.len()),
+                        R::ZERO,
                         R::zero_vec(main_width),
                         R::zero_vec(fixed_width),
                         R::zero_vec(periodic_width),
                         Vec::new(),
                     )
                 },
-                |(mut claims, mut main, mut preprocessed, mut periodic, mut scratch), row| {
+                |(mut claim, mut main, mut preprocessed, mut periodic, mut scratch), row| {
                     // Unread columns keep their zero, which no planned expression names.
                     for (&index, column) in main_indices.iter().zip(main_polys) {
                         main[index] = column.at(row);
@@ -640,27 +643,25 @@ where
                         is_last_row: boundary.last,
                         is_transition: boundary.transition,
                     };
-                    let weight = equality.at(row);
-                    for (claim, factor) in claims.iter_mut().zip(&factors) {
-                        let value = factor
-                            .evaluate::<R>(&mut scratch, evaluation)
-                            .expect("a planned expression resolves against its owning table");
-                        *claim += weight * (value - R::ONE);
-                    }
-                    (claims, main, preprocessed, periodic, scratch)
+                    let weighted_value = self
+                        .terms
+                        .iter()
+                        .zip(&factors)
+                        .map(|(term, factor)| {
+                            let value = factor
+                                .evaluate::<R>(&mut scratch, evaluation)
+                                .expect("a planned expression resolves against its owning table");
+                            term.coefficient * (value - R::ONE)
+                        })
+                        .sum::<R>();
+                    claim += equality.at(row) * weighted_value;
+                    (claim, main, preprocessed, periodic, scratch)
                 },
-                |(mut left, main, preprocessed, periodic, scratch), (right, ..)| {
-                    for (claim, partial) in left.iter_mut().zip(right) {
-                        *claim += partial;
-                    }
-                    (left, main, preprocessed, periodic, scratch)
+                |(left, main, preprocessed, periodic, scratch), (right, ..)| {
+                    (left + right, main, preprocessed, periodic, scratch)
                 },
             )
             .0;
-
-        for (term, claim) in self.terms.iter_mut().zip(claims) {
-            term.row_claim = claim;
-        }
     }
 }
 
@@ -760,6 +761,8 @@ where
                         terms: Vec::new(),
                         projected: None,
                         affine: Vec::new(),
+                        initial_coefficients: None,
+                        row_claim: R::ZERO,
                         unused_prefix: num_variables - share.row_variables,
                         prefix_evaluation: R::ONE,
                         public_values: public_values[air].to_vec(),
@@ -775,14 +778,11 @@ where
                     owner: share.owner,
                     bus: share.bus,
                     coefficient,
-                    row_claim: R::ZERO,
                 });
             }
         }
 
         for air in airs.iter_mut().flatten() {
-            // A dormant wide table benefits before its first active round: its initial
-            // row claim reads the compact projection instead of revisiting every source.
             air.initialize_projection(context, &weights, offset);
             // A full-height table never reads its own initial row claim.
             if air.unused_prefix > 0 {
@@ -900,6 +900,7 @@ where
                 air.prefix_evaluation *= challenge;
                 continue;
             }
+            air.initial_coefficients = None;
             if let Some(projected) = &mut air.projected {
                 for projection in &mut projected.groups {
                     projection.fold(challenge);
@@ -935,10 +936,8 @@ where
                 if self.round < air.unused_prefix {
                     None
                 } else {
-                    air.projected
-                        .as_ref()
-                        .map(|projection| projection.round_coefficients(&air.equality))
-                        .or_else(|| (!air.affine.is_empty()).then(|| air.affine_coefficients()))
+                    air.initial_coefficients
+                        .or_else(|| air.round_coefficients())
                 }
             })
             .collect::<Vec<_>>();
@@ -954,15 +953,7 @@ where
                     .map(|(air, coefficients)| {
                         let body = if self.round < air.unused_prefix {
                             // χ_k contributes the current node; its remaining cube sum is one.
-                            node * air.projected.as_ref().map_or_else(
-                                || {
-                                    air.terms
-                                        .iter()
-                                        .map(|term| term.coefficient * term.row_claim)
-                                        .sum::<R>()
-                                },
-                                |projected| projected.row_claim,
-                            )
+                            node * air.row_claim
                         } else if let Some([constant, linear, quadratic]) = *coefficients {
                             let prefix =
                                 air.projected.as_ref().map_or(R::ONE, |p| p.equality_prefix);

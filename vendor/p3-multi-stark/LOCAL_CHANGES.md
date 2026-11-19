@@ -24,9 +24,10 @@ cargo test --locked --release --manifest-path vendor/p3-multi-stark/Cargo.toml -
 ```
 
 The production bus prover now uses `leaf_sources`, backed by deterministic range
-reads from the same committed tables. `materialize_block_range` keeps the original
-full block height for boundary and periodic selectors, while evaluating only
-the requested rows. The packed Boolean affine path also respects that range.
+reads from the same committed tables. Range reads locate the first intersecting
+block by offset and reuse its output buffer. Affine tuple fingerprints read
+packed, dense and periodic columns directly. Column selectors retain their exact
+field values. Boundary and nonlinear factors use the generic evaluator.
 The old full-prefix materializer remains a differential-test reference.
 Range tests compare chunk sizes 1/3/7/64 with independent dense AIR rows.
 
@@ -101,7 +102,10 @@ use the same coefficient accumulator; nonlinear declarations keep the generic
 evaluator. This changes prover work only, with no new full-height tables.
 The existing differential test compares every round against generic evaluation,
 including Poly64/Poly192, mixed heights, packed columns, selectors, cancellation
-and zero/one challenges. Run the bus tests above.
+and zero/one challenges. For a shorter affine table, the prover weights the two
+Boolean endpoints of its first round polynomial to compute its dormant claim,
+then reuses those coefficients when the table becomes active. This saves one
+full scan. Run the bus tests above.
 
 Ordinary, lookup and sliced constraint folders declare that they discard bus
 payloads. AIRs using the deferred bus API can skip those expressions while

@@ -1,5 +1,6 @@
 use anyhow::{Result, ensure};
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
+use p3_air::{AirBuilder, WindowAccess};
 use p3_binary_field::TowerLevel;
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
@@ -14,6 +15,16 @@ pub const LOG_HEIGHT: usize = 17;
 
 pub struct Products {
     pub rows: Vec<[u32; WIDTH]>,
+}
+
+pub(super) fn eval<AB: AirBuilder<F = F>>(builder: &mut AB, offset: usize) {
+    let row = builder.main();
+    let [a, b, c, d, e, f, g, h, i] = core::array::from_fn(|j| row.current(offset + j).unwrap());
+    let cross = b * f + c * e;
+    let high = c * f;
+    builder.assert_zero(g - a * d - cross.clone());
+    builder.assert_zero(h - a * e - b * d - cross - high.clone());
+    builder.assert_zero(i - a * f - b * e - c * d - high);
 }
 
 type Gate = (usize, [usize; 5]);

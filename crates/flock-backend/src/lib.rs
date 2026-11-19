@@ -42,7 +42,7 @@ use old_air::BaseAir as OldBaseAir;
 use old_binary_field::{Poly64 as OldF, TowerLevel as OldTowerLevel};
 use p3_air::BaseAir;
 use p3_binary_field::{Poly64, TowerLevel};
-use p3_circuit::Circuit;
+use p3_circuit::{Circuit, ops::keccak_state_to_limbs};
 use p3_circuit_prover::{
     direct::DirectCircuitLimits,
     native_bus::{KeccakCommitment, NativeBusCircuit},
@@ -617,34 +617,20 @@ impl Prepared {
 
     pub fn prove(&self, public: &[OldF], private: &[OldF]) -> Result<(Vec<u8>, Metrics)> {
         let start = Instant::now();
-        let (mut tables, rows) = self.witness_tables(public, private)?;
+        let (mut tables, states) = self.witness_tables(public, private)?;
         let mut hash_witness = (self.backend == HashBackend::Flock).then(|| {
             Witness::generate(
                 &self.hash,
                 self.log_heights[self.hash_index],
-                &rows,
-                &[0; 100],
-                |row, words| words.copy_from_slice(row),
+                &states.inputs,
+                &[0; 25],
+                |state, words| words.copy_from_slice(&keccak_state_to_limbs(state).map(u64::from)),
             )
         });
-        let boundaries = if self.backend == HashBackend::Checkpoint {
-            let mut inputs = rows
-                .iter()
-                .map(|row| {
-                    core::array::from_fn(|lane| {
-                        (0..4).fold(0, |word, j| word | (row[4 * lane + j] << (16 * j)))
-                    })
-                })
-                .collect::<Vec<_>>();
-            inputs.resize(1 << self.log_heights[self.hash_index], [0; 25]);
-            Some(BoundaryWitness::new(inputs))
-        } else {
-            None
-        };
+        let boundaries = (self.backend == HashBackend::Checkpoint).then_some(states);
         if !self.direct_bridge {
             tables[self.hash_index] = boundaries.as_ref().map(BoundaryWitness::ports);
         }
-        drop(rows);
         let public = self.public(public)?;
         let instances = ProverInstances::new(
             tables

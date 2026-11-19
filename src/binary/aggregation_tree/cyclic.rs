@@ -13,7 +13,7 @@ use crate::{
     binary::{
         MAX_CHILDREN,
         relation::{AggregatePublic, F},
-        veil::aggregate::AggregationMetrics,
+        veil::aggregate::{AggregationMetrics, import_children},
     },
 };
 
@@ -106,17 +106,14 @@ impl PreparedCyclicMerge {
         } else {
             &self.recursive
         };
-        let mut private = Vec::new();
-        let mut imports = Vec::new();
-        for (i, child) in children.iter().enumerate() {
-            let t = Instant::now();
+        let (private, imports) = import_children(children, |i, child, private| {
             private.extend(statements[i].fields());
             private.extend(statements[1 - i].digest.map(|v| F::new(u64::from(v))));
             private.extend(
                 source.private_inputs(&child.proof, &fields(&statements[i], &self.authority))?,
             );
-            imports.push(ms(t));
-        }
+            Ok(())
+        })?;
         let public = AggregatePublic {
             children: children
                 .iter()

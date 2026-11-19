@@ -49,8 +49,8 @@ pub struct LinkedBatch {
 }
 
 pub struct BoundaryWitness {
-    inputs: Vec<State>,
-    outputs: Vec<State>,
+    pub(crate) inputs: Vec<State>,
+    pub(crate) outputs: Vec<State>,
 }
 
 pub struct Pending {
@@ -81,6 +81,11 @@ impl BoundaryWitness {
     pub fn new(inputs: Vec<State>) -> Self {
         let outputs = inputs.iter().map(|&state| KeccakF.permute(state)).collect();
         Self { inputs, outputs }
+    }
+
+    pub(crate) fn pad(&mut self, len: usize, zero_output: State) {
+        self.inputs.resize(len, [0; 25]);
+        self.outputs.resize(len, zero_output);
     }
 
     pub fn ports(&self) -> Table<F> {

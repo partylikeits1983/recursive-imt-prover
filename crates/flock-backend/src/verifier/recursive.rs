@@ -170,7 +170,15 @@ impl RecursiveArithmetic {
 
     pub fn private_inputs(&self, bytes: &[u8], public: &[F], seed: &[u8]) -> Result<Vec<F>> {
         let proof: AggregateProof = crate::proof_codec::decode(bytes)?;
-        let proof = proof.arithmetic;
+        self.import_proof(proof.arithmetic, public, seed)
+    }
+
+    pub(super) fn import_proof(
+        &self,
+        proof: crate::Proof,
+        public: &[F],
+        seed: &[u8],
+    ) -> Result<Vec<F>> {
         ensure!(
             proof.lookup.is_none() && proof.indexed.is_none() && proof.circuits.is_empty(),
             "unsupported arithmetic proof parts"

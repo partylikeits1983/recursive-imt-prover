@@ -121,91 +121,37 @@ impl Chip {
     }
 
     pub fn products(shard: Arc<Products>) -> Self {
-        let main =
-            |i| SymbolicExpression::from(SymbolicVariable::new(BaseEntry::Main { offset: 0 }, i));
-        let pp = |i| {
-            SymbolicExpression::from(SymbolicVariable::new(
-                BaseEntry::Preprocessed { offset: 0 },
-                i,
-            ))
-        };
-        let cross = main(1) * main(5) + main(2) * main(4);
-        let high = main(2) * main(5);
-        let constraints = vec![
-            main(6) - main(0) * main(3) - cross.clone(),
-            main(7) - main(0) * main(4) - main(1) * main(3) - cross - high.clone(),
-            main(8) - main(0) * main(5) - main(1) * main(4) - main(2) * main(3) - high,
-        ];
-        let interactions = (0..products::WIDTH)
-            .map(|i| SymbolicBusInteraction {
-                bus_name: "imt.witness".to_owned(),
-                direction: OldDirection::Push,
-                fields: vec![pp(i), main(i)],
-                activation: OldActivation::Boolean(pp(products::WIDTH)),
-            })
-            .collect();
         Self::synthetic(
             Source::Products(shard),
             products::LOG_HEIGHT,
             products::WIDTH + 1,
-            constraints,
-            interactions,
+            |_| products::WIDTH,
         )
     }
 
     pub fn packed(shard: Arc<PackedShard>) -> Self {
-        let main =
-            |i| SymbolicExpression::from(SymbolicVariable::new(BaseEntry::Main { offset: 0 }, i));
-        let pp = |i| {
-            SymbolicExpression::from(SymbolicVariable::new(
-                BaseEntry::Preprocessed { offset: 0 },
-                i,
-            ))
-        };
-        let mut equation = main(packing::TERMS + 1) - main(packing::TERMS);
-        let mut constraints = Vec::new();
         let active = shard.active_offset();
-        if shard.geometric {
-            let mut word = SymbolicExpression::from(OldF::from_repr(0));
-            for i in 0..packing::TERMS {
-                word += main(i) * OldF::from_repr(1 << i);
-                // Inactive trailing bits must be zero even when the scale is nonzero.
-                constraints.push(main(i) * (main(i) - pp(active + i)));
-            }
-            equation -= pp(packing::COEFFICIENTS) * word;
-        } else {
-            for i in 0..packing::TERMS {
-                equation -= main(i) * pp(packing::COEFFICIENTS + i);
-                constraints.push(main(i) * (main(i) - OldF::from_repr(1)));
-            }
-        }
-        constraints.push(equation);
-        let interactions = (0..packing::WIDTH)
-            .map(|i| SymbolicBusInteraction {
-                bus_name: "imt.witness".to_owned(),
-                direction: OldDirection::Push,
-                fields: vec![pp(i), main(i)],
-                activation: OldActivation::Boolean(pp(active + i)),
-            })
-            .collect();
         let log_height = shard.log_height;
         let pp_width = shard.pp_width();
-        Self::synthetic(
-            Source::Packed(shard),
-            log_height,
-            pp_width,
-            constraints,
-            interactions,
-        )
+        Self::synthetic(Source::Packed(shard), log_height, pp_width, |i| active + i)
     }
 
     fn synthetic(
         source: Source,
         log_height: usize,
         pp_width: usize,
-        constraints: Vec<SymbolicExpression<OldF>>,
-        interactions: Vec<SymbolicBusInteraction<OldF>>,
+        selector: impl Fn(usize) -> usize,
     ) -> Self {
+        let column = |entry, i| SymbolicExpression::from(SymbolicVariable::new(entry, i));
+        let pp = |i| column(BaseEntry::Preprocessed { offset: 0 }, i);
+        let interactions = (0..source.width())
+            .map(|i| SymbolicBusInteraction {
+                bus_name: "imt.witness".to_owned(),
+                direction: OldDirection::Push,
+                fields: vec![pp(i), column(BaseEntry::Main { offset: 0 }, i)],
+                activation: OldActivation::Boolean(pp(selector(i))),
+            })
+            .collect();
         Self::Native(Box::new(ImportedAir {
             copies: CopySelectors {
                 columns: vec![],
@@ -222,7 +168,7 @@ impl Chip {
             successor_bus: String::new(),
             preprocessed_map: (0..pp_width).map(Some).collect(),
             log_height,
-            constraints,
+            constraints: Vec::new(),
             interactions,
             source,
         }))
@@ -784,9 +730,14 @@ impl<AB: BusInteractionBuilder<F = F>> Air<AB> for Chip {
                         // main columns were uniquely fixed to public values.
                         b.assert_zero(b.main().current(0).unwrap());
                     }
-                    for c in &a.constraints {
-                        let value = evaluate(c, b);
-                        b.assert_zero(value);
+                    match &a.source {
+                        Source::Products(_) => products::eval(b, main_offset),
+                        Source::Packed(shard) => shard.eval(b, main_offset),
+                        Source::Native(_) => {
+                            for c in &a.constraints {
+                                b.assert_zero(evaluate(c, b));
+                            }
+                        }
                     }
                     for (index, i) in a.interactions.iter().enumerate() {
                         let activation = if let Some(Some(column)) =
