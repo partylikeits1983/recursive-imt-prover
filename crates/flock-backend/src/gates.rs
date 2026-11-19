@@ -41,18 +41,18 @@ impl GateLayout {
 
 // Five wire IDs, one field coefficient, then eight native operation selectors.
 const SMALL_OUTPUT: [usize; 14] = [ID, ID, ID, 0, ID, 1, 1, 1, 1, 1, 1, 0, 1, 1];
-const SELECT_OR_PRODUCT: [usize; 14] = [ID, ID, ID, 0, ID, 0, 0, 1, 1, 0, 1, 0, 0, 0];
+const FOUR_WIRE_GATES: [usize; 14] = [ID, ID, ID, 0, ID, 64, 1, 1, 1, 0, 1, 0, 1, 1];
 const PRODUCT: [usize; 14] = [ID, ID, 0, 0, ID, 0, 0, 0, 1, 0, 0, 0, 0, 0];
 const fn constant_gates(coefficient_bits: usize) -> [usize; 14] {
     [ID, 0, ID, 0, ID, coefficient_bits, 1, 0, 0, 0, 0, 0, 1, 1]
 }
-const FIVE_WIRE_GATES: [usize; 14] = [ID, ID, ID, ID, ID, 0, 0, 0, 0, 0, 0, 1, 0, 0];
+const FIVE_WIRE_GATES: [usize; 14] = [ID, ID, ID, ID, ID, 0, 0, 1, 1, 0, 1, 1, 0, 0];
 
 pub const RECURSIVE_LAYOUT: [GateLayout; 6] = [
     GateLayout::new([16, 16, 16, 0, 16], 20, SMALL_OUTPUT),
-    GateLayout::new([64, 64, 64, 0, 64], 20, SELECT_OR_PRODUCT),
+    GateLayout::new([64, 64, 64, 0, 64], 19, FOUR_WIRE_GATES),
     GateLayout::new([64, 64, 0, 0, 64], 18, PRODUCT),
-    GateLayout::new([64, 0, 64, 0, 64], 20, constant_gates(17)),
+    GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(17)),
     GateLayout::new([64, 0, 64, 0, 64], 19, constant_gates(64)),
     GateLayout::new([64, 64, 64, 64, 64], 17, FIVE_WIRE_GATES),
 ];

@@ -69,6 +69,10 @@ fit within the wider of the two output bounds. Constant multiply-add rows
 also bound the addend through the equation `addend = output + coefficient * input`.
 The prover omits columns whose wire ID and value are both fixed to zero.
 
+The four-wire table also accepts constant multiply-adds. The five-wire table
+can take ordinary multiply-adds when the four-wire table fills. Each operation
+keeps its original selector, wire IDs and coefficient in the committed layout.
+
 The arithmetic proof commits the circuit's Keccak wire table once. Each
 template contributes 116 columns. For each permutation, consecutive rows hold
 the input and output, including 16 byte-swapped limbs. Each template is padded
@@ -173,12 +177,17 @@ guards in place. This establishes the correctness baseline; the
 ### Opening a field word
 
 For witness tables whose columns all have the same power-of-two width from 2 to
-64 bits, verifier versions 5 and 6 use the low row coordinates for the bits of each word. For a word of width `2^k`, let
+64 bits, verifier versions 5 through 7 use the low row coordinates for the bits of each word. For a word of width `2^k`, let
 `X` be the polynomial basis generator of Poly64. For each bit-position
 variable `j`, set `a_j = X^(2^j)` and `q_j = a_j / (1 + a_j)`. Opening the
 bit column at the ordinary row point followed by `q_(k-1), ..., q_0` gives
 one evaluation. Multiplying it by `product_j (1 + a_j)` recovers the logical
 column evaluation, since the resulting weight of bit `i` is exactly `X^i`.
 WHIR authenticates this evaluation in both the native and recursive verifiers.
-Mixed-width and preprocessed tables retain their coordinate openings. The
-trusted key determines the layout. The verifier also accepts version 4 snapshots.
+Mixed-width main tables retain coordinate openings. Version 7 divides each
+trusted preprocessing column into digits of 2, 8 or 32 bits, capped at the next
+power of two of its table's largest column width. For a digit width of `k`,
+the verifier opens each digit by the same method and weights digit `j` by
+`X^(j*k)`. Setup checks the declared widths and commits zero padding in the last
+digit. The verifier selects the encoding from the trusted key and accepts
+earlier key versions under their original rules.
