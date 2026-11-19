@@ -49,25 +49,26 @@ impl RoundProver<E> for DenseChi {
 #[test]
 fn compact_chi_rounds_match_dense_sumcheck() {
     let mut ch = challenger(b"checkpoint-chi-differential");
-    for (log, first) in [
-        (0, None),
-        (1, None),
-        (2, None),
-        (3, None),
-        (3, Some(E::ZERO)),
-        (3, Some(E::ONE)),
+    for (log, coordinate, first_challenge) in [
+        (0, None, None),
+        (1, None, None),
+        (2, None, None),
+        (3, None, None),
+        (3, Some(E::ZERO), Some(E::ZERO)),
+        (3, Some(E::ONE), Some(E::ONE)),
+        (3, Some(E::ZERO), Some(E::ONE)), // zero equality scale after the first fold
     ] {
         let states = inputs(1 << log);
-        let eq = Point::new(
+        let target = Point::new(
             (0..log)
-                .map(|_| ch.sample_algebra_element::<E>())
+                .map(|_| coordinate.unwrap_or_else(|| ch.sample_algebra_element::<E>()))
                 .collect::<Vec<_>>(),
-        )
-        .equality_weights_msb();
+        );
+        let eq = target.equality_weights_msb();
         let weights = (0..BITS)
             .map(|_| ch.sample_algebra_element::<E>())
             .collect::<Vec<_>>();
-        let mut compact = ChiSumcheck::new(states.clone(), eq.clone(), weights.clone());
+        let mut compact = ChiSumcheck::new(states.clone(), target.as_slice(), weights.clone());
         let mut dense = DenseChi {
             columns: core::array::from_fn(|offset| {
                 Poly::new(
@@ -100,13 +101,21 @@ fn compact_chi_rounds_match_dense_sumcheck() {
             ),
         };
         for round in 0..log + POSITION_LOG {
+            let expected = dense.round_poly();
+            let sum = (0..dense.weights.num_evals())
+                .map(|i| {
+                    let [a, b, c] = dense.columns.each_ref().map(|p| p.as_slice()[i]);
+                    dense.weights.as_slice()[i] * (a + c + b * c)
+                })
+                .sum();
+            assert_eq!(compact.round_poly(), expected, "log={log}, round={round}");
             assert_eq!(
-                compact.round_poly(),
-                dense.round_poly(),
-                "log={log}, round={round}"
+                compact.round_poly_with_sum(sum),
+                expected,
+                "claimed: log={log}, round={round}"
             );
             let challenge = match round {
-                0 => first.unwrap_or_else(|| ch.sample_algebra_element()),
+                0 => first_challenge.unwrap_or_else(|| ch.sample_algebra_element()),
                 r if r % 5 == 3 => E::ZERO,
                 r if r % 5 == 4 => E::ONE,
                 _ => ch.sample_algebra_element(),

@@ -107,10 +107,6 @@ impl PreparedMaskedAggregate {
             StatementFormat::Ordered => verifier.circuit()?,
             StatementFormat::CyclicPair => tree_pair_circuit(&verifier)?,
         };
-        eprintln!(
-            "Child verifier template: {} witnesses, {} instances",
-            circuit.witness_count, settings.batch_size
-        );
         let domain = format!(
             "{}/{}/{}",
             format.protocol(backend),

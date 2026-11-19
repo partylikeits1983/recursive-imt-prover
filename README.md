@@ -76,7 +76,7 @@ See [parameter rationale and limitations](docs/binary-security.md#parameters-and
 
 ## Benchmarks
 
-Both runs used an Apple M2 Pro with 16 GiB of memory and 12 Rayon workers.
+These runs used an Apple M2 Pro with 16 GiB of memory and 12 Rayon workers.
 Each run proved 64 independent children and processed one aggregation node at
 a time. Per-proof times are medians. Fresh verification includes process
 startup and trusted-key loading.
@@ -85,8 +85,15 @@ startup and trusted-key loading.
 |---|---:|---:|---:|---:|---:|---:|
 | Previous | 2.55 s | 10.06 s | 10.01 s | 10 min 37 s | 893,611 B | 102 ms |
 | Conditional swaps | 2.50 s | 9.74 s | 9.61 s | 10 min 15 s | 909,023 B | 112 ms |
+| Keccak running sum | 2.45 s | 9.55 s | 9.89 s | 10 min 25 s | 908,310 B | 115 ms |
 
-29 of 32 first pairs and 28 of 31 higher merges finished within
+The running-sum prover took **10 min 26 s from ready children to a freshly
+verified root**. The six nodes on its longest dependency path summed to
+62.56 s. Four fixed-input merge samples per prover gave a lower pooled
+median with the change, but the 64-child run took 1.7% longer than the
+conditional-swaps run. [Running-sum measurements](benchmarks/binary/tree-merge/keccak-running-sum.json)
+
+In the conditional-swaps run, 29 of 32 first pairs and 28 of 31 higher merges finished within
 10 seconds. Higher merges ranged from 9.19 to 11.03 seconds. The longest chain of
 six dependent nodes summed to 60.03 seconds. The wall-time target for the whole
 tree is one minute.
@@ -94,31 +101,54 @@ tree is one minute.
 Setup, child proving and verification, aggregation and fresh verification took
 13 min 42 s, excluding negative tests. The final proof was 978,474 bytes
 before compression. Peak process-tree physical footprint was 12.4 GB.
-[Current measurements](benchmarks/binary/tree-merge/conditional-swaps-sixty-four.json) and
+[Conditional-swaps measurements](benchmarks/binary/tree-merge/conditional-swaps-sixty-four.json) and
 [previous measurements](benchmarks/binary/tree-merge/affine-bus-sixty-four.json).
 
 [Plan for one-minute aggregation](docs/aggregation-performance.md)
 
 ## Running locally
 
-Requires Rust 1.98.1. The tree prover uses the available CPU count, up to 64
-workers. Use `--threads 12` to reproduce the latest benchmark. Use fresh output directories.
-The full tree test is expensive and is excluded from routine CI.
+From the repository root, run `cargo prove` for an eight-child release demo.
+Each invocation writes completed proofs to a unique temporary directory under
+the git-ignored `run/`, reads sibling proofs from disk when needed, and removes
+the directory on completion, error or Ctrl-C. The final verifier runs in a
+fresh process. Use `--keep` with `--out` to save the verified result. An
+existing `--out` path is left alone during an ordinary demo. Requires Rust 1.98.1.
 
 ```sh
-cargo test --locked --release --workspace
-
-# Eight children, four first aggregates, then two levels of the same merge.
-cargo run --locked --release -- --batch-size 8 --out run/tree8
-
-# Full acceptance test: 64 children, five merge levels and isolated verification.
-RAYON_NUM_THREADS=12 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
-
-# Requires only the final proof, ordered statements and trusted final key files.
-cargo run --locked --release -- --verify --out run/tree8
+cargo prove
+cargo prove --help
+cargo prove -n 8 -j 3                        # Up to three child proofs at once
+cargo prove --keep --out run/saved-tree      # Keep the verified files
+cargo prove --verify --out run/saved-tree    # Verify them independently
 ```
 
-The demo writes `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
+In a terminal the demo updates one tree in place. Each row counts completed
+proofs. A hollow diamond marks a proof being generated and a filled circle
+marks a completed proof. This four-child run has one pair still proving.
+`--parallel-children N` sets how many child proofs may run at once. The
+default is two. Use one for serial children or three for three at a time.
+`--parallel-nodes N` independently sets how many aggregate pairs may run at
+once and defaults to one. All proofs share the `--threads` budget. The
+statement order follows the original inputs even when siblings finish out of order.
+
+```text
+Leaves   4/4   ● ● ● ●
+               └┬┘ └┬┘
+Pairs    1/2    ●   ◇
+                └─┬─┘
+Root     0/1      ·
+```
+
+After a fresh process verifies the root, the demo prints wall times for setup,
+children, first pairs and each higher level. **Ready children to verified root**
+includes encoding, file I/O and fresh verification, with both proving keys
+prepared and the demo's rejection tests timed separately. Circuit geometry
+and per-proof measurements are in `report.json` when using `--keep`. Redirecting stdout produces
+the JSON result, and `--json` also prints it in a terminal. Progress and timings
+go to stderr.
+
+A kept run contains `aggregate.proof`, `statement.json`, `verifier.key`, `trusted.json`
 and a timing report. Keep the verifier key and `trusted.json` with independently
 trusted verifier data. A key and matching digest supplied only by an untrusted
 prover do not establish authority.

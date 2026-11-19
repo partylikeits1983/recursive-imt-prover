@@ -2,7 +2,7 @@
 use p3_binary_field::Poly192 as E;
 use p3_field::{ExtensionField, Field, PackedFieldExtension, PackedValue, PrimeCharacteristicRing};
 use p3_maybe_rayon::prelude::*;
-use p3_multilinear_util::poly::Poly;
+use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_sumcheck::generic_degree::{RoundPolyInterpolator, RoundProver};
 
 use super::{BITS, POSITIONS, State, linear::shift};
@@ -11,9 +11,10 @@ use crate::F;
 type PackedE = <E as ExtensionField<F>>::ExtensionPacking;
 const PACKING_WIDTH: usize = <F as Field>::Packing::WIDTH;
 
-pub(super) struct ChiSumcheck {
+pub(super) struct ChiSumcheck<'a> {
     stage: Stage,
     weights: Weights,
+    point: &'a [E],
 }
 
 struct Weights {
@@ -59,36 +60,39 @@ impl Weights {
 }
 
 impl Columns {
-    /// Coefficients of sum_j w[j] * chi(low[j] + t * delta[j]).
-    /// Expanding once avoids evaluating the quadratic at three field nodes.
-    fn chi_coefficients(&self, i: usize, half: usize, weights: &Weights) -> [E; 3] {
-        let mut coefficients = [E::ZERO; 3];
+    /// Constant and quadratic coefficients of the weighted chi polynomial along a pair.
+    /// Starting at either endpoint gives the same quadratic term in characteristic two.
+    fn chi_endpoint_and_quadratic(
+        &self,
+        i: usize,
+        other: usize,
+        half: usize,
+        weights: &Weights,
+    ) -> [E; 2] {
+        let mut coefficients = [E::ZERO; 2];
         if let Self::Bits { states, first } = self {
             if let Some(r) = first {
-                let mut sums = [[E::ZERO; 3]; 3];
+                let mut sums = [[E::ZERO; 3]; 2];
                 for lane in 0..25 {
                     let low: [u64; 3] =
                         core::array::from_fn(|k| states[i][shift(lane * 64, k) / 64]);
                     let high: [u64; 3] =
-                        core::array::from_fn(|k| states[i + half][shift(lane * 64, k) / 64]);
+                        core::array::from_fn(|k| states[other][shift(lane * 64, k) / 64]);
                     let dlow: [u64; 3] = core::array::from_fn(|k| {
                         low[k] ^ states[i + 2 * half][shift(lane * 64, k) / 64]
                     });
                     let dhigh: [u64; 3] = core::array::from_fn(|k| {
-                        high[k] ^ states[i + 3 * half][shift(lane * 64, k) / 64]
+                        high[k] ^ states[other + 2 * half][shift(lane * 64, k) / 64]
                     });
                     let [a, b, c] = low;
                     let [ar, br, cr] = dlow;
-                    let [at, bt, ct] = core::array::from_fn(|k| low[k] ^ high[k]);
-                    let [art, brt, crt] = core::array::from_fn(|k| dlow[k] ^ dhigh[k]);
+                    let bt = low[1] ^ high[1];
+                    let ct = low[2] ^ high[2];
+                    let brt = dlow[1] ^ dhigh[1];
+                    let crt = dlow[2] ^ dhigh[2];
                     // Coefficients in the new round variable, each quadratic in r.
                     let masks = [
                         [a ^ c ^ (b & c), ar ^ cr ^ (b & cr) ^ (br & c), br & cr],
-                        [
-                            at ^ ct ^ (b & ct) ^ (bt & c),
-                            art ^ crt ^ (b & crt) ^ (br & ct) ^ (bt & cr) ^ (brt & c),
-                            (br & crt) ^ (brt & cr),
-                        ],
                         [bt & ct, (bt & crt) ^ (brt & ct), brt & crt],
                     ];
                     for (sums, masks) in sums.iter_mut().zip(masks) {
@@ -100,17 +104,16 @@ impl Columns {
                 return sums.map(|[a, b, c]| a + *r * (b + *r * c));
             }
             let low = &states[i];
-            let high = &states[i + half];
+            let high = &states[other];
             for lane in 0..25 {
                 let next = shift(lane * 64, 1) / 64;
                 let after = shift(lane * 64, 2) / 64;
                 let a = low[lane];
                 let b = low[next];
                 let c = low[after];
-                let da = a ^ high[lane];
                 let db = b ^ high[next];
                 let dc = c ^ high[after];
-                let masks = [a ^ c ^ (b & c), da ^ dc ^ (b & dc) ^ (db & c), db & dc];
+                let masks = [a ^ c ^ (b & c), db & dc];
                 for (sum, mask) in coefficients.iter_mut().zip(masks) {
                     *sum += weights.lane_sum(lane, mask);
                 }
@@ -121,26 +124,25 @@ impl Columns {
             unreachable!()
         };
         let low = &values[i * BITS..(i + 1) * BITS];
-        let high = &values[(i + half) * BITS..(i + half + 1) * BITS];
+        let high = &values[other * BITS..(other + 1) * BITS];
         let load = |row: &[E], j| {
             <PackedE as PackedFieldExtension<F, E>>::from_ext_slice(&row[j..j + PACKING_WIDTH])
         };
-        let mut sums = [PackedE::ZERO.mul_unreduced(PackedE::ZERO); 3];
+        let mut sums = [PackedE::ZERO.mul_unreduced(PackedE::ZERO); 2];
         for j in (0..BITS).step_by(PACKING_WIDTH) {
             let [a, b, c] = core::array::from_fn(|k| load(low, shift(j, k)));
-            let [x, y, z] = core::array::from_fn(|k| load(high, shift(j, k)));
+            let y = load(high, shift(j, 1));
+            let z = load(high, shift(j, 2));
             let w = load(&weights.values, j);
             sums[0] += w.mul_unreduced(a + c + b * c);
-            sums[1] += w.mul_unreduced(x + z + y * z);
-            sums[2] += (w * (b + y)).mul_unreduced(c + z);
+            sums[1] += (w * (b + y)).mul_unreduced(c + z);
         }
-        let [low, high, quadratic] = sums.map(|sum| {
+        sums.map(|sum| {
             let reduced = sum.reduce();
             (0..PACKING_WIDTH)
                 .map(|lane| <PackedE as PackedFieldExtension<F, E>>::extract(&reduced, lane))
                 .sum::<E>()
-        });
-        [low, low + high + quadratic, quadratic]
+        })
     }
 
     fn at(&self, instance: usize, position: usize) -> E {
@@ -202,8 +204,9 @@ impl Columns {
     }
 }
 
-impl ChiSumcheck {
-    pub fn new(states: Vec<State>, equality: Vec<E>, weights: Vec<E>) -> Self {
+impl<'a> ChiSumcheck<'a> {
+    pub fn new(states: Vec<State>, point: &'a [E], weights: Vec<E>) -> Self {
+        let equality = Point::new(point).equality_weights_msb();
         assert_eq!(weights.len(), BITS);
         assert_eq!(states.len(), equality.len());
         let count = states.len();
@@ -217,6 +220,7 @@ impl ChiSumcheck {
                 count,
             },
             weights: Weights::new(weights),
+            point,
         };
         state.enter_positions();
         state
@@ -270,7 +274,7 @@ fn subset_sums<const N: usize, const M: usize>(values: &[E; N]) -> [E; M] {
     table
 }
 
-impl RoundProver<E> for ChiSumcheck {
+impl RoundProver<E> for ChiSumcheck<'_> {
     fn fold(&mut self, challenge: E) {
         match &mut self.stage {
             Stage::Instances {
@@ -294,7 +298,19 @@ impl RoundProver<E> for ChiSumcheck {
         self.enter_positions();
     }
 
+    const USES_RUNNING_SUM: bool = true;
+
     fn round_poly(&self) -> Vec<E> {
+        self.evals(None)
+    }
+
+    fn round_poly_with_sum(&self, sum: E) -> Vec<E> {
+        self.evals(Some(sum))
+    }
+}
+
+impl ChiSumcheck<'_> {
+    fn evals(&self, sum: Option<E>) -> Vec<E> {
         let nodes: [E; 3] = core::array::from_fn(RoundPolyInterpolator::transmitted_node);
         match &self.stage {
             Stage::Instances {
@@ -303,19 +319,38 @@ impl RoundProver<E> for ChiSumcheck {
                 count,
             } => {
                 let half = count / 2;
-                let sums = (0..half)
+                let r = self.point[self.point.len() - count.ilog2() as usize];
+                let weights = &self.weights;
+                let eq = equality.as_slice();
+                // Pull the current equality factor e(t) = 1 + r + t out of
+                // the sum. Adding the paired weights leaves the suffix weight
+                // (including the scale accumulated from previous folds).
+                let weight = |i: usize| eq[i] + eq[i + half];
+                let [low, quadratic] = (0..half)
                     .into_par_iter()
                     .map(|i| {
-                        let [a, b, c] = columns.chi_coefficients(i, half, &self.weights);
-                        let low = equality.as_slice()[i];
-                        let delta = equality.as_slice()[i + half] - low;
-                        nodes.map(|node| (low + delta * node) * (a + node * (b + node * c)))
+                        columns
+                            .chi_endpoint_and_quadratic(i, i + half, half, weights)
+                            .map(|v| v * weight(i))
                     })
-                    .reduce(
-                        || [E::ZERO; 3],
-                        |a, b| core::array::from_fn(|k| a[k] + b[k]),
-                    );
-                sums.to_vec()
+                    .reduce(|| [E::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
+                // For the remaining quadratic q, S = (1+r)q(0) + r*q(1).
+                // A zero target coordinate or an unclaimed round needs a direct q(1).
+                let high = if let Some((sum, inverse)) = sum.zip(r.try_inverse()) {
+                    (sum + (E::ONE + r) * low) * inverse
+                } else {
+                    (0..half)
+                        .into_par_iter()
+                        .map(|i| {
+                            columns.chi_endpoint_and_quadratic(i + half, i, half, weights)[0]
+                                * weight(i)
+                        })
+                        .sum()
+                };
+                let linear = high + low + quadratic;
+                nodes
+                    .map(|t| (E::ONE + r + t) * (low + t * (linear + t * quadratic)))
+                    .to_vec()
             }
             Stage::Positions {
                 columns,

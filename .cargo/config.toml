@@ -2,3 +2,6 @@
 RAYON_NUM_THREADS = { value = "4", force = false }
 [net]
 git-fetch-with-cli = true
+
+[alias]
+prove = "run --quiet --locked --release --bin tree-demo --"

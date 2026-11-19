@@ -159,16 +159,18 @@ verified the 909,023-byte aggregate in 112 ms. The median merge took
 
 ```sh
 # Two merge levels exercise verification of the merge's own output.
-cargo run --locked --release --bin tree-demo -- --batch-size 8 --out run/tree8
+cargo prove -n 8 --keep --out run/tree8
 
 # Full acceptance: 64 independent children and one merge key at all five levels.
 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture
 
 # Independent verification: only final proof, ordered list and trusted key files.
-cargo run --locked --release --bin tree-demo -- --verify --out run/tree8
+cargo prove --verify --out run/tree8
 ```
 
-`--threads` sets the total Rayon worker count. `--parallel-nodes` sets how
+`--threads` sets the total Rayon worker count. `--parallel-children` sets
+the maximum number of simultaneous leaf proofs and defaults to two, capped by
+the worker and leaf counts. Each proof samples its own masks. `--parallel-nodes` sets how
 many sibling pairs may use that pool at once and defaults to one. Siblings
 share the prepared key and retain their input order. The report gives wall
 time for each level and latency for each node. Imports of sibling proofs run

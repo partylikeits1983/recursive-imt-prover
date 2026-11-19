@@ -231,10 +231,6 @@ impl Prepared {
             .map_or(0, |s| s.rows.iter().map(|r| r.sources.len() - 1).sum());
         let extension_products = packing.products.as_ref().map_or(0, |s| s.rows.len());
         let conditional_swaps = packing.swaps.as_ref().map_or(0, |s| s.rows.len());
-        eprintln!("Matched {extension_products} extension products per template");
-        eprintln!(
-            "Packing: {packed_rows} rows replace {packing_intermediates_removed} intermediates"
-        );
         let (shards, mut copies) =
             fanout::partition(&widths, &fanout_pp.values, &packing.removed_uses, recursive)?;
         drop(fanout_pp);
@@ -254,7 +250,6 @@ impl Prepared {
             .iter()
             .map(|s| (s.coordinate_widths.clone(), s.source_rows.len()))
             .collect();
-        eprintln!("Gate live rows by coordinate widths: {gate_rows_by_width:?}");
         let keccak_wires = witness::KeccakWires::from_bridge(
             &bridge.values,
             bridge.width,
@@ -279,7 +274,6 @@ impl Prepared {
                 )
             })
             .collect();
-        eprintln!("Fanout (coordinate width, copies per row, rows): {fanout_copy_layout:?}");
         ensure!(
             calls > 0 && calls * instances <= 1 << 20,
             "unsupported Keccak call count"
@@ -390,10 +384,6 @@ impl Prepared {
         for air in &mut airs {
             air.repeat(instances, hash_stride);
         }
-        eprintln!(
-            "Eliminated {} singleton copies; directly matched {} pairs",
-            copy_stats.single_use, copy_stats.pairs
-        );
         // Canonically bind the actual imported AIR and preprocessing, not a prover-supplied identity.
         let mut identity = Keccak256::new();
         identity.update(match backend {
@@ -509,11 +499,6 @@ impl Prepared {
             }
         }
         let seed = identity.finalize().to_vec();
-        eprintln!(
-            "{backend:?} tables: widths {:?}, log heights {:?}, {calls} Keccak calls",
-            airs.iter().map(BaseAir::width).collect::<Vec<_>>(),
-            log_heights
-        );
         let config = Config::new(&shapes, main_encoding, &pp, pp_encoding)?;
         let checkpoint = if backend == HashBackend::Checkpoint {
             Some(LinkedBatch::with_bridge(

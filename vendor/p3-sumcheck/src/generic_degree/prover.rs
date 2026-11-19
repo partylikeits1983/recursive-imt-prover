@@ -9,6 +9,7 @@ use p3_multilinear_util::point::Point;
 
 use super::proof::GenericDegreeProof;
 use super::transcript::{GenericDegreeShape, ProverTranscript};
+use super::util::RoundPolyInterpolator;
 
 /// Per-round callback used to drive the prover loop.
 ///
@@ -31,6 +32,15 @@ pub trait RoundProver<EF> {
     ///
     /// Vector of length `degree` containing `h(0), h(2), h(3), ..., h(degree)`.
     fn round_poly(&self) -> Vec<EF>;
+
+    /// Enable interpolation of the running sum for states that use it to save prover work.
+    const USES_RUNNING_SUM: bool = false;
+
+    /// Same transmitted evaluations as `round_poly`. Opt-in provers can use
+    /// the sum of the two Boolean endpoints to reconstruct one endpoint.
+    fn round_poly_with_sum(&self, _sum: EF) -> Vec<EF> {
+        self.round_poly()
+    }
 
     /// Run the prover side of a generic-degree sumcheck driven by this state.
     ///
@@ -85,15 +95,24 @@ pub trait RoundProver<EF> {
         let mut transcript =
             ProverTranscript::<Challenger, F, EF>::new(challenger, shape, claimed_sum);
 
+        let interpolator = Self::USES_RUNNING_SUM.then(|| RoundPolyInterpolator::new(degree));
+        let mut sum = claimed_sum;
         for _ in 0..num_rounds {
-            let evals = self.round_poly();
+            let evals = if Self::USES_RUNNING_SUM {
+                self.round_poly_with_sum(sum)
+            } else {
+                self.round_poly()
+            };
 
             // Bind the polynomial, grind, and draw this round's challenge.
             //
             // Binding compares the evaluation count against the described width.
             let (challenge, witness) = transcript.round(&evals);
 
-            // Store what the round produced alongside what it bound.
+            // The next round sums to the current polynomial at the sampled challenge.
+            if let Some(interpolator) = &interpolator {
+                sum = interpolator.eval(&evals, sum, challenge);
+            }
             proof.round_polys.push(evals);
             proof.pow_witnesses.extend(witness);
 

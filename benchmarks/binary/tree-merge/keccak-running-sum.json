@@ -1,0 +1,286 @@
+{
+  "scope": "CPU release measurements on one Apple M2 Pro with 16 GiB and 12 Rayon threads. Times are milliseconds.",
+  "baseline_commit": "8643a92de591bb16aed589bfccd337cbf1001858",
+  "full_tree": {
+    "command": "RAYON_NUM_THREADS=12 cargo test --locked --release --test cyclic_tree -- --ignored --nocapture",
+    "environment": {
+      "compile_time_included": false,
+      "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+      "hardware": "Apple M2 Pro",
+      "memory_bytes": "17179869184",
+      "memory_method": "getrusage RUSAGE_SELF lifetime high-water RSS; cumulative across stages and warm samples",
+      "plonky3_crates": "0.9.0-rc.2",
+      "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+      "profile": "release",
+      "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+      "release_profile": {
+        "codegen_units": 16,
+        "lto": "thin"
+      },
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "rustflags_runtime": "",
+      "source_keccak256": "8963cef33f122b3704251b5bfa95d1685f4d134b1795930b6fa175adafdc0bee",
+      "threads": 12,
+      "os_kernel": "Darwin 24.2.0 arm64"
+    },
+    "batch_size": 64,
+    "parallel_nodes": 1,
+    "setup_ms": {
+      "child": 10.986,
+      "first_aggregation": 6166.163,
+      "merge": 9997.387
+    },
+    "child_proving_ms": {
+      "min": 2253.721,
+      "median": 2446.852,
+      "max": 3062.736
+    },
+    "first_pair_ms": {
+      "min": 8932.279,
+      "median": 9547.637,
+      "max": 11089.519
+    },
+    "higher_merge_ms": {
+      "min": 9112.633,
+      "median": 9886.401,
+      "max": 12878.075
+    },
+    "first_pairs_wall_ms": 308070.509,
+    "higher_level_wall_ms": [
+      162127.427,
+      83343.857,
+      41522.905,
+      19688.419,
+      10649.492
+    ],
+    "all_63_nodes_wall_ms": 625402.609,
+    "ready_children_to_fresh_verification_ms": 625954.42,
+    "fresh_verification_ms": 114.978,
+    "longest_dependency_path_ms": 62562.014,
+    "final_proof_bytes": 908310,
+    "final_proof_sha256": "834cf84c74bab07bd698311e94593448b506b2cf009943fb9b3bd55261e96791",
+    "peak_process_rss_bytes": 6095536128,
+    "full_demo_including_rejection_tests_ms": 843196.163,
+    "first_pair_times_ms": [
+      9454.767,
+      9008.65,
+      8932.279,
+      9596.178,
+      9312.067,
+      9227.657,
+      9026.84,
+      9367.036,
+      9334.592,
+      9609.168,
+      9570.617,
+      8965.194,
+      9264.464,
+      9391.525,
+      9543.085,
+      9398.894,
+      10293.245,
+      11089.519,
+      10769.622,
+      10471.088,
+      9717.526,
+      9666.354,
+      10071.661,
+      9705.17,
+      9828.221,
+      9586.488,
+      9194.282,
+      9794.358,
+      10537.685,
+      9552.19,
+      9246.163,
+      9516.387
+    ],
+    "higher_merge_times_by_level_ms": [
+      [
+        12878.075,
+        9896.235,
+        9843.788,
+        9539.508,
+        10976.854,
+        10628.27,
+        9760.794,
+        9145.914,
+        9292.989,
+        9112.633,
+        9447.481,
+        10009.282,
+        10510.447,
+        10076.007,
+        9458.741,
+        9972.184
+      ],
+      [
+        10079.319,
+        10656.642,
+        11937.325,
+        11366.465,
+        9879.543,
+        9742.465,
+        9262.063,
+        9581.515
+      ],
+      [
+        9886.401,
+        9861.21,
+        10601.761,
+        10767.054
+      ],
+      [
+        9625.628,
+        9866.37
+      ],
+      [
+        10551.829
+      ]
+    ],
+    "merge_key_digest": "b10046b698428e087abadb8d59f2d8e388da0695207242ecfaa1f18b4c783bb2",
+    "fresh_verifier_pass": true,
+    "same_key_across_all_five_merge_levels": true,
+    "invalid_child_proof_rejected": true,
+    "invalid_child_statement_rejected": true,
+    "foreign_authority_rejected": true,
+    "mutations_rejected": [
+      "root",
+      "nullifier hash",
+      "order",
+      "remove",
+      "insert",
+      "half",
+      "corrupted proof",
+      "truncated proof",
+      "trailing proof bytes"
+    ],
+    "full_64_acceptance": true,
+    "measurement_note": "The full 64-child run preceded the live tree display. Each node metric includes its native prover-side verification. Level wall times also include orchestration and the demo verification of higher merges.",
+    "parameters": {
+      "depth": 32,
+      "field": "Poly64/Poly192",
+      "hash": "Keccak-256",
+      "bound": "Johnson",
+      "child_parameters": {
+        "log_inv_rate": 4,
+        "max_message_len": 2097152,
+        "min_algebraic_bits": 144,
+        "query_bits": 160
+      },
+      "full_zk_established": false,
+      "end_to_end_security_bits": null,
+      "outer_query_target_bits": 152,
+      "outer_fold": 4,
+      "outer_initial_rate": "1/4"
+    }
+  },
+  "fixed_input_replay": {
+    "command": "RAYON_NUM_THREADS=12 cargo run --locked --release --example bench-merge -- LEFT RIGHT --repetitions 2",
+    "samples_in_run_order": [
+      {
+        "prover": "baseline",
+        "order": "LR",
+        "aggregation_wall_ms": [
+          9968.177,
+          9197.651
+        ],
+        "parent_proof_keccak256": "03459cb9b6ec54b64fb0fe72f3333d85eeccf659154dd7b836a6e6ee680ce9fe"
+      },
+      {
+        "prover": "running sum",
+        "order": "LR",
+        "aggregation_wall_ms": [
+          9251.23,
+          10574.04
+        ],
+        "parent_proof_keccak256": "03459cb9b6ec54b64fb0fe72f3333d85eeccf659154dd7b836a6e6ee680ce9fe"
+      },
+      {
+        "prover": "running sum",
+        "order": "RL",
+        "aggregation_wall_ms": [
+          9811.413,
+          11252.513
+        ],
+        "parent_proof_keccak256": "9c50e006bd268f074ca79c35f0e596cca64fae9e3b592431f7a83c14840d8dba"
+      },
+      {
+        "prover": "baseline",
+        "order": "RL",
+        "aggregation_wall_ms": [
+          12101.588,
+          11907.443
+        ],
+        "parent_proof_keccak256": "9c50e006bd268f074ca79c35f0e596cca64fae9e3b592431f7a83c14840d8dba"
+      }
+    ],
+    "inputs": {
+      "L": {
+        "leaves": 8,
+        "aggregate_sha256": "2831b116015ef03acd4767e0c2551db20cd78f560a76c10f77770174ac6b26e9",
+        "statement_sha256": "a38d3800340b0d4427a68c2c2a8aeed07fcb2b2adebc8b119cdbd2452b0dd1ee"
+      },
+      "R": {
+        "leaves": 8,
+        "aggregate_sha256": "043b8dbbad9c963f8b607342948bff7038a62aaaee89c7038f0a1f2a3dfd6d87",
+        "statement_sha256": "7ce8fcdf20fcbec962725e5dca84444fcdd11ad3395fe7cd093065ccaf220a64"
+      }
+    },
+    "median_ms": {
+      "baseline": 10937.81,
+      "running sum": 10192.727
+    },
+    "measurement_note": "Four samples per prover across two input orders. Results varied between process runs. Each ordered input produced identical parent bytes under both implementations. The candidate replay used the initial running-sum kernel before the final fallback refactor."
+  },
+  "committed_keccak_component": {
+    "command": "RAYON_NUM_THREADS=12 cargo run --locked --release -p imt-flock-backend --example checkpoint-keccak -- 65536 3 FRESH_DIRECTORY",
+    "samples_in_run_order": [
+      {
+        "prover": "base",
+        "prove_ms": [
+          2886.363,
+          2857.413,
+          2869.776
+        ],
+        "proof_sha256": "3c42a852eed0cbcf8b986c5f383be00658e8717a1de16bf0be081b77a2fa52b4",
+        "fresh_verifier_pass": true
+      },
+      {
+        "prover": "updated",
+        "prove_ms": [
+          2567.147,
+          2637.929,
+          2655.798
+        ],
+        "proof_sha256": "3c42a852eed0cbcf8b986c5f383be00658e8717a1de16bf0be081b77a2fa52b4",
+        "fresh_verifier_pass": true
+      },
+      {
+        "prover": "updated",
+        "prove_ms": [
+          2607.147,
+          2609.349,
+          2580.803
+        ],
+        "proof_sha256": "3c42a852eed0cbcf8b986c5f383be00658e8717a1de16bf0be081b77a2fa52b4",
+        "fresh_verifier_pass": true
+      },
+      {
+        "prover": "base",
+        "prove_ms": [
+          2871.076,
+          2923.805,
+          2969.049
+        ],
+        "proof_sha256": "3c42a852eed0cbcf8b986c5f383be00658e8717a1de16bf0be081b77a2fa52b4",
+        "fresh_verifier_pass": true
+      }
+    ],
+    "median_ms": {
+      "base": 2878.72,
+      "updated": 2608.248
+    },
+    "measurement_note": "Identical deterministic inputs for all 12 proofs. Three sequential samples per process, including the first proof. The component includes boundary commitments and openings."
+  }
+}

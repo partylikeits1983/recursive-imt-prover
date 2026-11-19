@@ -114,8 +114,7 @@ where
                 linear::forward(&state)
             })
             .collect();
-        let equality = Point::new(claim.instance.as_slice()).equality_weights_msb();
-        let mut sumcheck = ChiSumcheck::new(before_chi, equality, claim.weights.clone());
+        let mut sumcheck = ChiSumcheck::new(before_chi, &claim.instance, claim.weights.clone());
         let (proof, point) = sumcheck.prove::<F, C>(
             challenger,
             log_batch + POSITION_LOG,

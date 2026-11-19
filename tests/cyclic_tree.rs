@@ -1,9 +1,4 @@
-use std::{
-    env, fs,
-    path::PathBuf,
-    process::Command,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{env, fs, path::PathBuf, process::Command};
 
 use anyhow::{Result, ensure};
 use recursive_imt_prover::{
@@ -12,17 +7,61 @@ use recursive_imt_prover::{
 };
 use serde_json::Value;
 
+#[cfg(unix)]
+#[test]
+fn interrupted_demo_cleans_its_files_and_can_rerun() -> Result<()> {
+    use std::{
+        io::{BufRead, BufReader},
+        process::Stdio,
+    };
+
+    let root = tempfile::tempdir()?;
+    let existing = root.path().join("run/tree-live");
+    fs::create_dir_all(&existing)?;
+    fs::write(existing.join("existing.txt"), b"keep")?;
+    for _ in 0..2 {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_tree-demo"))
+            .args(["-n", "4", "-j", "3", "--out", "run/tree-live"])
+            .current_dir(root.path())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let mut message = String::new();
+        BufReader::new(child.stderr.take().unwrap()).read_line(&mut message)?;
+        let interrupted = Command::new("kill")
+            .arg("-INT")
+            .arg(child.id().to_string())
+            .status()?;
+        let exit = child.wait()?;
+        assert!(message.contains("Preparing circuits"));
+        assert!(interrupted.success());
+        assert_eq!(exit.code(), Some(130));
+        assert_eq!(fs::read_dir(root.path().join("run"))?.count(), 1);
+        assert_eq!(fs::read(existing.join("existing.txt"))?, b"keep");
+    }
+    Ok(())
+}
+
 #[test]
 #[ignore = "64 real depth-32 child proofs and 63 aggregates; substantial time and memory"]
 fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<()> {
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("run/cyclic-64-test-{}-{stamp}", std::process::id()));
+    let run = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("run");
+    fs::create_dir_all(&run)?;
+    let scratch = tempfile::Builder::new()
+        .prefix("cyclic-64-test-")
+        .tempdir_in(&run)?;
+    let directory = scratch.path().join("verified");
     let executable = env!("CARGO_BIN_EXE_tree-demo");
     let threads = env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "4".to_owned());
     ensure!(
         Command::new(executable)
-            .args(["--batch-size", "64", "--threads", &threads, "--out"])
+            .args([
+                "--batch-size",
+                "64",
+                "--threads",
+                &threads,
+                "--keep",
+                "--out"
+            ])
             .arg(&directory)
             .status()?
             .success(),
@@ -42,6 +81,18 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     assert_eq!(report["negative_checks"].as_array().unwrap().len(), 9);
     let levels = report["merge_levels"].as_array().unwrap();
     assert_eq!(levels.len(), 5);
+    let timed_stages = report["first_aggregation_wall_ms"].as_f64().unwrap()
+        + levels
+            .iter()
+            .map(|l| l["wall_ms"].as_f64().unwrap())
+            .sum::<f64>()
+        + report["fresh_verifier_wall_ms"].as_f64().unwrap();
+    assert!(
+        report["prepared_aggregation_to_fresh_verification_ms"]
+            .as_f64()
+            .unwrap()
+            >= timed_stages
+    );
     for (index, level) in levels.iter().enumerate() {
         assert_eq!(level["verifier_digest"], report["merge_verifier_digest"]);
         let nodes = level["nodes"].as_array().unwrap();

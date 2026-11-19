@@ -29,3 +29,8 @@ cargo test --locked --release --manifest-path vendor/p3-sumcheck/Cargo.toml --ta
 ```
 
 Unused development dependencies removed: `criterion`.
+
+The generic-degree prover has an opt-in running sum. The checkpoint Keccak
+prover uses the same round interpolator as the verifier to recover a Boolean
+endpoint in its instance rounds. Other round provers keep the original
+evaluation path. The dense differential test lives in the Flock backend.
