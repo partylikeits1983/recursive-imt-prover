@@ -132,9 +132,9 @@ impl JointProof {
     }
 }
 
-pub(crate) fn prove_joint<'a, A: p3_multi_stark::folder::ProverAir<F, Poly192>>(
+pub(crate) fn prove_joint(
     config: &Config,
-    instances: p3_multi_stark::ProverInstances<'a, Config, A>,
+    instances: p3_multi_stark::ProverInstances<'_, Config, crate::air::Chip>,
     scheme: &LinkedBatch,
     authority: &[u8],
     hash_index: usize,

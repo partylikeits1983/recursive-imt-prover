@@ -520,6 +520,7 @@
     }
   ],
   "shipping_trials_scope": "The final eight-child comparison uses the exact binaries in the grouped and dense full trees. The four replays ran sequentially in grouped, dense, dense, grouped order on the same eight children.",
-  "build_note": "The grouped replay binary predates only the new zero-copy regression test. Restoring that single test file to its baseline content reproduces the recorded source digest. The production Rust is identical.",
+  "benchmark_revision": "ac1aa48085c603befb943eee7dc21ea8922fdbd9",
+  "build_note": "The grouped replay binary predates the zero-copy regression test in the benchmark revision. Restoring that test file to its baseline content reproduces the recorded source digest.",
   "final_source_keccak256": "d8dde80827e9aa0df3031788971e274a31ea2f7bbeb3b520569f8dd94633b840"
 }
