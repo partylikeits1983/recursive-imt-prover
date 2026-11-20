@@ -62,25 +62,31 @@ published in the ordered output list. Aggregation proofs are non-ZK. The final
 verifier rehashes that list and checks one root proof under an independently
 trusted merge key. [Protocol details](docs/protocol.md) · [Recursive design](docs/aggregation-tree.md)
 
-## Proof sizes
+## Proof sizes and proving time
 
-The 64-child replay on a 12-core, 16 GiB M2 Pro used 12 threads and up to 2
-concurrent aggregation nodes. Child proofs were prepared separately. The table
-gives per-proof medians. Concurrent node times overlap.
+On the 12-core, 16 GiB MacBook Pro with M2 Pro, aggregating **64 saved child
+proofs through fresh root verification took 409.81 s** (6 min 49.8 s).
+The previous packed prover took 469.21 s before this run and
+398.91 s in a repeat afterward. All three used AC power, the same saved
+children, 12 Rayon threads and up to two concurrent parents.
+The optimized replay fell between the controls, leaving the full-tree speedup inconclusive.
 
-| Proof | Leaves covered | Size per proof | Median time |
+| Proof | Leaves covered | Median proof size | Median wall time per proof |
 | --- | ---: | ---: | ---: |
-| Record child | 1 | 1.13 MB | 3.51 s |
-| First aggregation | 2 | 1.01 MB | 11.63 s |
-| Recursive merge | 4–64 | 1.01 MB | 11.75 s |
+| Record child (separate preparation run) | 1 | 1.13 MB | 3.51 s |
+| First aggregation | 2 | 1.01 MB | 12.19 s |
+| Recursive merge | 4–64 | 1.01 MB | 12.44 s |
 
-From saved children to a freshly verified root took **373.38 s** on battery,
-down 35.6% from 579.67 s on the same inputs and 34.1% from the earlier
-566.45 s replay. Including key setup took 388.06 s. The compressed root
-was 948,828 bytes. Fresh-process
-verification took 106 ms including launch. The three-minute target still
-requires 2.07× the measured throughput. The ordered statements and
-verifier key are separate files. [Full replay and trials](benchmarks/binary/tree-merge/joint-packed-parent-m2.json) · [Child preparation](benchmarks/binary/tree-merge/record-replacement.json) · [Performance plan](docs/aggregation-performance.md)
+Parent times overlap. Including key preparation, the optimized tree took
+426.12 s. The compressed root was 948,828 bytes and verified in 133 ms
+including process launch. The ordered statements and verifier key are separate
+files. The isolated 65,536-permutation Keccak proof fell
+from 1.343 s to 1.041 s (medians of four trials per build).
+
+The three-minute target requires 2.28× the throughput of this replay.
+An earlier packed build completed in 373.38 s on battery and produced the same
+root proof. Before the packed chi and joint WHIR changes, the separate-opening
+prover took 579.67 s on the same inputs. [Raw AC-powered trials](benchmarks/binary/tree-merge/packed-first-fold-m2.json) · [Earlier replay](benchmarks/binary/tree-merge/joint-packed-parent-m2.json) · [Child preparation](benchmarks/binary/tree-merge/record-replacement.json) · [Performance notes](docs/aggregation-performance.md)
 
 ## Proof stack and security
 

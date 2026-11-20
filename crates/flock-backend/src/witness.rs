@@ -113,9 +113,14 @@ impl Prepared {
             private.len() == private_width * self.instances,
             "incorrect private input count"
         );
+        let boundary_rows = if self.backend == HashBackend::Checkpoint {
+            1 << self.log_heights[self.hash_index]
+        } else {
+            self.calls
+        };
         let mut boundaries = BoundaryWitness {
-            inputs: Vec::with_capacity(self.calls),
-            outputs: Vec::with_capacity(self.calls),
+            inputs: Vec::with_capacity(boundary_rows),
+            outputs: Vec::with_capacity(boundary_rows),
         };
         let zero_output = KeccakF.permute([0; 25]);
         let mut values: Vec<_> = self
@@ -221,7 +226,7 @@ impl Prepared {
             })
             .collect();
         if self.backend == HashBackend::Checkpoint {
-            boundaries.pad(1 << self.log_heights[self.hash_index], zero_output);
+            boundaries.pad(boundary_rows, zero_output);
         }
         Ok((tables, boundaries))
     }

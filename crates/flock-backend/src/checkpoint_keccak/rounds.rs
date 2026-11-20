@@ -5,7 +5,7 @@ use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_sumcheck::generic_degree::{RoundPolyInterpolator, RoundProver};
 
-use super::{BITS, POSITIONS, State, linear::shift};
+use super::{BITS, POSITIONS, State, bits::byte_table, linear::shift, packed::rows::RowRuns};
 use crate::F;
 
 type PackedE = <E as ExtensionField<F>>::ExtensionPacking;
@@ -16,6 +16,7 @@ pub(super) struct ChiSumcheck<'a, const ENCODED: bool = false> {
     weights: Weights,
     point: &'a [E],
     linear_scale: E,
+    pair_runs: Option<RowRuns>,
 }
 
 struct Weights {
@@ -42,6 +43,7 @@ enum Columns {
         first: Option<E>,
     },
     FourBits(Box<FourBitColumns>),
+    Packed16(Box<Packed16Columns>),
     Folded(Vec<E>),
 }
 
@@ -51,6 +53,51 @@ struct FourBitColumns {
     indices: Vec<u8>,
     values: [E; 16],
     products: [E; 256],
+}
+
+// A 16-bit word selects a subset of the transcript's 16 lane weights.
+struct Packed16Columns {
+    words: Vec<u16>,
+    basis: [E; 16],
+    decode: LaneLookup,
+}
+
+struct LaneLookup {
+    low: [E; 256],
+    high: [E; 256],
+}
+
+impl LaneLookup {
+    fn new(basis: &[E; 16]) -> Self {
+        Self {
+            low: byte_table(&basis[..8]),
+            high: byte_table(&basis[8..]),
+        }
+    }
+
+    #[inline]
+    fn get(&self, word: u16) -> E {
+        let [low, high] = word.to_le_bytes();
+        self.low[usize::from(low)] + self.high[usize::from(high)]
+    }
+}
+
+impl Packed16Columns {
+    fn row(&self, i: usize) -> [E; BITS] {
+        self.words.as_chunks::<BITS>().0[i].map(|w| self.decode.get(w))
+    }
+
+    fn fold(&self, half: usize, challenge: E) -> Vec<E> {
+        // Linearity lets us fold the two subsets before writing the first
+        // dense table. A full-height Poly192 table would be twice this size.
+        let low = LaneLookup::new(&self.basis.map(|x| (E::ONE + challenge) * x));
+        let high = LaneLookup::new(&self.basis.map(|x| challenge * x));
+        let (left, right) = self.words.split_at(half * BITS);
+        left.par_iter()
+            .zip(right.par_iter())
+            .map(|(&a, &b)| low.get(a) + high.get(b))
+            .collect()
+    }
 }
 
 impl FourBitColumns {
@@ -97,8 +144,12 @@ impl FourBitColumns {
 }
 
 impl Weights {
-    fn new(values: Vec<E>) -> Self {
-        let bytes = values.as_chunks::<8>().0.iter().map(subset_sums).collect();
+    fn new<const ENCODED: bool>(values: Vec<E>) -> Self {
+        let bytes = if ENCODED {
+            Vec::new()
+        } else {
+            values.as_chunks::<8>().0.iter().map(subset_sums).collect()
+        };
         Self { values, bytes }
     }
 
@@ -177,11 +228,19 @@ impl Columns {
         if let Self::FourBits(columns) = self {
             return columns.chi_endpoint_and_quadratic(i, other, &weights.values);
         }
-        let Self::Folded(values) = self else {
-            unreachable!()
+        let (decoded_low, decoded_high);
+        let (low, high): (&[E], &[E]) = match self {
+            Self::Packed16(packed) => {
+                decoded_low = packed.row(i);
+                decoded_high = packed.row(other);
+                (&decoded_low, &decoded_high)
+            }
+            Self::Folded(values) => {
+                let rows = values.as_chunks::<BITS>().0;
+                (&rows[i], &rows[other])
+            }
+            _ => unreachable!(),
         };
-        let low = &values[i * BITS..(i + 1) * BITS];
-        let high = &values[other * BITS..(other + 1) * BITS];
         let load = |row: &[E], j| {
             <PackedE as PackedFieldExtension<F, E>>::from_ext_slice(&row[j..j + PACKING_WIDTH])
         };
@@ -218,11 +277,16 @@ impl Columns {
             Self::FourBits(columns) => {
                 columns.values[columns.indices[instance * BITS + position] as usize]
             }
+            Self::Packed16(packed) => packed.decode.get(packed.words[instance * BITS + position]),
             Self::Folded(values) => values[instance * BITS + position],
         }
     }
 
     fn fold(&mut self, half: usize, challenge: E) {
+        if let Self::Packed16(columns) = self {
+            *self = Self::Folded(columns.fold(half, challenge));
+            return;
+        }
         if let Self::FourBits(columns) = self {
             *self = Self::Folded(columns.fold(half, challenge));
             return;
@@ -294,9 +358,24 @@ impl<'a> ChiSumcheck<'a> {
 }
 
 impl<'a> ChiSumcheck<'a, true> {
-    pub(super) fn encoded(values: Vec<E>, point: &'a [E], weights: Vec<E>, scale: E) -> Self {
-        assert_eq!(values.len(), BITS << point.len());
-        Self::from_columns(Columns::Folded(values), point, weights, scale)
+    pub(super) fn encoded(
+        words: Vec<u16>,
+        basis: [E; 16],
+        runs: Option<RowRuns>,
+        point: &'a [E],
+        weights: Vec<E>,
+        scale: E,
+    ) -> Self {
+        assert_eq!(words.len(), BITS << point.len());
+        let columns = Packed16Columns {
+            words,
+            basis,
+            decode: LaneLookup::new(&basis),
+        };
+        let mut sc =
+            Self::from_columns(Columns::Packed16(Box::new(columns)), point, weights, scale);
+        sc.pair_runs = runs.and_then(RowRuns::folded);
+        sc
     }
 }
 
@@ -311,9 +390,10 @@ impl<'a, const ENCODED: bool> ChiSumcheck<'a, ENCODED> {
                 equality: Poly::new(equality),
                 count,
             },
-            weights: Weights::new(weights),
+            weights: Weights::new::<ENCODED>(weights),
             point,
             linear_scale,
+            pair_runs: None,
         };
         state.enter_positions();
         state
@@ -376,6 +456,7 @@ impl<const ENCODED: bool> RoundProver<E> for ChiSumcheck<'_, ENCODED> {
                 count,
             } => {
                 *count /= 2;
+                self.pair_runs = self.pair_runs.take().and_then(RowRuns::folded);
                 columns.fold(*count, challenge);
                 equality.fix_prefix_var_mut(challenge);
             }
@@ -419,9 +500,14 @@ impl<const ENCODED: bool> ChiSumcheck<'_, ENCODED> {
                 // the sum. Adding the paired weights leaves the suffix weight
                 // (including the scale accumulated from previous folds).
                 let weight = |i: usize| eq[i] + eq[i + half];
-                let [low, quadratic] = (0..half)
+                let groups = self.pair_runs.as_ref().map(|runs| runs.weighted(weight));
+                let terms = groups.as_ref().map_or(half, Vec::len);
+                let row_weight =
+                    |k: usize| groups.as_ref().map_or_else(|| (k, weight(k)), |g| g[k]);
+                let [low, quadratic] = (0..terms)
                     .into_par_iter()
-                    .map(|i| {
+                    .map(|k| {
+                        let (i, w) = row_weight(k);
                         columns
                             .chi_endpoint_and_quadratic::<ENCODED>(
                                 i,
@@ -430,7 +516,7 @@ impl<const ENCODED: bool> ChiSumcheck<'_, ENCODED> {
                                 weights,
                                 self.linear_scale,
                             )
-                            .map(|v| v * weight(i))
+                            .map(|v| v * w)
                     })
                     .reduce(|| [E::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
                 // For the remaining quadratic q, S = (1+r)q(0) + r*q(1).
@@ -438,16 +524,17 @@ impl<const ENCODED: bool> ChiSumcheck<'_, ENCODED> {
                 let high = if let Some((sum, inverse)) = sum.zip(r.try_inverse()) {
                     (sum + (E::ONE + r) * low) * inverse
                 } else {
-                    (0..half)
+                    (0..terms)
                         .into_par_iter()
-                        .map(|i| {
+                        .map(|k| {
+                            let (i, w) = row_weight(k);
                             columns.chi_endpoint_and_quadratic::<ENCODED>(
                                 i + half,
                                 i,
                                 half,
                                 weights,
                                 self.linear_scale,
-                            )[0] * weight(i)
+                            )[0] * w
                         })
                         .sum()
                 };
@@ -483,6 +570,71 @@ impl<const ENCODED: bool> ChiSumcheck<'_, ENCODED> {
                                 .sum::<E>()
                     })
                     .collect()
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::challenger;
+    use p3_challenger::FieldChallenger;
+
+    #[test]
+    fn packed_first_fold_matches_dense_for_every_round() {
+        let mut ch = challenger(b"packed-chi-first-fold");
+        let basis = core::array::from_fn(|_| ch.sample_algebra_element::<E>());
+        let weights: Vec<_> = (0..BITS)
+            .map(|_| ch.sample_algebra_element::<E>())
+            .collect();
+        let scale = basis.iter().copied().sum();
+        let random: E = ch.sample_algebra_element();
+        for point in [
+            vec![],
+            vec![E::ZERO],
+            vec![random, E::ONE],
+            vec![random, E::ZERO, E::ONE],
+        ] {
+            let words: Vec<_> = (0..(BITS << point.len()))
+                .map(|i| {
+                    let row = [0, 0, 1, 1, 0, 0, 0, 1][i / BITS];
+                    ((row * BITS + i % BITS) as u16).wrapping_mul(0x9e37)
+                })
+                .collect();
+            let dense: Vec<E> = words
+                .iter()
+                .map(|word| {
+                    basis
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| word & (1 << i) != 0)
+                        .map(|(_, &v)| v)
+                        .sum()
+                })
+                .collect();
+            for first_challenge in [E::ZERO, E::ONE, random] {
+                let mut reference = ChiSumcheck::<true>::from_columns(
+                    Columns::Folded(dense.clone()),
+                    &point,
+                    weights.clone(),
+                    scale,
+                );
+                let mut packed = ChiSumcheck::encoded(
+                    words.clone(),
+                    basis,
+                    RowRuns::from_words(&words),
+                    &point,
+                    weights.clone(),
+                    scale,
+                );
+                for round in 0..point.len() + super::super::POSITION_LOG {
+                    assert_eq!(packed.round_poly(), reference.round_poly());
+                    let challenge = if round == 0 { first_challenge } else { random };
+                    packed.fold(challenge);
+                    reference.fold(challenge);
+                }
+                assert_eq!(packed.terminal(), reference.terminal());
             }
         }
     }

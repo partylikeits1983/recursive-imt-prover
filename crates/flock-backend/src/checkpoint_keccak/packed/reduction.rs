@@ -15,6 +15,7 @@ use super::super::{
     rounds::ChiSumcheck,
 };
 use super::maps::{EMBED, PROJECT};
+use super::rows::RowRuns;
 use crate::{config::Challenger, keccak::RC};
 
 const COEFFS: usize = 47;
@@ -31,26 +32,24 @@ pub(super) struct PackedClaim {
     pub(super) lanes: [E; 16],
 }
 
-fn encode<T: PrimeCharacteristicRing + Copy + Send + Sync>(
-    words: &[u16],
-    basis: &[T; 16],
-) -> Vec<T> {
-    let low = byte_table(&basis[..8]);
-    let high = byte_table(&basis[8..]);
-    words
-        .par_iter()
-        .map(|&w| low[(w & 255) as usize] + high[(w >> 8) as usize])
-        .collect()
-}
-
-fn pack(states: &[State], before_chi: impl Fn(usize, State) -> State + Sync) -> Vec<u16> {
+fn pack(states: &[State], transform_group: impl Fn(usize, State) -> State + Sync) -> Vec<u16> {
     let mut packed = vec![0; states.len() / 16 * BITS];
     packed
         .par_chunks_exact_mut(BITS)
         .zip(states.par_chunks_exact(16))
         .enumerate()
         .for_each(|(block, (row, group))| {
-            let group: [State; 16] = core::array::from_fn(|i| before_chi(block * 16 + i, group[i]));
+            // Every lane in this group belongs to the same round segment.
+            if group[1..].iter().all(|s| s == &group[0]) {
+                let state = transform_group(block, group[0]);
+                for (lane, dst) in state.into_iter().zip(row.as_chunks_mut::<64>().0) {
+                    for (bit, word) in dst.iter_mut().enumerate() {
+                        *word = 0u16.wrapping_sub(((lane >> bit) & 1) as u16);
+                    }
+                }
+                return;
+            }
+            let group: [State; 16] = core::array::from_fn(|i| transform_group(block, group[i]));
             for lane in 0..25 {
                 for byte in 0..8 {
                     let transpose = |start: usize| {
@@ -93,7 +92,7 @@ fn embedded_product(a: F, b: F) -> u64 {
     }
 }
 
-fn coefficients(words: &[u16], claim: &Claim) -> Vec<E> {
+fn coefficients(words: &[u16], runs: Option<&RowRuns>, claim: &Claim) -> Vec<E> {
     let embeds = EMBED.map(|x| F::from_repr(x.into()));
     let ones: F = embeds.iter().copied().sum();
     let low = byte_table(&embeds[..8]);
@@ -108,10 +107,13 @@ fn coefficients(words: &[u16], claim: &Claim) -> Vec<E> {
         .map(|v| byte_table(v))
         .collect();
     let eq = Point::new(claim.instance.as_slice()).equality_weights_msb();
-    words
-        .par_chunks_exact(BITS)
-        .zip(eq.par_iter())
-        .map(|(row, &scale)| {
+    let rows = words.as_chunks::<BITS>().0;
+    let groups = runs.map(|runs| runs.weighted(|i| eq[i]));
+    (0..groups.as_ref().map_or(rows.len(), Vec::len))
+        .into_par_iter()
+        .map(|k| {
+            let (i, scale) = groups.as_ref().map_or_else(|| (k, eq[k]), |g| g[k]);
+            let row = &rows[i];
             // Keep the embedded row in worker-local storage. The unary term
             // ones*a is linear over the 16 input bits and comes from lookups.
             let embedded: [(F, F); BITS] = core::array::from_fn(|j| {
@@ -182,16 +184,19 @@ fn project(coeff: &[E], lanes: &[E; 16]) -> E {
 
 pub(super) fn prove(
     states: &[State],
-    before_chi: impl Fn(usize, State) -> State + Sync,
+    transform_group: impl Fn(usize, State) -> State + Sync,
     current: &PackedClaim,
     ch: &mut Challenger,
 ) -> (Layer, PackedClaim) {
-    let words = pack(states, before_chi);
-    let coeff = coefficients(&words, &current.claim);
+    let words = pack(states, transform_group);
+    let runs = RowRuns::from_words(&words);
+    let coeff = coefficients(&words, runs.as_ref(), &current.claim);
     let (value, lanes) = challenge(&coeff, ch);
     let instance = &current.claim.instance;
     let mut sumcheck = ChiSumcheck::encoded(
-        encode(&words, &lanes),
+        words,
+        lanes,
+        runs,
         instance,
         current.claim.weights.clone(),
         lanes.iter().copied().sum(),
@@ -297,6 +302,44 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_rows_preserve_bits_and_weighted_coefficients() {
+        let states: Vec<State> = (0..128)
+            .map(|i| {
+                let seed = if (32..48).contains(&i) { i as u64 } else { 7 };
+                core::array::from_fn(|j| {
+                    seed.wrapping_mul(0x9e3779b97f4a7c15).rotate_left(j as u32)
+                })
+            })
+            .collect();
+        let transform = |group: usize, state: State| {
+            let round = if group < 4 { 0 } else { 12 };
+            linear::finish_round(&linear::forward(&state), round)
+        };
+        let words = pack(&states, transform);
+        for (g, row) in words.as_chunks::<BITS>().0.iter().enumerate() {
+            let reference = states.as_chunks::<16>().0[g].map(|s| transform(g, s));
+            for (j, word) in row.iter().enumerate() {
+                let bits = reference.iter().enumerate().fold(0u16, |bits, (i, state)| {
+                    bits | ((((state[j / 64] >> (j % 64)) & 1) as u16) << i)
+                });
+                assert_eq!(*word, bits);
+            }
+        }
+        let runs = RowRuns::from_words(&words).unwrap();
+        let mut ch = crate::config::challenger(b"chi repeated rows");
+        let claim = Claim {
+            instance: (0..3).map(|_| ch.sample_algebra_element()).collect(),
+            weights: (0..BITS).map(|_| ch.sample_algebra_element()).collect(),
+            value: E::ZERO,
+        };
+        assert_eq!(
+            coefficients(&words, Some(&runs), &claim),
+            coefficients(&words, None, &claim)
+        );
+    }
+
     #[test]
     fn all_basis_products() {
         for (i, &a) in EMBED.iter().enumerate() {

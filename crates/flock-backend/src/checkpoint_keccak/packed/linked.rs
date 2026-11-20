@@ -41,7 +41,8 @@ pub(in crate::checkpoint_keccak) fn prove(
     for round in (0..ROUNDS).rev() {
         ch.observe(F::from_repr(round as u64));
         let (states, before_chi) = checkpoints.before_chi(round);
-        let (layer, next) = reduction::prove(states, before_chi, &claim, ch);
+        let (layer, next) =
+            reduction::prove(states, |group, s| before_chi(group * 16, s), &claim, ch);
         layers.push(LayerProof {
             sumcheck: layer.sumcheck,
             values: layer.values,

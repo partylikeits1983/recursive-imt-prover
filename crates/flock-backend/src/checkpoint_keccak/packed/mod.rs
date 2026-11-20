@@ -6,6 +6,7 @@ pub(in crate::checkpoint_keccak) mod maps;
 #[cfg(feature = "opening-bench")]
 mod recursive;
 mod reduction;
+pub(super) mod rows;
 
 use anyhow::{Result, ensure};
 use p3_binary_field::TowerLevel;
@@ -328,7 +329,12 @@ impl Batch {
             let (states, before_chi) = checkpoints.before_chi(round);
             let (layer, next) = match self.kernel {
                 Kernel::Packed16 => {
-                    let (proof, next) = reduction::prove(states, &before_chi, &claim, &mut ch);
+                    let (proof, next) = reduction::prove(
+                        states,
+                        |group, s| before_chi(group * 16, s),
+                        &claim,
+                        &mut ch,
+                    );
                     (Layer::Packed(proof), next)
                 }
                 Kernel::Scalar => {

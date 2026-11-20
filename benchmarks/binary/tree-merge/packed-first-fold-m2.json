@@ -1,0 +1,525 @@
+{
+  "hardware": "Apple M2 Pro, 12 logical CPUs, 16 GiB",
+  "baseline_commit": "e1db24480085d2ba27270afe359abde17336e698",
+  "environment": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "release_profile": {
+      "codegen_units": 16,
+      "lto": "thin"
+    },
+    "flock_revision": "708900d7a730d6ce4d5421d43e2193f2301920fa",
+    "recursion_revision": "3a69ba61f713c8400b14eb3d8f0e52caa13512c7",
+    "plonky3_revision": "fe5e46d755b8a7d9069778361e21b33e5978b377",
+    "profile": "release",
+    "threads": 12,
+    "os": "Darwin 24.2.0 arm64"
+  },
+  "protocol": "v11, same Keccak, Poly192, WHIR parameters and proof format",
+  "timing": "Release, 12 Rayon threads. Full trees ran sequentially on AC power with two concurrent parents and the same 64 precomputed children. The full-tree order was dense, packed until first fold, grouped, then dense again. Other laptop processes were active.",
+  "change_scope": "Component and saved-merge trials compare the first-fold change. The first-fold tree also reserves the padded witness size. The grouped full tree additionally reuses equal chi rows and shares the already encoded Boolean boundary tables with WHIR. Timed CLI intervals exclude compilation.",
+  "component_scope": "65,536 permutations, 24 rounds, one joint opening, four verified proofs per build, interleaved with the other build. Times exclude decoding and verification.",
+  "component_command": "RAYON_NUM_THREADS=12 cargo run --locked --release -p imt-flock-backend --features opening-bench --example packed-keccak -- 16 full packed joint 1",
+  "merge_scope": "A real 16-child higher merge using the same saved eight-child subtree twice. Two proofs per process in A, B, B, A order. Times include import, witness, proving and verification. Setup is excluded.",
+  "merge_command": "RAYON_NUM_THREADS=12 cargo run --locked --release --example bench-merge -- SAVED_SUBTREE SAVED_SUBTREE --repetitions 2",
+  "full_tree_command": "cargo prove --batch-size 64 --threads 12 --jobs 2 --parallel-nodes 2 --from-children SAVED_CHILDREN --keep --out NEW_DIRECTORY --json",
+  "component_samples": [
+    {
+      "build": "dense",
+      "prove_s": 1.55251025,
+      "reduce_s": 1.135376833,
+      "witness_commit_s": 0.091631833,
+      "open_s": 0.324247708,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.006062875
+    },
+    {
+      "build": "packed_until_first_fold",
+      "prove_s": 1.011574125,
+      "reduce_s": 0.769090459,
+      "witness_commit_s": 0.086597625,
+      "open_s": 0.15516825,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.005628458
+    },
+    {
+      "build": "packed_until_first_fold",
+      "prove_s": 0.950474083,
+      "reduce_s": 0.724151917,
+      "witness_commit_s": 0.085037208,
+      "open_s": 0.140161125,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.006373667
+    },
+    {
+      "build": "dense",
+      "prove_s": 1.5400513340000002,
+      "reduce_s": 1.268946375,
+      "witness_commit_s": 0.083238375,
+      "open_s": 0.186886041,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.00568725
+    },
+    {
+      "build": "packed_until_first_fold",
+      "prove_s": 1.290709208,
+      "reduce_s": 1.028262375,
+      "witness_commit_s": 0.10113925,
+      "open_s": 0.160609333,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.005177291
+    },
+    {
+      "build": "dense",
+      "prove_s": 1.686153875,
+      "reduce_s": 1.379260791,
+      "witness_commit_s": 0.086760542,
+      "open_s": 0.2194215,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.005105708
+    },
+    {
+      "build": "dense",
+      "prove_s": 1.648600375,
+      "reduce_s": 1.379581792,
+      "witness_commit_s": 0.084803041,
+      "open_s": 0.183453125,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.005963625
+    },
+    {
+      "build": "packed_until_first_fold",
+      "prove_s": 1.202698625,
+      "reduce_s": 0.93090125,
+      "witness_commit_s": 0.08527875,
+      "open_s": 0.185675041,
+      "proof_bytes": 273859,
+      "decode_verify_s": 0.005426292
+    }
+  ],
+  "merge_samples": [
+    {
+      "build": "dense",
+      "wall_s": 7.030486834,
+      "prove_s": 6.318239083,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "dense",
+      "wall_s": 6.421454291,
+      "prove_s": 5.772419584,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "packed_until_first_fold",
+      "wall_s": 6.608230708,
+      "prove_s": 6.05271325,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "packed_until_first_fold",
+      "wall_s": 6.784785709,
+      "prove_s": 6.147449667,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "packed_until_first_fold",
+      "wall_s": 8.089045208,
+      "prove_s": 7.568423458,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "packed_until_first_fold",
+      "wall_s": 9.390190833,
+      "prove_s": 8.6810535,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "dense",
+      "wall_s": 8.159003625,
+      "prove_s": 7.515593625,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    },
+    {
+      "build": "dense",
+      "wall_s": 9.47041975,
+      "prove_s": 8.637748292,
+      "proof_keccak256": "861e411f5c91e49e49d16057edc1ad891a7cdda8552f4a7f96981a46c641c052"
+    }
+  ],
+  "full_tree": {
+    "dense": {
+      "prepared_through_fresh_verify_s": 469.205794916,
+      "cold_through_fresh_verify_s": 486.855463042,
+      "first_aggregation_median": {
+        "nodes": 32,
+        "wall_s": 13.998513999999998,
+        "proof_bytes": 1013872.0,
+        "prove_share_of_summed_node_wall": 0.9193698260150052
+      },
+      "recursive_merge_median": {
+        "nodes": 31,
+        "wall_s": 14.47800375,
+        "proof_bytes": 1013904,
+        "prove_share_of_summed_node_wall": 0.9416320788311052
+      },
+      "fresh_verify_ms": 98.164459,
+      "fresh_process_wall_ms": 111.870625,
+      "root_bytes": 948828,
+      "root_sha256": "54170085640418381fee36305d003e7ec3218aefae41bff22f8bcfaaaa05e9f7",
+      "statement_sha256": "6f0c4509b5f053fdf7ef46d5ed1b09cf0270523693ebac6c533a77dc005133cf",
+      "template_instances": 2,
+      "conditional_algebraic_bits": 146.09911341731734,
+      "peak_process_rss_bytes": 6296715264,
+      "host": {
+        "before": {
+          "page_bytes": 16384,
+          "swapin_pages": 314975043,
+          "swapout_pages": 414410518,
+          "power": "Now drawing from 'AC Power'"
+        },
+        "after": {
+          "page_bytes": 16384,
+          "swapin_pages": 316067208,
+          "swapout_pages": 415722547,
+          "power": "Now drawing from 'AC Power'"
+        }
+      },
+      "passed_64_child_acceptance": true,
+      "same_key": true,
+      "freshly_verified": true,
+      "negative_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "foreign_authority_rejected": true,
+      "invalid_child_proof_rejected": true,
+      "invalid_child_statement_rejected": true,
+      "source_keccak256": "0da568a06a8b8c27ad4a13588ceb63f00ad20d7ea4debb4071bf8734d5f061c5"
+    },
+    "packed_until_first_fold": {
+      "prepared_through_fresh_verify_s": 474.010211834,
+      "cold_through_fresh_verify_s": 492.593194458,
+      "first_aggregation_median": {
+        "nodes": 32,
+        "wall_s": 14.070157229500001,
+        "proof_bytes": 1013872.0,
+        "prove_share_of_summed_node_wall": 0.924604775128618
+      },
+      "recursive_merge_median": {
+        "nodes": 31,
+        "wall_s": 14.5333195,
+        "proof_bytes": 1013904,
+        "prove_share_of_summed_node_wall": 0.9422229671200542
+      },
+      "fresh_verify_ms": 101.332125,
+      "fresh_process_wall_ms": 133.604666,
+      "root_bytes": 948828,
+      "root_sha256": "54170085640418381fee36305d003e7ec3218aefae41bff22f8bcfaaaa05e9f7",
+      "statement_sha256": "6f0c4509b5f053fdf7ef46d5ed1b09cf0270523693ebac6c533a77dc005133cf",
+      "template_instances": 2,
+      "conditional_algebraic_bits": 146.09911341731734,
+      "peak_process_rss_bytes": 6380142592,
+      "host": {
+        "before": {
+          "page_bytes": 16384,
+          "swapin_pages": 316150955,
+          "swapout_pages": 415764228,
+          "power": "Now drawing from 'AC Power'"
+        },
+        "after": {
+          "page_bytes": 16384,
+          "swapin_pages": 317028213,
+          "swapout_pages": 416750354,
+          "power": "Now drawing from 'AC Power'"
+        }
+      },
+      "passed_64_child_acceptance": true,
+      "same_key": true,
+      "freshly_verified": true,
+      "negative_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "foreign_authority_rejected": true,
+      "invalid_child_proof_rejected": true,
+      "invalid_child_statement_rejected": true,
+      "source_keccak256": "75fe077c65cb25326a30f4e3395c774b6701fd30eb543958e09673ad5e701d16"
+    },
+    "grouped": {
+      "prepared_through_fresh_verify_s": 409.809736666,
+      "cold_through_fresh_verify_s": 426.118335875,
+      "first_aggregation_median": {
+        "nodes": 32,
+        "wall_s": 12.192573499999998,
+        "proof_bytes": 1013872.0,
+        "prove_share_of_summed_node_wall": 0.922297671260465
+      },
+      "recursive_merge_median": {
+        "nodes": 31,
+        "wall_s": 12.435819375,
+        "proof_bytes": 1013904,
+        "prove_share_of_summed_node_wall": 0.9435187395641281
+      },
+      "fresh_verify_ms": 116.563833,
+      "fresh_process_wall_ms": 132.99054099999998,
+      "root_bytes": 948828,
+      "root_sha256": "54170085640418381fee36305d003e7ec3218aefae41bff22f8bcfaaaa05e9f7",
+      "statement_sha256": "6f0c4509b5f053fdf7ef46d5ed1b09cf0270523693ebac6c533a77dc005133cf",
+      "template_instances": 2,
+      "conditional_algebraic_bits": 146.09911341731734,
+      "peak_process_rss_bytes": 6903365632,
+      "host": {
+        "before": {
+          "page_bytes": 16384,
+          "swapin_pages": 318419552,
+          "swapout_pages": 418198498,
+          "power": "Now drawing from 'AC Power'"
+        },
+        "after": {
+          "page_bytes": 16384,
+          "swapin_pages": 319084584,
+          "swapout_pages": 418980226,
+          "power": "Now drawing from 'AC Power'"
+        }
+      },
+      "passed_64_child_acceptance": true,
+      "same_key": true,
+      "freshly_verified": true,
+      "negative_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "foreign_authority_rejected": true,
+      "invalid_child_proof_rejected": true,
+      "invalid_child_statement_rejected": true,
+      "source_keccak256": "f69f857cd75e37d6c2e83cc850479b80cdf4d3698ae7c14e0ce97a84a6bc9842"
+    },
+    "dense_repeat": {
+      "prepared_through_fresh_verify_s": 398.912401125,
+      "cold_through_fresh_verify_s": 417.116669958,
+      "first_aggregation_median": {
+        "nodes": 32,
+        "wall_s": 11.930648270499999,
+        "proof_bytes": 1013872.0,
+        "prove_share_of_summed_node_wall": 0.9229112273327168
+      },
+      "recursive_merge_median": {
+        "nodes": 31,
+        "wall_s": 11.783360833,
+        "proof_bytes": 1013904,
+        "prove_share_of_summed_node_wall": 0.9373147208766419
+      },
+      "fresh_verify_ms": 99.530375,
+      "fresh_process_wall_ms": 114.345584,
+      "root_bytes": 948828,
+      "root_sha256": "54170085640418381fee36305d003e7ec3218aefae41bff22f8bcfaaaa05e9f7",
+      "statement_sha256": "6f0c4509b5f053fdf7ef46d5ed1b09cf0270523693ebac6c533a77dc005133cf",
+      "template_instances": 2,
+      "conditional_algebraic_bits": 146.09911341731734,
+      "peak_process_rss_bytes": 6706495488,
+      "host": {
+        "before": {
+          "page_bytes": 16384,
+          "swapin_pages": 319325231,
+          "swapout_pages": 419060880,
+          "power": "Now drawing from 'AC Power'"
+        },
+        "after": {
+          "page_bytes": 16384,
+          "swapin_pages": 319692519,
+          "swapout_pages": 419666492,
+          "power": "Now drawing from 'AC Power'"
+        }
+      },
+      "passed_64_child_acceptance": true,
+      "same_key": true,
+      "freshly_verified": true,
+      "negative_checks": [
+        "root",
+        "input tag",
+        "output commitment",
+        "order",
+        "remove",
+        "insert",
+        "half",
+        "corrupted proof",
+        "truncated proof",
+        "trailing proof bytes"
+      ],
+      "foreign_authority_rejected": true,
+      "invalid_child_proof_rejected": true,
+      "invalid_child_statement_rejected": true,
+      "source_keccak256": "0da568a06a8b8c27ad4a13588ceb63f00ad20d7ea4debb4071bf8734d5f061c5"
+    }
+  },
+  "median": {
+    "dense": {
+      "component_prove_s": 1.6005553125,
+      "higher_merge_wall_s": 7.594745229500001
+    },
+    "packed_until_first_fold": {
+      "component_prove_s": 1.107136375,
+      "higher_merge_wall_s": 7.4369154585
+    }
+  },
+  "eight_child_first_fold_trials": [
+    {
+      "build": "dense",
+      "wall_s": 44.4981395,
+      "peak_rss_bytes": 5787664384
+    },
+    {
+      "build": "packed_until_first_fold",
+      "wall_s": 47.284298916,
+      "peak_rss_bytes": 5652987904
+    },
+    {
+      "build": "packed_until_first_fold",
+      "wall_s": 44.696054625,
+      "peak_rss_bytes": 6186287104
+    },
+    {
+      "build": "dense",
+      "wall_s": 45.880547417,
+      "peak_rss_bytes": 6876020736
+    }
+  ],
+  "repeated_rows_scope": "Adjacent packed rows can share a coefficient evaluation. Sumcheck row pairs share work only when both halves repeat. The final tree also includes the first fold and exact padded witness allocation. The first-fold and pre-zero-copy eight-child comparisons used opposite ABBA orders. The grouped component and eight-child runs precede the zero-copy WHIR change. The grouped full tree includes it. Timing differences span different laptop loads.",
+  "eight_child_repeated_row_trials": [
+    {
+      "build": "group-tree",
+      "time_s": 41.778606917,
+      "cold_s": 58.173152208,
+      "rss_bytes": 6665994240
+    },
+    {
+      "build": "final-tree",
+      "time_s": 42.061343666,
+      "cold_s": 56.820324375,
+      "rss_bytes": 6846054400
+    },
+    {
+      "build": "final-tree",
+      "time_s": 47.800018375,
+      "cold_s": 62.878584625,
+      "rss_bytes": 6772146176
+    },
+    {
+      "build": "group-tree",
+      "time_s": 50.4908225,
+      "cold_s": 65.71082,
+      "rss_bytes": 6297190400
+    }
+  ],
+  "repeated_row_component_samples": [
+    {
+      "build": "dense",
+      "prove_s": 1.30250675,
+      "reduce_s": 1.070115791,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "grouped",
+      "prove_s": 1.068989584,
+      "reduce_s": 0.835775167,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "grouped",
+      "prove_s": 1.012430208,
+      "reduce_s": 0.784641375,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "dense",
+      "prove_s": 1.371415875,
+      "reduce_s": 1.139098417,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "grouped",
+      "prove_s": 1.08106375,
+      "reduce_s": 0.816265,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "dense",
+      "prove_s": 1.345263417,
+      "reduce_s": 1.113296833,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "dense",
+      "prove_s": 1.3403990000000001,
+      "reduce_s": 1.108692917,
+      "proof_bytes": 273859
+    },
+    {
+      "build": "grouped",
+      "prove_s": 0.939779708,
+      "reduce_s": 0.715138708,
+      "proof_bytes": 273859
+    }
+  ],
+  "eight_child_shipping_trials": [
+    {
+      "build": "grouped",
+      "prepared_s": 42.319925667,
+      "cold_s": 57.881186833,
+      "peak_rss_bytes": 6536790016,
+      "source_keccak256": "f69f857cd75e37d6c2e83cc850479b80cdf4d3698ae7c14e0ce97a84a6bc9842",
+      "root_sha256": "ca842c02a165b8a885e7fc0ab35c6587750cdc41bbefee5883012ffde9dab5a4"
+    },
+    {
+      "build": "dense",
+      "prepared_s": 40.891810208,
+      "cold_s": 55.863489542,
+      "peak_rss_bytes": 6345801728,
+      "source_keccak256": "0da568a06a8b8c27ad4a13588ceb63f00ad20d7ea4debb4071bf8734d5f061c5",
+      "root_sha256": "ca842c02a165b8a885e7fc0ab35c6587750cdc41bbefee5883012ffde9dab5a4"
+    },
+    {
+      "build": "dense",
+      "prepared_s": 47.128335458,
+      "cold_s": 62.092194417,
+      "peak_rss_bytes": 6488178688,
+      "source_keccak256": "0da568a06a8b8c27ad4a13588ceb63f00ad20d7ea4debb4071bf8734d5f061c5",
+      "root_sha256": "ca842c02a165b8a885e7fc0ab35c6587750cdc41bbefee5883012ffde9dab5a4"
+    },
+    {
+      "build": "grouped",
+      "prepared_s": 45.279370417,
+      "cold_s": 60.200132624999995,
+      "peak_rss_bytes": 6314016768,
+      "source_keccak256": "f69f857cd75e37d6c2e83cc850479b80cdf4d3698ae7c14e0ce97a84a6bc9842",
+      "root_sha256": "ca842c02a165b8a885e7fc0ab35c6587750cdc41bbefee5883012ffde9dab5a4"
+    }
+  ],
+  "shipping_trials_scope": "The final eight-child comparison uses the exact binaries in the grouped and dense full trees. The four replays ran sequentially in grouped, dense, dense, grouped order on the same eight children.",
+  "build_note": "The grouped replay binary predates only the new zero-copy regression test. Restoring that single test file to its baseline content reproduces the recorded source digest. The production Rust is identical.",
+  "final_source_keccak256": "d8dde80827e9aa0df3031788971e274a31ea2f7bbeb3b520569f8dd94633b840"
+}

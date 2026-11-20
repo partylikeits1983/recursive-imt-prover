@@ -349,6 +349,11 @@ impl<EF: ExtensionField<F>, B> MixedTraceCommitment<EF, B> {
             ));
         }
         let bits = encoding.boolean_columns;
+        // An all-Boolean table already has this exact physical encoding. Its
+        // constructor checked the shape and unused high bits, and clones share storage.
+        if bits == width && table.packed_bits().is_some() {
+            return Ok(table.clone());
+        }
         let committed = encoding.committed_width;
         let blocks = height.div_ceil(WORD_BITS);
         let mut words = vec![0u64; blocks * committed];

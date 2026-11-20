@@ -5,6 +5,45 @@ to independent verification of one root on the 12-core, 16 GB M2 Pro. The
 acceptance threshold is strictly below 180 seconds. Record cold wall time
 including key preparation as a second result. One minute remains a stretch goal.
 
+## Native prover review on the M2 Pro
+
+| 64 saved children, in measurement order | Prepared through fresh verification | Including key setup | Peak process RSS |
+| --- | ---: | ---: | ---: |
+| Previous packed build | 469.21 s | 486.86 s | 5.86 GiB |
+| Packed first fold and witness reservation | 474.01 s | 492.59 s | 5.94 GiB |
+| First fold, row reuse and shared WHIR tables | 409.81 s | 426.12 s | 6.43 GiB |
+| Previous packed build, repeated | 398.91 s | 417.12 s | 6.25 GiB |
+
+Each full replay used 12 Rayon threads and two concurrent parents on AC power.
+All four produced the same 948,828-byte root, passed fresh verification and
+rejected altered proofs, statements and verifier authority. Other processes were
+active on the laptop. The optimized replay fell between the controls, leaving
+the full-tree speedup inconclusive.
+
+The packed chi prover keeps the 16-bit lane indices until the first sumcheck
+fold. It evaluates the row pair on demand and writes a half-height Poly192
+table. At 65,536 permutations the largest dense chi table falls from
+150 MiB to 75 MiB. For adjacent equal rows, the prover evaluates the row once
+and sums the individual equality weights. A folded pair can share that work
+only when its low and high rows both repeat. The two packed Boolean boundary
+tables also have WHIR's required layout, so sharing their backing storage
+avoids copying 32 MiB per parent. The witness reserves its padded row count
+before appending states.
+
+On an isolated 65,536-permutation proof, the first fold alone took
+1.107 s versus 1.601 s for the previous prover. In another
+interleaved comparison the prover with row reuse took 1.041 s versus
+1.343 s, a 22.5% reduction. Both are medians of four
+verified proofs per build. Eight-child replays before the WHIR storage change
+took 41.78, 42.06, 47.80, 50.49 seconds, in optimized, previous, previous, optimized
+order. With the WHIR change included, the optimized eight-child replays took
+42.32 s and 45.28 s. The two intervening controls took 40.89 s and 47.13 s.
+Each eight-child replay produced the same root for those eight children.
+
+In the optimized full replay, proof generation accounted for
+92.2% of the summed first-pair wall time and 94.4% of the summed recursive-merge
+wall time. These percentages use each node's own clock because the two workers overlap. [Settings, raw timings and proof digests](../benchmarks/binary/tree-merge/packed-first-fold-m2.json)
+
 ## Packed recursive parent on the M2 Pro
 
 The version 11 tree aggregated 64 saved children and independently verified
@@ -24,7 +63,7 @@ packed joint protocol before the native tuning took 457.46 s. Both produced
 byte-identical root proofs. The conditional algebraic estimate was
 146.10 bits for each node type under the Johnson analysis.
 
-| Eight identical saved children with the selected schedule | Through fresh verification | Keccak calls per higher verifier template | Initial codeword cells per node |
+| Eight identical saved children with the selected schedule | Through fresh verification | Keccak calls per higher merge | Initial codeword cells per node |
 | --- | ---: | ---: | ---: |
 | 8 · separate openings, scalar chi | 54.53 s | 47,182 | 184,549,376 |
 | 9 · joint opening, 1/4 main rate | 52.40 s | 38,204 | 167,772,160 |
