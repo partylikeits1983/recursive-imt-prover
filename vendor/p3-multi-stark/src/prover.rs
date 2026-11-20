@@ -52,6 +52,8 @@ pub(crate) struct Forgery {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ProvingError<E> {
+    #[error("auxiliary table reduction: {0}")]
+    Auxiliary(alloc::string::String),
     /// The PCS rejected a commitment or an opening budget.
     #[error("PCS {phase} failed: {source:?}")]
     Pcs { phase: &'static str, source: E },
@@ -224,17 +226,116 @@ where
         + Air<p3_bus::BusSymbolicBuilder<C::Val, C::Challenge>>,
     B: ZerocheckBackend<C::Val, C::Challenge, A>,
 {
-    prove_forged::<C, A, B>(config, instances, pow_bits, caller_challenger, None)
+    prove_with_extra_tables::<C, A, B>(
+        config,
+        instances,
+        pow_bits,
+        caller_challenger,
+        Vec::new(),
+        |_, _, _| Ok((Vec::new(), Vec::new())),
+    )
 }
 
 /// The proving flow, with what the indexed reduction reads open to substitution.
 ///
 /// Callers reach this through the entry points above, which substitute nothing.
+#[cfg(test)]
 pub(crate) fn prove_forged<'a, C, A, B>(
     config: &C,
     instances: ProverInstances<'a, C, A>,
     pow_bits: usize,
     caller_challenger: &mut C::Challenger,
+    forgery: Option<&Forgery>,
+) -> Result<MultiStarkProof<C>, ProvingError<PcsProverError<C>>>
+where
+    C: MultiStarkConfig,
+    C::Pcs: PrescribedPointPcs<C::Challenge, C::Challenger>,
+    C::Challenger: Clone
+        + FieldChallenger<C::Val>
+        + GrindingChallenger<Witness = C::Val>
+        + CanSampleUniformBits<C::Val>
+        + CanObserve<Commitment<C>>,
+    Commitment<C>: Clone,
+    ProverData<C>: Clone,
+    A: BaseAir<C::Val>
+        + Air<InteractionSymbolicBuilder<C::Val, C::Challenge>>
+        + Air<p3_bus::BusSymbolicBuilder<C::Val, C::Challenge>>,
+    B: ZerocheckBackend<C::Val, C::Challenge, A>,
+{
+    prove_inner::<C, A, B>(
+        config,
+        instances,
+        pow_bits,
+        caller_challenger,
+        Vec::new(),
+        |_, _, _| Ok((Vec::new(), Vec::new())),
+        forgery,
+    )
+}
+
+/// Commit auxiliary tables alongside the AIR and open them in the same main PCS proof.
+/// The application owns the reduction to the additional prescribed points.
+pub fn prove_with_extra_tables<'a, C, A, B>(
+    config: &C,
+    instances: ProverInstances<'a, C, A>,
+    pow_bits: usize,
+    caller_challenger: &mut C::Challenger,
+    extra_tables: Vec<p3_sumcheck::layout::Table<C::Val>>,
+    reduce: impl FnOnce(
+        &Commitment<C>,
+        &p3_multilinear_util::point::Point<C::Challenge>,
+        &[Option<OpeningEvals<C::Challenge>>],
+    ) -> Result<
+        (
+            Vec<p3_multilinear_util::point::Point<C::Challenge>>,
+            Vec<Option<OpeningEvals<C::Challenge>>>,
+        ),
+        alloc::string::String,
+    >,
+) -> Result<MultiStarkProof<C>, ProvingError<PcsProverError<C>>>
+where
+    C: MultiStarkConfig,
+    C::Pcs: PrescribedPointPcs<C::Challenge, C::Challenger>,
+    C::Challenger: Clone
+        + FieldChallenger<C::Val>
+        + GrindingChallenger<Witness = C::Val>
+        + CanSampleUniformBits<C::Val>
+        + CanObserve<Commitment<C>>,
+    Commitment<C>: Clone,
+    ProverData<C>: Clone,
+    A: BaseAir<C::Val>
+        + Air<InteractionSymbolicBuilder<C::Val, C::Challenge>>
+        + Air<p3_bus::BusSymbolicBuilder<C::Val, C::Challenge>>,
+    B: ZerocheckBackend<C::Val, C::Challenge, A>,
+{
+    prove_inner::<C, A, B>(
+        config,
+        instances,
+        pow_bits,
+        caller_challenger,
+        extra_tables,
+        reduce,
+        None,
+    )
+}
+
+fn prove_inner<'a, C, A, B>(
+    config: &C,
+    instances: ProverInstances<'a, C, A>,
+    pow_bits: usize,
+    caller_challenger: &mut C::Challenger,
+    extra_tables: Vec<p3_sumcheck::layout::Table<C::Val>>,
+    reduce: impl FnOnce(
+        &Commitment<C>,
+        &p3_multilinear_util::point::Point<C::Challenge>,
+        &[Option<OpeningEvals<C::Challenge>>],
+    ) -> Result<
+        (
+            Vec<p3_multilinear_util::point::Point<C::Challenge>>,
+            Vec<Option<OpeningEvals<C::Challenge>>>,
+        ),
+        alloc::string::String,
+    >,
     #[cfg(test)] forgery: Option<&Forgery>,
     #[cfg(not(test))] _forgery: Option<core::convert::Infallible>,
 ) -> Result<MultiStarkProof<C>, ProvingError<PcsProverError<C>>>
@@ -253,6 +354,17 @@ where
         + Air<p3_bus::BusSymbolicBuilder<C::Val, C::Challenge>>,
     B: ZerocheckBackend<C::Val, C::Challenge, A>,
 {
+    let extra_specs = config.auxiliary_tables();
+    if extra_tables.len() != extra_specs.len()
+        || extra_tables.iter().zip(extra_specs).any(|(table, spec)| {
+            table.num_variables() != spec.shape().num_variables()
+                || table.num_polys() != spec.shape().width()
+        })
+    {
+        return Err(ProvingError::Auxiliary(
+            "auxiliary witness shape differs from the configuration".into(),
+        ));
+    }
     let mut candidate = caller_challenger.clone();
     let challenger = &mut candidate;
     assert!(!instances.is_empty());
@@ -407,6 +519,8 @@ where
 
     // 2. Commit all main trace tables in instance order, inside the delegation bracket.
     // The scheme absorbs the commitment it produces, so the bracket records where that lands.
+    let mut tables = tables;
+    tables.extend(extra_tables);
     let witness = config.build_witness(tables);
     let (commitment, prover_data) = transcript
         .main_commitment(|challenger| config.pcs().commit(witness, challenger))
@@ -674,38 +788,53 @@ where
     // The zerocheck folded each of those columns down to exactly that value, so the scheme is
     // handed them rather than left to evaluate the table again.
     let points = RunPoints::new(&point, indexed_output.as_ref());
-    let opening = transcript.main_opening(|challenger| {
-        let schedule = instances.main_schedule(indexed_plan.as_ref(), |role, rows| {
-            trace_suffix(points.at(role), rows)
-        });
-        let mut known = alloc::vec![None; schedule.protocol().num_openings()];
-        let first_batches = schedule.first_batch_per_table();
-        debug_assert_eq!(
-            (zerocheck_proof.local.len(), zerocheck_proof.next.len()),
-            (first_batches.len(), first_batches.len()),
-            "the zerocheck opens every committed table once"
-        );
-        // A circuit table owns no batch: its port values become weighted claims below.
-        for ((batch, local), next) in first_batches
-            .into_iter()
-            .zip(zerocheck_proof.local)
-            .zip(zerocheck_proof.next)
-        {
-            if let Some(batch) = batch {
-                known[batch] = Some(OpeningEvals::new(local, next));
+    let opening = transcript
+        .main_opening(|challenger| {
+            let schedule = instances.main_schedule(indexed_plan.as_ref(), |role, rows| {
+                trace_suffix(points.at(role), rows)
+            });
+            let mut known = alloc::vec![None; schedule.protocol().num_openings()];
+            let first_batches = schedule.first_batch_per_table();
+            debug_assert_eq!(
+                (zerocheck_proof.local.len(), zerocheck_proof.next.len()),
+                (first_batches.len(), first_batches.len()),
+                "the zerocheck opens every committed table once"
+            );
+            // A circuit table owns no batch: its port values become weighted claims below.
+            for ((batch, local), next) in first_batches
+                .into_iter()
+                .zip(zerocheck_proof.local)
+                .zip(zerocheck_proof.next)
+            {
+                if let Some(batch) = batch {
+                    known[batch] = Some(OpeningEvals::new(local, next));
+                }
             }
-        }
-        // Each circuit table leaves two claims on its witness column.
-        let weighted = circuit_claims.into_iter().flatten().collect::<Vec<_>>();
-        config.pcs().open_at_known_weighted(
-            prover_data,
-            schedule.protocol(),
-            &schedule.against(),
-            &known,
-            &weighted,
-            challenger,
-        )
-    });
+            // Each circuit table leaves two claims on its witness column.
+            let weighted = circuit_claims.into_iter().flatten().collect::<Vec<_>>();
+            let mut coordinates = schedule.against();
+            let joined;
+            let protocol = if extra_specs.is_empty() {
+                schedule.protocol()
+            } else {
+                let (points, hints) = reduce(&commitment, &point, &known)
+                    .map_err(ProvingError::<PcsProverError<C>>::Auxiliary)?;
+                joined =
+                    crate::auxiliary::append_protocol(schedule.protocol().clone(), extra_specs);
+                coordinates.extend(points);
+                known.extend(hints);
+                &joined
+            };
+            Ok::<_, ProvingError<PcsProverError<C>>>(config.pcs().open_at_known_weighted(
+                prover_data,
+                protocol,
+                &coordinates,
+                &known,
+                &weighted,
+                challenger,
+            ))
+        })
+        .inspect_err(|_| transcript.abort())?;
 
     let opening = opening
         .ok_or(ProvingError::UnsupportedCircuits)

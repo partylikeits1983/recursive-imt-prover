@@ -111,7 +111,8 @@ This is a local encoding argument, not a full proof-system security theorem.
 Tests check retained occurrences, direct pairs, actual AIR equations and product-bus
 multisets; they reject a changed copy, a nonzero zero sentinel and a successor
 swap across partitions. Checkpoint uses backend identity v6; Flock uses v12.
-Recursive pairs export v5 verifier snapshots for word openings. Other layouts
+Recursive pairs export v11 verifier snapshots for packed chi and joint
+arithmetic and Boolean openings. Other layouts
 export v4. The fixed-width aggregate proof encoding is `IMTPRF01`. Final tree
 files can use the lossless `IMTPRF02` encoding.
 
@@ -135,8 +136,9 @@ its prefix sum. It introduces no probabilistic check or new cryptographic
 assumption. The witness runner remains unchanged. Tests compare retained copy
 tuples and reject altered results and non-Boolean inputs.
 
-Parameters are fixed: Johnson, 152 PCS bits, 16-bit grinding ceiling, rate 1/4,
-folding factor 4, Poly192 challenges, Keccak-256, and a required 144-bit conditional
+The recursive parent uses rate 1/2 for its joint opening and preprocessing.
+The standalone default uses rate 1/4. Both use Johnson bounds, a 152-bit PCS
+target, a 16-bit grinding ceiling, fold 4, Poly192 challenges, Keccak-256 and a 144-bit conditional
 algebraic floor. The 128-bit generic classical hash work factor is reported
 separately. These figures do not establish ROM/knowledge/recursive composition,
 post-quantum security or child privacy.

@@ -316,3 +316,31 @@ fn checkpoint_shapes_and_conditional_error_budget_are_bounded() {
     assert!(192.0 - (degree as f64).log2() > 180.0);
     assert!(algebraic_error_degree(MAX_BATCH_LOG + 1).is_err());
 }
+
+#[test]
+fn eight_state_folding_matches_direct_bit_weights() {
+    let mut ch = challenger(b"eight-state fold");
+    for log in [0, 1, 2, 3, 4, 9] {
+        let mut batch = inputs(1 << log);
+        if log == 9 {
+            batch[256..].fill([0x93a75; 25]);
+        }
+        let mut point: Vec<E> = (0..log).map(|_| ch.sample_algebra_element()).collect();
+        if log > 0 {
+            point[0] = E::ONE;
+        }
+        let mut expected = E::zero_vec(BITS);
+        for (&weight, state) in Point::new(point.as_slice())
+            .equality_weights_msb()
+            .iter()
+            .zip(&batch)
+        {
+            for (bit, value) in expected.iter_mut().enumerate() {
+                if (state[bit / 64] >> (bit % 64)) & 1 != 0 {
+                    *value += weight;
+                }
+            }
+        }
+        assert_eq!(super::closing::fold_states(&batch, &point), expected);
+    }
+}

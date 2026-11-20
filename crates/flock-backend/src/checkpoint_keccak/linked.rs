@@ -41,10 +41,12 @@ pub const PORTS: usize = ports::PORTS;
 pub struct LinkedBatch {
     pub(crate) log_batch: usize,
     pub(crate) direct_bridge: bool,
+    pub(crate) packed_chi: bool,
     transcript: Transcript,
-    pcs: Pcs,
+    pub(crate) pcs: Pcs,
     protocol: OpeningProtocol,
     pub conditional_algebraic_bits: f64,
+    /// Additional cells committed outside the arithmetic PCS.
     pub initial_codeword_cells: usize,
 }
 
@@ -62,11 +64,23 @@ pub struct Pending {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LinkedProof {
+    claims: LinkedClaims,
+    opening: Opening,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct LinkedClaims {
     output: E,
     reduction: Proof,
     input_closing: closing::Proof,
     port_closing: closing::Proof,
-    opening: Opening,
+}
+
+pub(crate) struct ProvedBoundaryOpenings {
+    pub claims: LinkedClaims,
+    pub coefficients: Vec<Vec<E>>,
+    pub points: Vec<Point<E>>,
+    pub hints: Vec<Option<OpeningBatch<E>>>,
 }
 
 /// Created by the enclosing verifier from a fully authenticated AIR opening.
@@ -125,6 +139,8 @@ impl LinkedBatch {
         direct_bridge: bool,
     ) -> Result<Self> {
         Self::with_transcript(
+            None,
+            false,
             log_batch,
             main_candidate_log2,
             Transcript::FixedV2,
@@ -134,6 +150,8 @@ impl LinkedBatch {
 
     pub fn new(log_batch: usize, main_candidate_log2: f64) -> Result<Self> {
         Self::with_transcript(
+            None,
+            false,
             log_batch,
             main_candidate_log2,
             Transcript::PostcardV1,
@@ -145,7 +163,24 @@ impl LinkedBatch {
         Self::with_bridge(log_batch, main_candidate_log2, false)
     }
 
+    pub(crate) fn joint(
+        log_batch: usize,
+        security: &p3_sumcheck::PrescribedOpeningSecurity,
+        packed_chi: bool,
+    ) -> Result<Self> {
+        Self::with_transcript(
+            Some(security),
+            packed_chi,
+            log_batch,
+            security.log2_max_candidates,
+            Transcript::FixedV2,
+            true,
+        )
+    }
+
     fn with_transcript(
+        joint: Option<&p3_sumcheck::PrescribedOpeningSecurity>,
+        packed_chi: bool,
         log_batch: usize,
         main_candidate_log2: f64,
         transcript: Transcript,
@@ -155,21 +190,29 @@ impl LinkedBatch {
             !direct_bridge || log_batch >= 1,
             "bridge needs two template instances"
         );
-        let degree = algebraic_error_degree(log_batch)?;
+        let degree = algebraic_error_degree(log_batch)?
+            + if packed_chi {
+                46 * super::ROUNDS + 2 * 4
+            } else {
+                0
+            };
+        ensure!(
+            !packed_chi || (joint.is_some() && log_batch >= 4),
+            "packed chi requires a joint 16-lane batch"
+        );
         ensure!(
             main_candidate_log2.is_finite() && main_candidate_log2 >= 0.0,
             "invalid arithmetic candidate bound"
         );
         let shape = TableShape::new(log_batch + POSITION_LOG, 1);
         let pcs = pcs(&[shape; 2], vec![TableEncoding::new(vec![1])?; 2])?;
-        let protocol = OpeningProtocol::new(
-            (0..2)
-                .map(|_| TableSpec::new(shape, vec![OpeningBatch::new(vec![0], vec![]); 2]))
-                .collect(),
-        );
+        let protocol = OpeningProtocol::new(boundary_specs(log_batch));
         let mut security = pcs
             .prescribed_security(&protocol)
             .ok_or_else(|| anyhow::anyhow!("missing linked Keccak PCS evidence"))?;
+        if let Some(joint) = joint {
+            security = joint.clone();
+        }
         ensure!(
             security.candidates().is_some(),
             "invalid boundary candidate bound"
@@ -184,6 +227,9 @@ impl LinkedBatch {
         let candidates =
             CandidateSet::from_log2(main_candidate_log2 + security.log2_max_candidates)
                 .ok_or_else(|| anyhow::anyhow!("invalid joint candidate bound"))?;
+        // For a shared root the product bound also covers choosing the same
+        // candidate for both roles. The PCS error is conservatively charged
+        // again by the arithmetic security report.
         // The bridge uses one extra row challenge for the input/output side
         // and one fewer port-coordinate challenge (116 limbs instead of 232).
         let link_degree = log_batch + ports::PORT_LOG + 2 * (POSITION_LOG + 1);
@@ -202,12 +248,28 @@ impl LinkedBatch {
         Ok(Self {
             log_batch,
             direct_bridge,
+            packed_chi,
             transcript,
             pcs,
             protocol,
             conditional_algebraic_bits,
-            initial_codeword_cells: 1 << (log_batch + POSITION_LOG + 1 - 6 + WHIR_LOG_INV_RATE),
+            initial_codeword_cells: if joint.is_some() {
+                0
+            } else {
+                1 << (log_batch + POSITION_LOG + 1 - 6 + WHIR_LOG_INV_RATE)
+            },
         })
+    }
+
+    pub(crate) fn boundary_specs(&self) -> Vec<TableSpec> {
+        boundary_specs(self.log_batch)
+    }
+
+    pub(crate) fn tables(&self, witness: &BoundaryWitness) -> Vec<Table<F>> {
+        vec![
+            table(&witness.inputs, self.log_batch),
+            table(&witness.outputs, self.log_batch),
+        ]
     }
 
     /// Must precede the enclosing arithmetic proof's commitment/challenges.
@@ -246,18 +308,47 @@ impl LinkedBatch {
             statement.log_batch as usize == self.log_batch,
             "incorrect boundary batch size"
         );
-        self.bind_ports(ports, &mut challenger)?;
-        let (mut output, output_point) = self.output_claim(&mut challenger);
+        let ProvedBoundaryOpenings {
+            claims,
+            points,
+            hints,
+            ..
+        } = self.prove_claims(&witness, ports, &mut challenger)?;
+        let opening =
+            self.pcs
+                .open_at_known(data, &self.protocol, &points, &hints, &mut challenger)?;
+        Ok(LinkedProof { claims, opening })
+    }
+
+    pub(crate) fn prove_claims(
+        &self,
+        witness: &BoundaryWitness,
+        ports: &PortOpening,
+        challenger: &mut Challenger,
+    ) -> Result<ProvedBoundaryOpenings> {
+        ensure!(
+            witness.inputs.len() == 1 << self.log_batch
+                && witness.outputs.len() == witness.inputs.len(),
+            "incorrect boundary batch size"
+        );
+        self.bind_ports(ports, challenger)?;
+        let (mut output, output_point) = self.output_claim(challenger);
         output.value = closing::fold_states(&witness.outputs, &output.instance)
             .iter()
             .zip(&output.weights)
             .map(|(&a, &b)| a * b)
             .sum();
-        let (reduction, input) =
-            super::prove_using(&witness.inputs, &output, &mut challenger, self.transcript)?;
-        let (input_closing, input_point, input_value) =
-            closing::prove(&witness.inputs, &input, &mut challenger);
-        let (weights, value) = ports::claim(ports, self.direct_bridge, &mut challenger);
+        let (reduction, coefficients, input_closing, input_point, input_value) = if self.packed_chi
+        {
+            super::packed::linked::prove(&witness.inputs, &output, challenger)?
+        } else {
+            let (reduction, input) =
+                super::prove_using(&witness.inputs, &output, challenger, self.transcript)?;
+            let (input_closing, input_point, input_value) =
+                closing::prove(&witness.inputs, &input, challenger);
+            (reduction, vec![], input_closing, input_point, input_value)
+        };
+        let (weights, value) = ports::claim(ports, self.direct_bridge, challenger);
         let folded_input = closing::fold_states(&witness.inputs, &ports.instance[..self.log_batch]);
         let folded_output =
             closing::fold_states(&witness.outputs, &ports.instance[..self.log_batch]);
@@ -266,24 +357,22 @@ impl LinkedBatch {
         values.extend_from_slice(&folded_output);
         values.resize(2 * POSITIONS, E::ZERO);
         let (port_closing, port_point, _) =
-            closing::prove_functional(weights, values, value, &mut challenger);
+            closing::prove_functional(weights, values, value, challenger);
         let link_input = closing::evaluate_folded(&folded_input, &port_point.as_slice()[1..]);
         let link_output = closing::evaluate_folded(&folded_output, &port_point.as_slice()[1..]);
         let link_point = link_point(&ports.instance[..self.log_batch], &port_point);
-        let opening = self.pcs.open_at_known(
-            data,
-            &self.protocol,
-            &[input_point, link_point.clone(), output_point, link_point],
-            &[input_value, link_input, output.value, link_output]
-                .map(|v| Some(OpeningBatch::new(vec![v], vec![]))),
-            &mut challenger,
-        )?;
-        Ok(LinkedProof {
-            output: output.value,
-            reduction,
-            input_closing,
-            port_closing,
-            opening,
+        Ok(ProvedBoundaryOpenings {
+            claims: LinkedClaims {
+                output: output.value,
+                reduction,
+                input_closing,
+                port_closing,
+            },
+            coefficients,
+            points: vec![input_point, link_point.clone(), output_point, link_point],
+            hints: [input_value, link_input, output.value, link_output]
+                .map(|v| Some(OpeningBatch::new(vec![v], vec![])))
+                .to_vec(),
         })
     }
 
@@ -300,47 +389,64 @@ impl LinkedBatch {
         );
         let mut ch = self.challenger(authority);
         self.pcs.observe_commitment(&statement.commitment, &mut ch);
-        self.bind_ports(ports, &mut ch)?;
-        let (mut output, output_point) = self.output_claim(&mut ch);
-        output.value = proof.output;
-        let input = super::verify_using(
-            &proof.reduction,
-            &output,
-            self.log_batch,
-            &mut ch,
-            self.transcript,
-        )?;
-        let input = closing::verify(&proof.input_closing, &input, &mut ch)?;
-        let (weights, value) = ports::claim(ports, self.direct_bridge, &mut ch);
-        let link = closing::verify_functional(&proof.port_closing, &weights, value, &mut ch)?;
-        let selector = link.point.as_slice()[0];
-        let link_point = link_point(&ports.instance[..self.log_batch], &link.point);
+        let reduced = self.reduce_claims(&proof.claims, &[], ports, &mut ch)?;
         let evals = self.pcs.verify_at(
             &statement.commitment,
             &proof.opening,
             &self.protocol,
-            &[input.point, link_point.clone(), output_point, link_point],
+            &reduced.points,
             &mut ch,
         )?;
-        ensure!(
-            evals.len() == 4 && evals.iter().all(|e| e.current().len() == 1),
-            "incorrect boundary opening count"
-        );
-        ensure!(
-            evals[2].current()[0] == output.value,
-            "incorrect Keccak output"
-        );
-        ensure!(
-            input.product == input.weight * evals[0].current()[0],
-            "incorrect Keccak input"
-        );
-        let a = evals[1].current()[0];
-        let b = evals[3].current()[0];
-        ensure!(
-            link.product == link.weight * (a + selector * (b - a)),
-            "native Keccak ports do not match committed boundaries"
-        );
-        Ok(())
+        reduced.authenticate(&evals)
+    }
+
+    pub(crate) fn reduce_claims<
+        C: FieldChallenger<F> + p3_challenger::GrindingChallenger<Witness = F>,
+    >(
+        &self,
+        proof: &LinkedClaims,
+        coefficients: &[Vec<E>],
+        ports: &PortOpening,
+        ch: &mut C,
+    ) -> Result<LinkedOpenings> {
+        self.bind_ports(ports, ch)?;
+        let (mut output, output_point) = self.output_claim(ch);
+        output.value = proof.output;
+        let input = if self.packed_chi {
+            super::packed::linked::verify(
+                &proof.reduction,
+                coefficients,
+                &proof.input_closing,
+                &output,
+                ch,
+            )?
+        } else {
+            let input = super::verify_using(
+                &proof.reduction,
+                &output,
+                self.log_batch,
+                ch,
+                self.transcript,
+            )?;
+            closing::verify(&proof.input_closing, &input, ch)?
+        };
+        let (weights, value) = ports::claim(ports, self.direct_bridge, ch);
+        let link = closing::verify_functional(&proof.port_closing, &weights, value, ch)?;
+        let selector = link.point.as_slice()[0];
+        let link_point = link_point(&ports.instance[..self.log_batch], &link.point);
+        let points = vec![
+            input.point.clone(),
+            link_point.clone(),
+            output_point,
+            link_point,
+        ];
+        Ok(LinkedOpenings {
+            points,
+            input,
+            link,
+            selector,
+            output: output.value,
+        })
     }
 
     /// The commitment has already entered `ch`; acceptance remains a circuit constraint.
@@ -353,43 +459,72 @@ impl LinkedBatch {
     where
         C: old_challenger::FieldChallenger<CF> + old_challenger::GrindingChallenger<Witness = CF>,
     {
-        ensure!(
-            matches!(self.transcript, Transcript::FixedV2),
-            "recursive input requires the fixed transcript"
-        );
-        let mut ch = Bridge(ch);
-        self.bind_ports(ports, &mut ch)?;
-        let (mut output, output_point) = self.output_claim(&mut ch);
-        output.value = proof.output;
-        let input = super::verify_using(
-            &proof.reduction,
-            &output,
-            self.log_batch,
-            &mut ch,
-            self.transcript,
-        )?;
-        let input = closing::verify(&proof.input_closing, &input, &mut ch)?;
-        let (weights, value) = ports::claim(ports, self.direct_bridge, &mut ch);
-        let link = closing::verify_functional(&proof.port_closing, &weights, value, &mut ch)?;
-        let link_point = link_point(&ports.instance[..self.log_batch], &link.point);
-        let mut private_values = recursive_values(
-            self.log_batch,
-            proof.output,
-            &proof.reduction,
-            &proof.input_closing,
-        )?;
-        private_values.extend(sumcheck_values(&proof.port_closing, POSITION_LOG + 1, 2)?);
-        let points = [input.point, link_point.clone(), output_point, link_point].map(|point| {
-            point
-                .iter()
-                .map(|v| CE::new(v.coefficients().map(|c| CF::new(c.to_bits()))))
-                .collect()
-        });
+        let (private_values, points) = self.import_claims(&proof.claims, &[], ports, ch)?;
         Ok(LinkedInput {
             private_values,
             points,
             opening: recursive_opening(&proof.opening)?,
         })
+    }
+
+    pub(crate) fn import_claims<C>(
+        &self,
+        proof: &LinkedClaims,
+        coefficients: &[Vec<E>],
+        ports: &PortOpening,
+        ch: &mut C,
+    ) -> Result<(Vec<CF>, [Vec<CE>; 4])>
+    where
+        C: old_challenger::FieldChallenger<CF> + old_challenger::GrindingChallenger<Witness = CF>,
+    {
+        ensure!(
+            matches!(self.transcript, Transcript::FixedV2),
+            "recursive input requires the fixed transcript"
+        );
+        let reduced = self.reduce_claims(proof, coefficients, ports, &mut Bridge(ch))?;
+        let mut private_values = if self.packed_chi {
+            let mut values = proof
+                .output
+                .coefficients()
+                .map(|c| CF::new(c.to_bits()))
+                .to_vec();
+            for (layer, coeff) in proof.reduction.layers.iter().zip(coefficients) {
+                for v in coeff {
+                    values.extend(v.coefficients().map(|c| CF::new(c.to_bits())));
+                }
+                values.extend(sumcheck_values(
+                    &layer.sumcheck,
+                    self.log_batch - 4 + POSITION_LOG,
+                    3,
+                )?);
+                for v in layer.values {
+                    values.extend(v.coefficients().map(|c| CF::new(c.to_bits())));
+                }
+            }
+            values.extend(sumcheck_values(&proof.input_closing, POSITION_LOG + 4, 2)?);
+            values
+        } else {
+            recursive_values(
+                self.log_batch,
+                proof.output,
+                &proof.reduction,
+                &proof.input_closing,
+            )?
+        };
+        private_values.extend(sumcheck_values(&proof.port_closing, POSITION_LOG + 1, 2)?);
+        let points = reduced
+            .points
+            .iter()
+            .map(|point| {
+                point
+                    .iter()
+                    .map(|v| CE::new(v.coefficients().map(|c| CF::new(c.to_bits()))))
+                    .collect()
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("expected four boundary points"))?;
+        Ok((private_values, points))
     }
 
     pub fn recursive_pcs_seed(&self) -> Vec<CF> {
@@ -477,6 +612,43 @@ impl LinkedBatch {
             },
             Point::new(point),
         )
+    }
+}
+
+pub(crate) fn boundary_specs(log_batch: usize) -> Vec<TableSpec> {
+    let shape = TableShape::new(log_batch + POSITION_LOG, 1);
+    vec![TableSpec::new(shape, vec![OpeningBatch::new(vec![0], vec![]); 2]); 2]
+}
+
+pub(crate) struct LinkedOpenings {
+    pub points: Vec<Point<E>>,
+    input: closing::Closing,
+    link: closing::Closing,
+    selector: E,
+    output: E,
+}
+
+impl LinkedOpenings {
+    pub(crate) fn authenticate(&self, evals: &[OpeningBatch<E>]) -> Result<()> {
+        ensure!(
+            evals.len() == 4 && evals.iter().all(|e| e.current().len() == 1),
+            "incorrect boundary opening count"
+        );
+        ensure!(
+            evals[2].current()[0] == self.output,
+            "incorrect Keccak output"
+        );
+        ensure!(
+            self.input.product == self.input.weight * evals[0].current()[0],
+            "incorrect Keccak input"
+        );
+        let a = evals[1].current()[0];
+        let b = evals[3].current()[0];
+        ensure!(
+            self.link.product == self.link.weight * (a + self.selector * (b - a)),
+            "native Keccak ports do not match committed boundaries"
+        );
+        Ok(())
     }
 }
 

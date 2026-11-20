@@ -29,7 +29,7 @@ use p3_recursion::{
 
 use super::{Verifier, recursive_air};
 use crate::{
-    HashBackend, WHIR_CAP_HEIGHT, WHIR_FOLD, WHIR_LOG_INV_RATE,
+    HashBackend, WHIR_CAP_HEIGHT, WHIR_FOLD,
     checkpoint::AggregateProof,
     checkpoint_keccak::{
         committed::{Opening, recursive_opening},
@@ -37,7 +37,7 @@ use crate::{
     },
 };
 
-type Ch = BinaryChallenger<F, HashChallenger<u8, Keccak256Hash, 32>>;
+pub(super) type Ch = BinaryChallenger<F, HashChallenger<u8, Keccak256Hash, 32>>;
 type Mmcs = MerkleTreeMmcs<
     F,
     u8,
@@ -49,13 +49,15 @@ type Mmcs = MerkleTreeMmcs<
 type Wire = (Vec<E>, Vec<BitTensor<E, F>>, WhirProof<F, E, Mmcs>);
 type Reduction = (Option<BusProof<E>>, GenericDegreeProof<F, E>);
 
+#[cfg(feature = "opening-bench")]
+pub(crate) mod opening_bench;
 #[cfg(test)]
 mod periodic_tests;
 #[cfg(test)]
 mod tests;
 
 pub struct RecursiveArithmetic {
-    verifier: BinaryPolyCoordinateWhirVerifier,
+    pub(super) verifier: BinaryPolyCoordinateWhirVerifier,
     configs: [WhirConfig<E, F, Ch>; 2],
     mmcs: Mmcs,
     public_counts: Vec<usize>,
@@ -86,10 +88,35 @@ impl Verifier {
             CoordinateEncoding::UniformWords
         };
         let pp_encoding = self.data.preprocessed_encoding();
-        let main = plan(&shapes, &self.data.main_coordinates, main_encoding)?;
-        let pp = plan(&pp_shapes, &self.data.preprocessed_coordinates, pp_encoding)?;
+        let mut main_widths = self.data.main_coordinates.clone();
+        let extra = if self.config.joint_security.is_some() {
+            let scheme = self
+                .checkpoint
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("joint format requires Keccak"))?;
+            main_widths.extend([vec![1], vec![1]]);
+            scheme
+                .boundary_specs()
+                .into_iter()
+                .map(|s| {
+                    TableSpec::new(
+                        TableShape::new(s.shape().num_variables(), 1),
+                        vec![OpeningBatch::new(vec![0], vec![]); 2],
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
+        let main = plan(&shapes, &main_widths, main_encoding, &extra)?;
+        let pp = plan(
+            &pp_shapes,
+            &self.data.preprocessed_coordinates,
+            pp_encoding,
+            &[],
+        )?;
         let configs = [
-            config(main.num_variables(), WHIR_LOG_INV_RATE)?,
+            config(main.num_variables(), self.config.main_log_inv_rate)?,
             config(pp.num_variables(), self.data.preprocessed_log_inv_rate())?,
         ];
         let parameters =
@@ -104,10 +131,10 @@ impl Verifier {
             .key
             .preprocessed_commitment()
             .ok_or_else(|| anyhow::anyhow!("missing checkpoint preprocessing"))?;
-        let verifier = BinaryPolyCoordinateWhirVerifier::with_encodings(
+        let verifier = BinaryPolyCoordinateWhirVerifier::with_auxiliary(
             &airs.iter().collect::<Vec<_>>(),
             &heights,
-            parameters(0, &main, &self.data.main_coordinates),
+            parameters(0, &main, &main_widths),
             Some((
                 parameters(1, &pp, &self.data.preprocessed_coordinates),
                 MerkleCap::new(cap.roots().to_vec()),
@@ -118,6 +145,7 @@ impl Verifier {
                 ..VerifierLimits::default()
             },
             [main_encoding, pp_encoding],
+            &extra,
         )?;
         Ok(RecursiveArithmetic {
             verifier,
@@ -178,6 +206,16 @@ impl RecursiveArithmetic {
         public: &[F],
         seed: &[u8],
     ) -> Result<Vec<F>> {
+        self.import_joint(proof, public, seed, &[])
+    }
+
+    pub(super) fn import_joint(
+        &self,
+        proof: crate::Proof,
+        public: &[F],
+        seed: &[u8],
+        points: &[Vec<E>],
+    ) -> Result<Vec<F>> {
         ensure!(
             proof.lookup.is_none() && proof.indexed.is_none() && proof.circuits.is_empty(),
             "unsupported arithmetic proof parts"
@@ -187,9 +225,14 @@ impl RecursiveArithmetic {
             postcard::from_bytes(&postcard::to_allocvec(&(&proof.bus, &proof.sumcheck))?)?;
         let cap = MerkleCap::new(proof.commitment.roots().to_vec());
         let mut ch = Ch::from_hasher(seed.to_vec(), Keccak256Hash);
-        let input =
-            self.verifier
-                .import_reduction(&cap, &public, bus.as_ref(), &sumcheck, &mut ch)?;
+        let input = self.verifier.import_with_auxiliary_points(
+            &cap,
+            &public,
+            bus.as_ref(),
+            &sumcheck,
+            &mut ch,
+            points,
+        )?;
         let mut values = input.private_values;
         values.extend(import_opening(
             self.verifier.main_pcs(),
@@ -219,7 +262,7 @@ impl RecursiveArithmetic {
         Ok(values)
     }
 
-    fn public<T: Clone>(&self, public: &[T]) -> Result<Vec<Vec<T>>> {
+    pub(super) fn public<T: Clone>(&self, public: &[T]) -> Result<Vec<Vec<T>>> {
         ensure!(
             self.public_counts
                 .iter()
@@ -238,11 +281,13 @@ fn plan(
     shapes: &[TableShape],
     widths: &[Vec<usize>],
     mode: CoordinateEncoding,
+    extra: &[TableSpec],
 ) -> Result<BinaryPolyCoordinateOpeningPlan> {
     let protocol = OpeningProtocol::new(
         shapes
             .iter()
             .map(|&s| TableSpec::new(s, vec![OpeningBatch::new((0..s.width()).collect(), vec![])]))
+            .chain(extra.iter().cloned())
             .collect(),
     );
     Ok(BinaryPolyCoordinateOpeningPlan::with_encoding(

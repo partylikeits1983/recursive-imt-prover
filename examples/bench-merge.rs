@@ -31,6 +31,9 @@ struct Args {
     right: PathBuf,
     #[arg(long, default_value = "3", value_parser = clap::value_parser!(u32).range(1..))]
     repetitions: u32,
+    #[cfg(feature = "opening-bench")]
+    #[arg(long)]
+    compare_openings: bool,
 }
 
 fn read_tree(path: &Path) -> Result<TreeProof> {
@@ -60,6 +63,15 @@ fn main() -> Result<()> {
     let first_verifier = first.cyclic_verifier()?;
     drop(first);
     let merge = PreparedCyclicMerge::new(first_verifier)?;
+    #[cfg(feature = "opening-bench")]
+    if args.compare_openings {
+        let mut merge = merge;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&merge.compare_openings(&children, args.repetitions)?)?
+        );
+        return Ok(());
+    }
     for _ in 0..args.repetitions {
         let (parent, metrics) = merge.prove(&children)?;
         println!(

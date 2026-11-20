@@ -29,7 +29,7 @@ pub use committed::{
 pub use linked::{
     LinkedInput, LinkedReduction, LinkedTargets, PortTargets, PreparedLinkedVerifier,
 };
-use weights::Weights;
+pub(super) use weights::Weights;
 
 #[derive(Clone)]
 pub struct ClaimTarget {
@@ -43,6 +43,7 @@ pub struct ProofTargets {
 }
 
 struct LayerTargets {
+    coefficients: Vec<NativePoly192Target>,
     sumcheck: BinaryPolyGenericSumcheckProofTargets<NativePoly192Target, ExprId>,
     values: [NativePoly192Target; 3],
 }
@@ -52,8 +53,17 @@ pub struct Reduction {
     pub challenger: BinaryTower128Challenger,
 }
 
+struct FactoredReduction {
+    instance: Vec<NativePoly192Target>,
+    weights: Weights,
+    lanes: Vec<NativePoly192Target>,
+    value: NativePoly192Target,
+    challenger: BinaryTower128Challenger,
+}
+
 pub struct PreparedVerifier {
     log_batch: usize,
+    packed: bool,
     sumcheck: BinaryPolyGenericSumcheckVerifier,
 }
 
@@ -74,22 +84,42 @@ where
 
 impl PreparedVerifier {
     pub fn new(log_batch: usize) -> Result<Self> {
+        Self::with_packing(log_batch, false)
+    }
+
+    fn with_packing(log_batch: usize, packed: bool) -> Result<Self> {
         algebraic_error_degree(log_batch)?;
+        ensure!(!packed || log_batch >= 4, "packed chi requires 16 lanes");
         Ok(Self {
             log_batch,
-            sumcheck: BinaryPolyGenericSumcheckVerifier::new(log_batch + POSITION_LOG, 3, 0)?,
+            packed,
+            sumcheck: BinaryPolyGenericSumcheckVerifier::new(
+                log_batch + POSITION_LOG - 4 * usize::from(packed),
+                3,
+                0,
+            )?,
         })
     }
 
     pub fn allocate(&self, b: &mut CircuitBuilder<CF>) -> Result<ProofTargets> {
         let mut layers = Vec::with_capacity(ROUNDS);
         for _ in 0..ROUNDS {
+            let coefficients = (0..if self.packed { 47 } else { 0 })
+                .map(|_| {
+                    let limbs = b.alloc_private_input_array::<3>("packed chi coefficient");
+                    b.native_poly192_from_coefficients(limbs)
+                })
+                .collect();
             let sumcheck = self.sumcheck.input_shape().allocate_native_targets(b)?;
             let values = core::array::from_fn(|_| {
                 let coefficients = b.alloc_private_input_array::<3>("Keccak GKR endpoint");
                 b.native_poly192_from_coefficients(coefficients)
             });
-            layers.push(LayerTargets { sumcheck, values });
+            layers.push(LayerTargets {
+                coefficients,
+                sumcheck,
+                values,
+            });
         }
         b.check_construction_limits()?;
         Ok(ProofTargets { layers })
@@ -118,10 +148,34 @@ impl PreparedVerifier {
     pub fn verify_reduction(
         &self,
         b: &mut CircuitBuilder<CF>,
-        mut ch: BinaryTower128Challenger,
+        ch: BinaryTower128Challenger,
         output: &ClaimTarget,
         proof: &ProofTargets,
     ) -> Result<Reduction> {
+        let FactoredReduction {
+            instance,
+            weights,
+            value,
+            challenger,
+            ..
+        } = self.verify_factored(b, ch, output, proof)?;
+        Ok(Reduction {
+            claim: ClaimTarget {
+                instance,
+                weights: weights.expand(b),
+                value,
+            },
+            challenger,
+        })
+    }
+
+    fn verify_factored(
+        &self,
+        b: &mut CircuitBuilder<CF>,
+        mut ch: BinaryTower128Challenger,
+        output: &ClaimTarget,
+        proof: &ProofTargets,
+    ) -> Result<FactoredReduction> {
         ensure!(
             output.instance.len() == self.log_batch,
             "incorrect Keccak claim point"
@@ -131,35 +185,59 @@ impl PreparedVerifier {
             proof.layers.len() == ROUNDS,
             "incorrect Keccak GKR layer count"
         );
-        let digest = Keccak256::digest(RECURSIVE_DOMAIN);
-        for bytes in digest.as_chunks::<8>().0 {
-            let seed = b.define_const(CF::new(u64::from_le_bytes(*bytes)));
-            observe_base(b, &mut ch, seed)?;
-        }
-        let log = b.define_const(CF::new(self.log_batch as u64));
-        observe_base(b, &mut ch, log)?;
-        for value in output
-            .instance
-            .iter()
-            .chain(&output.weights)
-            .chain([&output.value])
-        {
-            observe(b, &mut ch, value)?;
+        if self.packed {
+            observe(b, &mut ch, &output.value)?;
+        } else {
+            let digest = Keccak256::digest(RECURSIVE_DOMAIN);
+            for bytes in digest.as_chunks::<8>().0 {
+                let seed = b.define_const(CF::new(u64::from_le_bytes(*bytes)));
+                observe_base(b, &mut ch, seed)?;
+            }
+            let log = b.define_const(CF::new(self.log_batch as u64));
+            observe_base(b, &mut ch, log)?;
+            for value in output
+                .instance
+                .iter()
+                .chain(&output.weights)
+                .chain([&output.value])
+            {
+                observe(b, &mut ch, value)?;
+            }
         }
         let one = b.native_poly192_constant([1, 0, 0]);
         let mut instance = output.instance.clone();
+        let mut lanes = if self.packed {
+            equality_weights(b, &instance.split_off(self.log_batch - 4))
+        } else {
+            Vec::new()
+        };
         let mut value = output.value.clone();
         let mut weights = Weights::Dense(output.weights.clone());
         for (round, layer) in (0..ROUNDS).rev().zip(&proof.layers) {
             let round_value = b.define_const(CF::new(round as u64));
             observe_base(b, &mut ch, round_value)?;
             let iota = weights.iota(b, RC[round]);
-            let expected = b.native_poly192_add(&value, &iota);
+            let expected = if self.packed {
+                let count = super::packed::circuit::sum(b, lanes.iter().cloned());
+                let constant = b.native_poly192_mul(&iota, &count);
+                let expected = b.native_poly192_add(&value, &constant);
+                let (at_t, next) = super::packed::circuit::product(
+                    b,
+                    &mut ch,
+                    &layer.coefficients,
+                    &lanes,
+                    &expected,
+                )?;
+                lanes = next;
+                at_t
+            } else {
+                b.native_poly192_add(&value, &iota)
+            };
             let reduced =
                 self.sumcheck
                     .verify_reduction_native(b, ch, &expected, &layer.sumcheck)?;
             ch = reduced.challenger;
-            let (next_instance, position) = reduced.point.split_at(self.log_batch);
+            let (next_instance, position) = reduced.point.split_at(instance.len());
             let mut eq = one.clone();
             for (a, c) in instance.iter().zip(next_instance) {
                 let sum = b.native_poly192_add(a, c);
@@ -170,7 +248,13 @@ impl PreparedVerifier {
             let [a, c, d] = &layer.values;
             let product = b.native_poly192_mul(c, d);
             let sum = b.native_poly192_add(a, d);
-            let chi = b.native_poly192_add(&sum, &product);
+            let linear = if self.packed {
+                let count = super::packed::circuit::sum(b, lanes.iter().cloned());
+                b.native_poly192_mul(&sum, &count)
+            } else {
+                sum
+            };
+            let chi = b.native_poly192_add(&linear, &product);
             let scale = b.native_poly192_mul(&eq, &weight);
             let terminal = b.native_poly192_mul(&scale, &chi);
             connect(b, &terminal, &reduced.claim);
@@ -187,12 +271,11 @@ impl PreparedVerifier {
             instance = next_instance.to_vec();
             b.check_construction_limits()?;
         }
-        Ok(Reduction {
-            claim: ClaimTarget {
-                instance,
-                weights: weights.expand(b),
-                value,
-            },
+        Ok(FactoredReduction {
+            instance,
+            weights,
+            lanes,
+            value,
             challenger: ch,
         })
     }
@@ -215,7 +298,7 @@ pub(super) fn sumcheck_values(
         .collect())
 }
 
-fn equality_weights(
+pub(super) fn equality_weights(
     b: &mut CircuitBuilder<CF>,
     point: &[NativePoly192Target],
 ) -> Vec<NativePoly192Target> {
@@ -236,13 +319,17 @@ fn equality_weights(
     weights
 }
 
-fn connect(b: &mut CircuitBuilder<CF>, a: &NativePoly192Target, c: &NativePoly192Target) {
+pub(super) fn connect(
+    b: &mut CircuitBuilder<CF>,
+    a: &NativePoly192Target,
+    c: &NativePoly192Target,
+) {
     for (&a, &c) in a.coefficients().iter().zip(c.coefficients()) {
         b.connect(a, c);
     }
 }
 
-fn observe_base(
+pub(super) fn observe_base(
     b: &mut CircuitBuilder<CF>,
     ch: &mut BinaryTower128Challenger,
     value: ExprId,
@@ -252,7 +339,7 @@ fn observe_base(
     Ok(())
 }
 
-fn observe(
+pub(super) fn observe(
     b: &mut CircuitBuilder<CF>,
     ch: &mut BinaryTower128Challenger,
     value: &NativePoly192Target,
@@ -263,7 +350,7 @@ fn observe(
     Ok(())
 }
 
-fn sample(
+pub(super) fn sample(
     b: &mut CircuitBuilder<CF>,
     ch: &mut BinaryTower128Challenger,
 ) -> Result<NativePoly192Target> {

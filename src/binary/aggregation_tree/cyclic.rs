@@ -82,6 +82,24 @@ impl PreparedCyclicMerge {
         self.outer.identity()
     }
 
+    #[cfg(feature = "opening-bench")]
+    pub fn compare_openings(
+        &mut self,
+        children: &[TreeProof; 2],
+        repetitions: u32,
+    ) -> Result<Vec<imt_flock_backend::opening_bench::Sample>> {
+        self.outer.record_openings()?;
+        let (parent, _) = self.prove(children)?;
+        self.outer.verify(
+            &parent.proof,
+            &fields(
+                &TreeStatement::from_public(&parent.public)?,
+                &self.authority,
+            ),
+        )?;
+        self.outer.compare_recorded_openings(repetitions)
+    }
+
     pub fn geometry(&self) -> &Geometry {
         &self.outer.geometry
     }

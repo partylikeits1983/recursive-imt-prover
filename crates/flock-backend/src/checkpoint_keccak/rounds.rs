@@ -11,10 +11,11 @@ use crate::F;
 type PackedE = <E as ExtensionField<F>>::ExtensionPacking;
 const PACKING_WIDTH: usize = <F as Field>::Packing::WIDTH;
 
-pub(super) struct ChiSumcheck<'a> {
+pub(super) struct ChiSumcheck<'a, const ENCODED: bool = false> {
     stage: Stage,
     weights: Weights,
     point: &'a [E],
+    linear_scale: E,
 }
 
 struct Weights {
@@ -114,12 +115,13 @@ impl Weights {
 impl Columns {
     /// Constant and quadratic coefficients of the weighted chi polynomial along a pair.
     /// Starting at either endpoint gives the same quadratic term in characteristic two.
-    fn chi_endpoint_and_quadratic(
+    fn chi_endpoint_and_quadratic<const ENCODED: bool>(
         &self,
         i: usize,
         other: usize,
         half: usize,
         weights: &Weights,
+        linear_scale: E,
     ) -> [E; 2] {
         let mut coefficients = [E::ZERO; 2];
         if let Self::Bits { states, first } = self {
@@ -189,7 +191,12 @@ impl Columns {
             let y = load(high, shift(j, 1));
             let z = load(high, shift(j, 2));
             let w = load(&weights.values, j);
-            sums[0] += w.mul_unreduced(a + c + b * c);
+            let linear = if !ENCODED {
+                a + c
+            } else {
+                (a + c) * PackedE::from(linear_scale)
+            };
+            sums[0] += w.mul_unreduced(linear + b * c);
             sums[1] += (w * (b + y)).mul_unreduced(c + z);
         }
         sums.map(|sum| {
@@ -234,7 +241,8 @@ impl Columns {
                     );
                 });
             values.truncate(half * BITS);
-            values.shrink_to_fit();
+            // Subsequent folds overwrite the same prefix. The entire allocation
+            // is released as soon as this round reaches its position variables.
             return;
         }
         let Self::Bits { states, first } = self else {
@@ -272,21 +280,40 @@ impl Columns {
 
 impl<'a> ChiSumcheck<'a> {
     pub fn new(states: Vec<State>, point: &'a [E], weights: Vec<E>) -> Self {
-        let equality = Point::new(point).equality_weights_msb();
+        assert_eq!(states.len(), 1 << point.len());
+        Self::from_columns(
+            Columns::Bits {
+                states,
+                first: None,
+            },
+            point,
+            weights,
+            E::ONE,
+        )
+    }
+}
+
+impl<'a> ChiSumcheck<'a, true> {
+    pub(super) fn encoded(values: Vec<E>, point: &'a [E], weights: Vec<E>, scale: E) -> Self {
+        assert_eq!(values.len(), BITS << point.len());
+        Self::from_columns(Columns::Folded(values), point, weights, scale)
+    }
+}
+
+impl<'a, const ENCODED: bool> ChiSumcheck<'a, ENCODED> {
+    fn from_columns(columns: Columns, point: &'a [E], weights: Vec<E>, linear_scale: E) -> Self {
         assert_eq!(weights.len(), BITS);
-        assert_eq!(states.len(), equality.len());
-        let count = states.len();
+        let equality = Point::new(point).equality_weights_msb();
+        let count = equality.len();
         let mut state = Self {
             stage: Stage::Instances {
-                columns: Columns::Bits {
-                    states,
-                    first: None,
-                },
+                columns,
                 equality: Poly::new(equality),
                 count,
             },
             weights: Weights::new(weights),
             point,
+            linear_scale,
         };
         state.enter_positions();
         state
@@ -340,7 +367,7 @@ fn subset_sums<const N: usize, const M: usize>(values: &[E; N]) -> [E; M] {
     table
 }
 
-impl RoundProver<E> for ChiSumcheck<'_> {
+impl<const ENCODED: bool> RoundProver<E> for ChiSumcheck<'_, ENCODED> {
     fn fold(&mut self, challenge: E) {
         match &mut self.stage {
             Stage::Instances {
@@ -375,7 +402,7 @@ impl RoundProver<E> for ChiSumcheck<'_> {
     }
 }
 
-impl ChiSumcheck<'_> {
+impl<const ENCODED: bool> ChiSumcheck<'_, ENCODED> {
     fn evals(&self, sum: Option<E>) -> Vec<E> {
         let nodes: [E; 3] = core::array::from_fn(RoundPolyInterpolator::transmitted_node);
         match &self.stage {
@@ -396,7 +423,13 @@ impl ChiSumcheck<'_> {
                     .into_par_iter()
                     .map(|i| {
                         columns
-                            .chi_endpoint_and_quadratic(i, i + half, half, weights)
+                            .chi_endpoint_and_quadratic::<ENCODED>(
+                                i,
+                                i + half,
+                                half,
+                                weights,
+                                self.linear_scale,
+                            )
                             .map(|v| v * weight(i))
                     })
                     .reduce(|| [E::ZERO; 2], |a, b| [a[0] + b[0], a[1] + b[1]]);
@@ -408,8 +441,13 @@ impl ChiSumcheck<'_> {
                     (0..half)
                         .into_par_iter()
                         .map(|i| {
-                            columns.chi_endpoint_and_quadratic(i + half, i, half, weights)[0]
-                                * weight(i)
+                            columns.chi_endpoint_and_quadratic::<ENCODED>(
+                                i + half,
+                                i,
+                                half,
+                                weights,
+                                self.linear_scale,
+                            )[0] * weight(i)
                         })
                         .sum()
                 };
@@ -435,7 +473,12 @@ impl ChiSumcheck<'_> {
                             * (0..half)
                                 .map(|i| {
                                     let b = columns.each_ref().map(|p| line(p, i));
-                                    line(weights, i) * (b[0] + b[2] + b[1] * b[2])
+                                    let linear = if ENCODED {
+                                        self.linear_scale * (b[0] + b[2])
+                                    } else {
+                                        b[0] + b[2]
+                                    };
+                                    line(weights, i) * (linear + b[1] * b[2])
                                 })
                                 .sum::<E>()
                     })

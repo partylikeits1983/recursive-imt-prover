@@ -1,0 +1,637 @@
+{
+  "base_revision": "7c157287d49181b36d5813c91e7f448ec0a714c2",
+  "hardware": "Apple M2 Pro, 12 cores, 16 GiB, ordinary laptop load",
+  "build": "cargo --locked --release; 12 Rayon threads; no simultaneous benchmark processes or Cargo builds during timed trials",
+  "parameters": {
+    "hash": "full Keccak-256",
+    "value_field": "Poly64",
+    "challenge_field": "Poly192",
+    "pcs": "binary additive WHIR",
+    "security_assumption": "JohnsonBound",
+    "security_level": 152,
+    "log_inv_rate": 2,
+    "folding_factor": 4,
+    "max_pow_bits": 16,
+    "cap_height": 0,
+    "min_conditional_algebraic_bits": 144
+  },
+  "component": {
+    "scope": "Non-hiding, 65,536 deterministic states. Each sample measures native boundary production, commitment, reduction and opening, followed by separate deserialization and verification. Each sample ran in a fresh process. Case order alternated forward and reverse over four passes. The 24-round control also caches the middle state locally. The 12-round schedule authenticates its midpoint. Both arms use the shipping eight-state boundary fold.",
+    "command": "RAYON_NUM_THREADS=12 cargo run --locked --release -p imt-flock-backend --features opening-bench --example packed-keccak -- 16 <one|full|mid> <scalar|packed> <separate|joint> 1",
+    "cases": [
+      {
+        "schedule": "one",
+        "kernel": "scalar",
+        "pcs": "joint",
+        "non_pcs_scalars": 133,
+        "proof_bytes": 193907,
+        "statement_bytes": 34,
+        "conditional_algebraic_bits": 148.0222184271053,
+        "median_prove_s": 0.28331731250000003,
+        "median_verify_ms": 2.6265625,
+        "samples_s": [
+          {
+            "prove_s": 0.301769833,
+            "witness_commit_s": 0.078895166,
+            "reduce_s": 0.074866958,
+            "open_s": 0.147653375,
+            "decode_verify_s": 0.002998041
+          },
+          {
+            "prove_s": 0.276872875,
+            "witness_commit_s": 0.071863125,
+            "reduce_s": 0.069858458,
+            "open_s": 0.13460625,
+            "decode_verify_s": 0.002626167
+          },
+          {
+            "prove_s": 0.275151,
+            "witness_commit_s": 0.071495708,
+            "reduce_s": 0.069918416,
+            "open_s": 0.133431625,
+            "decode_verify_s": 0.002626958
+          },
+          {
+            "prove_s": 0.28976175,
+            "witness_commit_s": 0.074997459,
+            "reduce_s": 0.076713084,
+            "open_s": 0.137730375,
+            "decode_verify_s": 0.002581958
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 0.27853337499999997
+      },
+      {
+        "schedule": "one",
+        "kernel": "packed",
+        "pcs": "joint",
+        "non_pcs_scalars": 176,
+        "proof_bytes": 194158,
+        "statement_bytes": 34,
+        "conditional_algebraic_bits": 148.02221842696537,
+        "median_prove_s": 0.273925812,
+        "median_verify_ms": 2.631542,
+        "samples_s": [
+          {
+            "prove_s": 0.278950583,
+            "witness_commit_s": 0.075265166,
+            "reduce_s": 0.062672875,
+            "open_s": 0.140727458,
+            "decode_verify_s": 0.002553625
+          },
+          {
+            "prove_s": 0.267549333,
+            "witness_commit_s": 0.072802125,
+            "reduce_s": 0.057927459,
+            "open_s": 0.1365235,
+            "decode_verify_s": 0.002632459
+          },
+          {
+            "prove_s": 0.268901041,
+            "witness_commit_s": 0.074108959,
+            "reduce_s": 0.058835167,
+            "open_s": 0.135563917,
+            "decode_verify_s": 0.002719083
+          },
+          {
+            "prove_s": 0.280714625,
+            "witness_commit_s": 0.0779025,
+            "reduce_s": 0.061802042,
+            "open_s": 0.140701291,
+            "decode_verify_s": 0.002630625
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 0.27017966699999996
+      },
+      {
+        "schedule": "full",
+        "kernel": "scalar",
+        "pcs": "joint",
+        "non_pcs_scalars": 2088,
+        "proof_bytes": 249623,
+        "statement_bytes": 34,
+        "conditional_algebraic_bits": 148.022218420746,
+        "median_prove_s": 1.795264354,
+        "median_verify_ms": 5.509062,
+        "samples_s": [
+          {
+            "prove_s": 2.251702166,
+            "witness_commit_s": 0.081913916,
+            "reduce_s": 1.966365042,
+            "open_s": 0.200144083,
+            "decode_verify_s": 0.005690875
+          },
+          {
+            "prove_s": 1.781921291,
+            "witness_commit_s": 0.084334417,
+            "reduce_s": 1.547972584,
+            "open_s": 0.147102,
+            "decode_verify_s": 0.005417667
+          },
+          {
+            "prove_s": 1.714852917,
+            "witness_commit_s": 0.078439042,
+            "reduce_s": 1.492373291,
+            "open_s": 0.141679041,
+            "decode_verify_s": 0.005572416
+          },
+          {
+            "prove_s": 1.8086074170000002,
+            "witness_commit_s": 0.081020625,
+            "reduce_s": 1.575427583,
+            "open_s": 0.1500335,
+            "decode_verify_s": 0.005445708
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 1.8270445830000002
+      },
+      {
+        "schedule": "full",
+        "kernel": "packed",
+        "pcs": "joint",
+        "non_pcs_scalars": 2936,
+        "proof_bytes": 273859,
+        "statement_bytes": 34,
+        "conditional_algebraic_bits": 148.02221841800107,
+        "median_prove_s": 1.3931314795,
+        "median_verify_ms": 5.332729499999999,
+        "samples_s": [
+          {
+            "prove_s": 1.416849584,
+            "witness_commit_s": 0.082808833,
+            "reduce_s": 1.186620208,
+            "open_s": 0.14555425,
+            "decode_verify_s": 0.005056541
+          },
+          {
+            "prove_s": 1.421734708,
+            "witness_commit_s": 0.085836042,
+            "reduce_s": 1.170857375,
+            "open_s": 0.159935084,
+            "decode_verify_s": 0.005428667
+          },
+          {
+            "prove_s": 1.352796375,
+            "witness_commit_s": 0.077668709,
+            "reduce_s": 1.131534459,
+            "open_s": 0.141252917,
+            "decode_verify_s": 0.005236792
+          },
+          {
+            "prove_s": 1.369413375,
+            "witness_commit_s": 0.082325208,
+            "reduce_s": 1.137019417,
+            "open_s": 0.147959625,
+            "decode_verify_s": 0.005767167
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 1.400433875
+      },
+      {
+        "schedule": "mid",
+        "kernel": "scalar",
+        "pcs": "joint",
+        "non_pcs_scalars": 1127,
+        "proof_bytes": 247905,
+        "statement_bytes": 34,
+        "conditional_algebraic_bits": 147.73747931920474,
+        "median_prove_s": 1.909720021,
+        "median_verify_ms": 5.035333,
+        "samples_s": [
+          {
+            "prove_s": 2.053314791,
+            "witness_commit_s": 0.132518042,
+            "reduce_s": 1.5767985420000001,
+            "open_s": 0.338897458,
+            "decode_verify_s": 0.005333417
+          },
+          {
+            "prove_s": 1.9107809169999999,
+            "witness_commit_s": 0.138958,
+            "reduce_s": 1.469641459,
+            "open_s": 0.298741584,
+            "decode_verify_s": 0.005065625
+          },
+          {
+            "prove_s": 1.820834375,
+            "witness_commit_s": 0.125513292,
+            "reduce_s": 1.402071834,
+            "open_s": 0.289677041,
+            "decode_verify_s": 0.005005041
+          },
+          {
+            "prove_s": 1.908659125,
+            "witness_commit_s": 0.133415791,
+            "reduce_s": 1.472519583,
+            "open_s": 0.298969917,
+            "decode_verify_s": 0.004911583
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 1.9065458745
+      },
+      {
+        "schedule": "mid",
+        "kernel": "packed",
+        "pcs": "joint",
+        "non_pcs_scalars": 1555,
+        "proof_bytes": 260202,
+        "statement_bytes": 34,
+        "conditional_algebraic_bits": 147.73747931806716,
+        "median_prove_s": 1.3676177495,
+        "median_verify_ms": 5.0406665,
+        "samples_s": [
+          {
+            "prove_s": 1.420552666,
+            "witness_commit_s": 0.139580959,
+            "reduce_s": 0.98078025,
+            "open_s": 0.298233917,
+            "decode_verify_s": 0.005291458
+          },
+          {
+            "prove_s": 1.423032416,
+            "witness_commit_s": 0.138801584,
+            "reduce_s": 0.991869792,
+            "open_s": 0.289805,
+            "decode_verify_s": 0.005066333
+          },
+          {
+            "prove_s": 1.30307675,
+            "witness_commit_s": 0.12893575,
+            "reduce_s": 0.900530334,
+            "open_s": 0.27204225,
+            "decode_verify_s": 0.00497175
+          },
+          {
+            "prove_s": 1.314682833,
+            "witness_commit_s": 0.130664875,
+            "reduce_s": 0.896095208,
+            "open_s": 0.28527475,
+            "decode_verify_s": 0.005015
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 1.4406733125
+      },
+      {
+        "schedule": "mid",
+        "kernel": "packed",
+        "pcs": "separate",
+        "non_pcs_scalars": 1555,
+        "proof_bytes": 411387,
+        "statement_bytes": 67,
+        "conditional_algebraic_bits": 147.10530921277882,
+        "median_prove_s": 1.2792151459999999,
+        "median_verify_ms": 5.7843955000000005,
+        "samples_s": [
+          {
+            "prove_s": 1.352431625,
+            "witness_commit_s": 0.12552975,
+            "reduce_s": 0.989613334,
+            "open_s": 0.234135125,
+            "decode_verify_s": 0.005748041
+          },
+          {
+            "prove_s": 1.333899792,
+            "witness_commit_s": 0.126684291,
+            "reduce_s": 0.98110825,
+            "open_s": 0.224002583,
+            "decode_verify_s": 0.00582075
+          },
+          {
+            "prove_s": 1.2245305,
+            "witness_commit_s": 0.11571225,
+            "reduce_s": 0.887324084,
+            "open_s": 0.219807042,
+            "decode_verify_s": 0.005595083
+          },
+          {
+            "prove_s": 1.219442459,
+            "witness_commit_s": 0.115023834,
+            "reduce_s": 0.883068375,
+            "open_s": 0.218782542,
+            "decode_verify_s": 0.005839333
+          }
+        ],
+        "median_prove_before_boundary_fold_s": 1.3536385205
+      }
+    ],
+    "recursive_circuits": [
+      {
+        "schedule": "full",
+        "kernel": "scalar",
+        "keccak_permutations": 5269,
+        "operations": 819525,
+        "witnesses": 1412020
+      },
+      {
+        "schedule": "full",
+        "kernel": "packed",
+        "keccak_permutations": 5393,
+        "operations": 896335,
+        "witnesses": 1511274
+      },
+      {
+        "schedule": "mid",
+        "kernel": "scalar",
+        "keccak_permutations": 5581,
+        "operations": 899266,
+        "witnesses": 1534891
+      },
+      {
+        "schedule": "mid",
+        "kernel": "packed",
+        "keccak_permutations": 5645,
+        "operations": 938219,
+        "witnesses": 1585164
+      }
+    ],
+    "recursive_scope": "Add --recursive to the joint case. The circuit receives the commitment as its only public input and verifies the reduction and mixed opening. The witness runner accepts the proof and rejects an altered public root. Circuit construction and execution are excluded from native proving times."
+  },
+  "merge_openings": {
+    "scope": "One canonical higher merge using the same saved eight-child root for both inputs. First prove and verify that 16-child parent. Capture its actual main and checkpoint tables, opening schedules, hints and points. Recommit and reopen on a separate benchmark transcript, verify equality of all decoded readings, then run the recursive opening gadgets with dynamic public caps, points and expected readings. Timing covers the two affected PCS groups. Preprocessing, AIR, port-link reduction and the rest of the parent are outside this replay.",
+    "source_subtree_proof_sha256": "52fdeb19f61805f187b1b60db7f821f5a5e5abbb2a73aaa7150c763d2a350534",
+    "command": "RAYON_NUM_THREADS=12 cargo run --locked --release --features opening-bench --example bench-merge -- <saved-eight-subtree> <same-subtree> --compare-openings --repetitions 5",
+    "samples": [
+      {
+        "recursive_circuit": {
+          "witnesses": 5206942,
+          "operations": 3893205,
+          "keccak_permutations": 11228
+        },
+        "joint": false,
+        "opening_proofs": 2,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 150994944,
+        "commit_s": 0.612797958,
+        "open_s": 2.302900667,
+        "verify_s": 0.031153874999999998,
+        "proof_bytes": 507001
+      },
+      {
+        "recursive_circuit": {
+          "witnesses": 4319565,
+          "operations": 3536078,
+          "keccak_permutations": 6739
+        },
+        "joint": true,
+        "opening_proofs": 1,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 134217728,
+        "commit_s": 0.525681708,
+        "open_s": 2.197221417,
+        "verify_s": 0.030158875,
+        "proof_bytes": 322538
+      },
+      {
+        "joint": true,
+        "opening_proofs": 1,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 134217728,
+        "commit_s": 0.487709833,
+        "open_s": 2.311998459,
+        "verify_s": 0.032240125,
+        "proof_bytes": 322538
+      },
+      {
+        "joint": false,
+        "opening_proofs": 2,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 150994944,
+        "commit_s": 0.926952875,
+        "open_s": 2.147046459,
+        "verify_s": 0.030762709,
+        "proof_bytes": 507001
+      },
+      {
+        "joint": false,
+        "opening_proofs": 2,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 150994944,
+        "commit_s": 0.897887583,
+        "open_s": 2.424553208,
+        "verify_s": 0.101286125,
+        "proof_bytes": 507001
+      },
+      {
+        "joint": true,
+        "opening_proofs": 1,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 134217728,
+        "commit_s": 0.610111959,
+        "open_s": 1.823147667,
+        "verify_s": 0.030609125,
+        "proof_bytes": 322538
+      },
+      {
+        "joint": true,
+        "opening_proofs": 1,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 134217728,
+        "commit_s": 0.517079292,
+        "open_s": 2.296523666,
+        "verify_s": 0.190338166,
+        "proof_bytes": 322538
+      },
+      {
+        "joint": false,
+        "opening_proofs": 2,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 150994944,
+        "commit_s": 0.815064708,
+        "open_s": 1.870783626,
+        "verify_s": 0.030694291999999998,
+        "proof_bytes": 507001
+      },
+      {
+        "joint": false,
+        "opening_proofs": 2,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 150994944,
+        "commit_s": 1.1517130009999998,
+        "open_s": 2.046879792,
+        "verify_s": 0.032403333,
+        "proof_bytes": 507001
+      },
+      {
+        "joint": true,
+        "opening_proofs": 1,
+        "tables": 23,
+        "prescribed_points": 25,
+        "opened_values": 373,
+        "initial_codeword_cells": 134217728,
+        "commit_s": 0.854082791,
+        "open_s": 1.973011583,
+        "verify_s": 0.03396625,
+        "proof_bytes": 322538
+      }
+    ]
+  },
+  "canonical_tree": {
+    "command": "tree-demo --batch-size 64 --threads 12 --jobs 1 --parallel-nodes 1 --from-children <same saved children> --keep --out <fresh-directory> --json",
+    "scope": "One run per build, shared laptop, all 63 sequential parent proofs. The candidate uses only the shipping boundary-fold change; the versioned recursive proof still uses separate roots and scalar GKR.",
+    "before_ready_to_fresh_root_s": 566.449009917,
+    "after_ready_to_fresh_root_s": 579.670888791,
+    "after_cold_s": 594.710993333,
+    "after_fresh_verifier_ms": 108.912125,
+    "verification": true,
+    "acceptance_pass": true,
+    "negative_checks": [
+      "root",
+      "input tag",
+      "output commitment",
+      "order",
+      "remove",
+      "insert",
+      "half",
+      "corrupted proof",
+      "truncated proof",
+      "trailing proof bytes"
+    ],
+    "same_key_recursion": true,
+    "final_proof_bytes": 998119,
+    "root_proof_sha256": "588a4f216f44da4458ae185d05f63830837525a5f6e030c100de2beac02b0d84",
+    "first_pair_median_s": 8.849659979,
+    "higher_merge_median_s": 9.02823375,
+    "source_keccak256": "da317dc69d8dc3ff7f35d0a1f543b526c6634b3f221fbdd836ce1ef4250474fd",
+    "target_s": 180,
+    "target_met": false
+  },
+  "live_boundary_fold": {
+    "scope": "Independent change preserving the shipping proof and transcript. Fold eight states per byte mask, skip empty lanes and combine equal-state chunks. The component timing controls above use this fold in both arms. The isolated real parent PCS replay uses the same tables and queries.",
+    "kernel_scope": "65,536 deterministic states padded with zero from row 47,182, 12 Rayon threads, eight alternating runs per method, all 1,600 MLE values checked against the direct weighted sum.",
+    "kernel_trials": [
+      {
+        "packed": false,
+        "seconds": 0.004913375
+      },
+      {
+        "packed": true,
+        "seconds": 0.002049209
+      },
+      {
+        "packed": true,
+        "seconds": 0.001907375
+      },
+      {
+        "packed": false,
+        "seconds": 0.003803
+      },
+      {
+        "packed": false,
+        "seconds": 0.0036315
+      },
+      {
+        "packed": true,
+        "seconds": 0.002251916
+      },
+      {
+        "packed": true,
+        "seconds": 0.001968042
+      },
+      {
+        "packed": false,
+        "seconds": 0.004280125
+      },
+      {
+        "packed": false,
+        "seconds": 0.003642959
+      },
+      {
+        "packed": true,
+        "seconds": 0.0018015
+      },
+      {
+        "packed": true,
+        "seconds": 0.001746167
+      },
+      {
+        "packed": false,
+        "seconds": 0.003997583
+      },
+      {
+        "packed": false,
+        "seconds": 0.003836
+      },
+      {
+        "packed": true,
+        "seconds": 0.002144292
+      },
+      {
+        "packed": true,
+        "seconds": 0.0018595
+      },
+      {
+        "packed": false,
+        "seconds": 0.003560959
+      }
+    ],
+    "higher_merge_scope": "Same saved eight-child root in both slots. Two timed merges per process, four processes in before/after/after/before order. All eight produced the same proof.",
+    "higher_merge_trials": [
+      {
+        "packed": false,
+        "wall_ms": 10813.693042,
+        "outer_prove_ms": 9988.879167000001,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": false,
+        "wall_ms": 9292.20225,
+        "outer_prove_ms": 8535.53525,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": true,
+        "wall_ms": 9097.011083,
+        "outer_prove_ms": 8401.906332999999,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": true,
+        "wall_ms": 9343.963458999999,
+        "outer_prove_ms": 8633.995417,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": true,
+        "wall_ms": 8891.317625,
+        "outer_prove_ms": 8318.562875,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": true,
+        "wall_ms": 8893.402291999999,
+        "outer_prove_ms": 8118.352707999999,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": false,
+        "wall_ms": 8678.018625,
+        "outer_prove_ms": 8099.4087500000005,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      },
+      {
+        "packed": false,
+        "wall_ms": 8768.992542,
+        "outer_prove_ms": 7948.165125,
+        "proof_keccak256": "6ae761f15b6968bf856422f6e6d38bed92354ab9061c62967fdac013faa8aa67"
+      }
+    ]
+  }
+}

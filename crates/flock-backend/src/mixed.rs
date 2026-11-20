@@ -40,6 +40,8 @@ pub struct MixedTraceCommitment<EF, B> {
     inner: BooleanTraceCommitment<EF, B>,
     encodings: Vec<TableEncoding>,
     basis: Vec<F>,
+    #[cfg(feature = "opening-bench")]
+    pub(crate) capture: Option<std::sync::Mutex<Option<crate::opening_bench::Request<EF>>>>,
 }
 
 /// The committed tables, held until the commitment is opened.
@@ -68,6 +70,34 @@ pub fn coordinate_basis<EF: Coordinates>() -> Vec<EF> {
 }
 
 impl<EF, B> MixedTraceCommitment<EF, B> {
+    #[cfg(feature = "opening-bench")]
+    fn capture_request(
+        &self,
+        tables: &[Table<F>],
+        protocol: &OpeningProtocol,
+        points: &[Point<EF>],
+        known: &[Option<OpeningEvals<EF>>],
+        weighted: bool,
+    ) where
+        EF: Clone,
+    {
+        if let Some(slot) = &self.capture {
+            let mut slot = slot.lock().unwrap();
+            assert!(
+                slot.is_none(),
+                "expected a single opening per recorded commitment"
+            );
+            *slot = Some(crate::opening_bench::Request {
+                tables: tables.to_vec(),
+                encodings: self.encodings.clone(),
+                protocol: protocol.clone(),
+                points: points.to_vec(),
+                known: known.to_vec(),
+                weighted,
+            });
+        }
+    }
+
     /// Split each table at its bit region, and commit through `inner`.
     ///
     /// `inner` must hold the arity [`committed_shapes`] stacks to.
@@ -79,6 +109,8 @@ impl<EF, B> MixedTraceCommitment<EF, B> {
             inner,
             encodings,
             basis: coordinate_basis(),
+            #[cfg(feature = "opening-bench")]
+            capture: None,
         }
     }
 }
@@ -595,6 +627,8 @@ where
         known: &[Option<OpeningEvals<EF>>],
         challenger: &mut Challenger,
     ) -> Result<Self::Proof, Self::ProverError> {
+        #[cfg(feature = "opening-bench")]
+        self.capture_request(&prover_data.tables, protocol, points, known, false);
         let points = self.opening_points(protocol, points)?;
         let committed = self.expand_protocol(protocol);
         let known = self.expand_known(protocol, &committed, known)?;
@@ -645,6 +679,8 @@ where
         {
             return Some(Err(BooleanTraceCommitmentError::InvalidOpeningProtocol));
         }
+        #[cfg(feature = "opening-bench")]
+        self.capture_request(&data.tables, protocol, points, known, !weighted.is_empty());
         let points = match self.opening_points(protocol, points) {
             Ok(p) => p,
             Err(e) => return Some(Err(e)),

@@ -93,13 +93,29 @@ output. These coordinates come from the arithmetic sumcheck. Each limb satisfies
 (1 - g) B0(x,d) + g B1(x,d) = (1 - d) Input(g,x) + d Output(g,x)
 ```
 
-The arithmetic PCS authenticates the left side. The Keccak proof checks a random
-combination of the 116 right sides using seven fresh port coordinates. Both
-commitments precede the row challenges. The extra row coordinate and one fewer
-port coordinate preserve the degree bound used for the linkage check. Snapshot
-versions 6 through 8 use this bridge layout. Version 8 uses code rate 1/2 for
-the recursive preprocessing commitment. Earlier snapshots keep their original
-verification rules.
+The prover commits the arithmetic trace and the Boolean input and output tables
+under one Keccak Merkle root before the arithmetic row challenges. It sends
+the claimed row point and 116 bridge values to the Keccak reduction. The
+reduction binds the same root and that message in its own transcript, then
+derives four boundary opening points. A single WHIR proof opens the arithmetic
+tables and both Boolean tables. Both verifiers recompute the bridge from the
+authenticated arithmetic openings and check it against the exact message the
+reduction used. They also check its input, output and port equations against
+the four authenticated bit values. The key separately binds preprocessing,
+which has its own opening.
+
+Version 11 proves all 24 Keccak rounds with leanVM’s 16-lane reverse
+multiplication-friendly embedding. Each layer sends its 47 product
+coefficients before the evaluation challenge. The verifier checks the
+projection onto the 16 AND results and the cubic sumcheck at that challenge.
+The final closing opens the four lane coordinates along with the bit position.
+Both native and in-circuit verification use the same ordering. The two WHIR
+commitments use rate 1/2 with the Johnson bound. [Keccak construction](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/c-keccak-gkr.tex)
+
+Snapshot versions 6 through 8 used separate arithmetic and Keccak boundary
+commitments. Version 8 introduced half-rate preprocessing. Versions 9 and 10
+use the joint opening and scalar chi, with main rates of 1/4 and 1/2
+respectively. The trusted snapshot selects the proof format and rate.
 
 ## Authenticated cyclic authority
 

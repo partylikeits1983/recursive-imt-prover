@@ -105,3 +105,8 @@ digits. For digit width `k`, it authenticates each digit at the word-opening
 point and combines the results using the Poly64 basis weights `X^(j*k)`.
 The trusted preprocessing commitment fixes padding to zero. Main witness
 columns continue to use their declared coordinate bounds.
+
+The coordinate verifier accepts a trusted auxiliary table schedule on the main
+WHIR commitment. The parent circuit supplies the additional points and checks
+the returned auxiliary values. AIR and bus verification consume the original
+arithmetic openings, and preprocessing continues from the joint PCS transcript.

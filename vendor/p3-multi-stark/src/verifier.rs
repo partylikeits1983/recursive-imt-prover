@@ -37,6 +37,7 @@ use crate::zerocheck::{AirZerocheck, BusFamily, ZerocheckError};
 pub struct VerifiedTraceOpenings<EF> {
     pub point: Point<EF>,
     pub current: Vec<Vec<EF>>,
+    pub auxiliary: Vec<OpeningEvals<EF>>,
 }
 
 /// Reasons the multilinear AIR verifier rejects a proof.
@@ -46,6 +47,8 @@ pub enum VerificationError<E>
 where
     E: Debug,
 {
+    #[error("auxiliary table reduction: {0}")]
+    Auxiliary(alloc::string::String),
     /// Security evidence is missing or the requested bound is not met.
     #[error("security: {0}")]
     Security(SecurityError),
@@ -291,6 +294,31 @@ pub fn verify_with_trace_openings<'a, C, A>(
     proof: &MultiStarkProof<C>,
     pow_bits: usize,
     challenger: &mut C::Challenger,
+) -> Result<VerifiedTraceOpenings<C::Challenge>, VerificationError<PcsError<C>>>
+where
+    C: MultiStarkConfig,
+    C::Pcs: PrescribedPointPcs<C::Challenge, C::Challenger>,
+    C::Challenger: FieldChallenger<C::Val>
+        + GrindingChallenger<Witness = C::Val>
+        + CanSampleUniformBits<C::Val>
+        + CanObserve<Commitment<C>>,
+    Commitment<C>: Clone,
+    A: VerifierAir<C::Val, C::Challenge>,
+{
+    verify_with_extra_tables(config, instances, proof, pow_bits, challenger, |_| {
+        Ok(Vec::new())
+    })
+}
+
+/// Verify a main PCS proof that also opens application-owned auxiliary tables.
+/// The caller must authenticate its auxiliary reduction against the returned openings.
+pub fn verify_with_extra_tables<'a, C, A>(
+    config: &C,
+    instances: VerifierInstances<'a, C, A>,
+    proof: &MultiStarkProof<C>,
+    pow_bits: usize,
+    challenger: &mut C::Challenger,
+    reduce: impl FnOnce(&Point<C::Challenge>) -> Result<Vec<Point<C::Challenge>>, alloc::string::String>,
 ) -> Result<VerifiedTraceOpenings<C::Challenge>, VerificationError<PcsError<C>>>
 where
     C: MultiStarkConfig,
@@ -636,12 +664,26 @@ where
     let main_schedule = instances.main_schedule(indexed_plan.as_ref(), |role, rows| {
         trace_suffix(points.at(role), rows)
     });
-    let main_evals = match transcript.main_opening(|challenger| {
+    let extra_specs = config.auxiliary_tables();
+    let mut coordinates = main_schedule.against();
+    let joined;
+    let protocol = if extra_specs.is_empty() {
+        main_schedule.protocol()
+    } else {
+        coordinates.extend(
+            reduce(&reduction.point)
+                .inspect_err(|_| transcript.abort())
+                .map_err(VerificationError::Auxiliary)?,
+        );
+        joined = crate::auxiliary::append_protocol(main_schedule.protocol().clone(), extra_specs);
+        &joined
+    };
+    let mut main_evals = match transcript.main_opening(|challenger| {
         config.pcs().verify_at_weighted(
             &proof.commitment,
             &proof.opening,
-            main_schedule.protocol(),
-            &main_schedule.against(),
+            protocol,
+            &coordinates,
             &weighted,
             challenger,
         )
@@ -657,6 +699,15 @@ where
             return Err(VerificationError::UnsupportedCircuits);
         }
     };
+
+    let count = main_schedule.protocol().num_openings();
+    if main_evals.len() != protocol.num_openings() {
+        transcript.abort();
+        return Err(VerificationError::Auxiliary(
+            "incorrect main opening count".into(),
+        ));
+    }
+    let auxiliary = main_evals.split_off(count);
 
     // 10. Open the preprocessed tables at every point a claim was left at.
     // The owned batches are kept local so the closing check can borrow them.
@@ -816,6 +867,7 @@ where
         )
         .map_err(VerificationError::Zerocheck)?;
     Ok(VerifiedTraceOpenings {
+        auxiliary,
         point: reduction.point,
         current: main_openings
             .iter()

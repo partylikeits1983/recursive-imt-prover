@@ -53,10 +53,17 @@ impl PreparedLinkedVerifier {
     }
 
     pub(crate) fn with_bridge(log_batch: usize, direct_bridge: bool) -> Result<Self> {
+        Self::with_packing(log_batch, direct_bridge, false)
+    }
+    pub(crate) fn with_packing(
+        log_batch: usize,
+        direct_bridge: bool,
+        packed: bool,
+    ) -> Result<Self> {
         Ok(Self {
             direct_bridge,
             log_batch,
-            boundary: PreparedCommittedVerifier::new(log_batch)?,
+            boundary: PreparedCommittedVerifier::with_packing(log_batch, packed)?,
             closing: BinaryPolyGenericSumcheckVerifier::new(POSITION_LOG + 1, 2, 0)?,
         })
     }

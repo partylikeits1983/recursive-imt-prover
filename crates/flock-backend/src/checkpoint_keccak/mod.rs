@@ -7,10 +7,12 @@
 //! native arithmetic ports against those boundaries.
 //! The reference prover recomputes round checkpoints instead of committing every
 //! nonlinear wire. It reuses Plonky3's cubic sumcheck and Keccak transcript.
+mod bits;
 mod closing;
 pub(crate) mod committed;
 mod linear;
 pub mod linked;
+pub mod packed;
 pub(crate) mod ports;
 pub mod recursive;
 mod rounds;

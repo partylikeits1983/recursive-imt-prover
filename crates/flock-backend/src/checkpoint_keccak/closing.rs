@@ -6,7 +6,10 @@ use p3_maybe_rayon::prelude::*;
 use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_sumcheck::generic_degree::{GenericDegreeProof, RoundPolyInterpolator, RoundProver};
 
-use super::{BITS, Claim, E, F, POSITIONS, State};
+use super::{
+    BITS, Claim, E, F, POSITIONS, State,
+    bits::{byte_table, transpose8},
+};
 use crate::config::Challenger;
 
 pub(super) type Proof = GenericDegreeProof<F, E>;
@@ -38,14 +41,34 @@ pub(super) fn fold_states(inputs: &[State], point: &[E]) -> Vec<E> {
         .zip(equality.par_chunks(256))
         .map(|(states, eq)| {
             let mut values = E::zero_vec(BITS);
-            for (state, &weight) in states.iter().zip(eq) {
-                for (lane, &word) in state.iter().enumerate() {
-                    let mut bits = word;
-                    while bits != 0 {
-                        values[lane * 64 + bits.trailing_zeros() as usize] += weight;
-                        bits &= bits - 1;
+            // Padded batches often have whole chunks of equal states.
+            let first = &states[0];
+            if states.iter().all(|state| state == first) {
+                add_state(&mut values, first, eq.iter().copied().sum());
+                return values;
+            }
+            let (groups, tail) = states.as_chunks::<8>();
+            let (weights, remaining) = eq.as_chunks::<8>();
+            for (group, weights) in groups.iter().zip(weights) {
+                let lookup = byte_table(weights);
+                for (lane, target) in values.as_chunks_mut::<64>().0.iter_mut().enumerate() {
+                    let words: [u64; 8] = core::array::from_fn(|i| group[i][lane]);
+                    if words == [0; 8] {
+                        continue;
+                    }
+                    for (byte, target) in target.as_chunks_mut::<8>().0.iter_mut().enumerate() {
+                        let masks = transpose8(u64::from_le_bytes(
+                            words.map(|word| (word >> (8 * byte)) as u8),
+                        ))
+                        .to_le_bytes();
+                        for (v, index) in target.iter_mut().zip(masks) {
+                            *v += lookup[usize::from(index)];
+                        }
                     }
                 }
+            }
+            for (state, &weight) in tail.iter().zip(remaining) {
+                add_state(&mut values, state, weight);
             }
             values
         })
@@ -58,6 +81,16 @@ pub(super) fn fold_states(inputs: &[State], point: &[E]) -> Vec<E> {
                 a
             },
         )
+}
+
+fn add_state(values: &mut [E], state: &State, weight: E) {
+    for (lane, &word) in state.iter().enumerate() {
+        let mut bits = word;
+        while bits != 0 {
+            values[lane * 64 + bits.trailing_zeros() as usize] += weight;
+            bits &= bits - 1;
+        }
+    }
 }
 
 pub(super) fn prove_functional(
@@ -152,5 +185,60 @@ impl RoundProver<E> for DotProduct {
                     .sum()
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod benchmarks {
+    use super::*;
+    use p3_challenger::FieldChallenger;
+    use std::time::Instant;
+
+    #[test]
+    #[ignore = "release timing of the two boundary-folding algorithms"]
+    fn compare_boundary_folding() {
+        let mut states = super::super::tests::inputs(1 << 16);
+        states[47182..].fill([0; 25]);
+        let mut ch = crate::config::challenger(b"boundary-fold-benchmark");
+        let point: Vec<E> = (0..16).map(|_| ch.sample_algebra_element()).collect();
+        let direct = || {
+            let equality = Point::new(point.as_slice()).equality_weights_msb();
+            states
+                .par_chunks(256)
+                .zip(equality.par_chunks(256))
+                .map(|(states, weights)| {
+                    let mut values = E::zero_vec(BITS);
+                    for (s, &w) in states.iter().zip(weights) {
+                        add_state(&mut values, s, w);
+                    }
+                    values
+                })
+                .reduce(
+                    || E::zero_vec(BITS),
+                    |mut left, right| {
+                        for (l, r) in left.iter_mut().zip(right) {
+                            *l += r;
+                        }
+                        left
+                    },
+                )
+        };
+        let reference = direct();
+        for i in 0..8 {
+            for packed in [i % 2 == 1, i % 2 == 0] {
+                let start = Instant::now();
+                let folded = if packed {
+                    fold_states(&states, &point)
+                } else {
+                    direct()
+                };
+                let elapsed = start.elapsed();
+                assert_eq!(folded, reference);
+                println!(
+                    "boundary-fold {}",
+                    serde_json::json!({"packed":packed,"seconds":elapsed.as_secs_f64()})
+                );
+            }
+        }
     }
 }

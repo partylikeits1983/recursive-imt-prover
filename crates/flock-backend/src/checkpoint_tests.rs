@@ -166,3 +166,95 @@ fn shared_template_binds_each_instance_and_its_order() {
         cached.verify(&repeated, &repeated_public).unwrap();
     }
 }
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "fixed recursive layout; run with --release"
+)]
+fn joint_parent_authenticates_the_bridge_and_both_boundary_tables() -> anyhow::Result<()> {
+    use crate::{RecursiveAggregate, checkpoint::JointProof};
+
+    let mut builder = CircuitBuilder::<OldF>::new();
+    builder.enable_native_keccak_f1600()?;
+    let input = builder.alloc_private_input_array::<100>("permutation input");
+    let (digest, _) = builder.add_native_keccak_f1600_digest_with_swapped(&input)?;
+    let claimed = builder.public_input();
+    builder.connect(digest[0], claimed);
+    let prepared = Prepared::recursive_pair(builder.build()?, b"joint-bridge-test")?;
+    let witness: Vec<_> = (0..200)
+        .map(|i| OldF::new((317 * i + 11) & 65535))
+        .collect();
+    let public: Vec<_> = public(&witness)
+        .as_chunks::<116>()
+        .0
+        .iter()
+        .map(|row| row[0])
+        .collect();
+    let (proof, _) = prepared.prove(&public, &witness)?;
+    let key = prepared.export_verifier(b"joint-test")?;
+    let verifier = Verifier::from_bytes(
+        &key,
+        &verifier_key_digest(&key),
+        &prepared.identity(),
+        b"joint-test",
+    )?;
+    verifier.verify(&proof, &public)?;
+    let (mut altered, mut coefficients) = JointProof::decode(&proof, true)?;
+    for (layer, degree) in [(0, 0), (12, 23), (23, 46)] {
+        coefficients[layer][degree] += Poly192::ONE;
+        assert!(
+            verifier
+                .verify(&altered.encode(true, &coefficients)?, &public)
+                .is_err()
+        );
+        coefficients[layer][degree] += Poly192::ONE;
+    }
+    for index in [0, altered.ports.instance.len() - 1] {
+        altered.ports.instance[index] += Poly192::ONE;
+        assert!(
+            verifier
+                .verify(&altered.encode(true, &coefficients)?, &public)
+                .is_err()
+        );
+        altered.ports.instance[index] += Poly192::ONE;
+    }
+    for index in [0, 99, 100, 115] {
+        altered.ports.values[index] += Poly192::ONE;
+        assert!(
+            verifier
+                .verify(&altered.encode(true, &coefficients)?, &public)
+                .is_err()
+        );
+        altered.ports.values[index] += Poly192::ONE;
+    }
+    let n = altered.arithmetic.opening.values.len();
+    for index in n - 4..n {
+        altered.arithmetic.opening.values[index] += Poly192::ONE;
+        assert!(
+            verifier
+                .verify(&altered.encode(true, &coefficients)?, &public)
+                .is_err()
+        );
+        altered.arithmetic.opening.values[index] += Poly192::ONE;
+    }
+    drop(prepared);
+    let recursive = RecursiveAggregate::new(verifier)?;
+    let circuit = recursive.circuit()?;
+    let mut private = recursive.private_inputs(&proof, &public)?;
+    let accepts = |values: &[OldF]| {
+        let mut runner = circuit.runner();
+        runner
+            .set_public_inputs(&public)
+            .and_then(|()| runner.set_private_inputs(values))
+            .and_then(|()| runner.run_witness())
+            .is_ok()
+    };
+    assert!(accepts(&private));
+    // The last private group carries the bridge message. Change a Poly192 limb
+    // after import so rejection must come from the verifier circuit itself.
+    let last = private.len() - 1;
+    private[last] = OldF::new(private[last].to_bits() ^ 1);
+    assert!(!accepts(&private));
+    Ok(())
+}

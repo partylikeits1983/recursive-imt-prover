@@ -5,26 +5,75 @@ to independent verification of one root on the 12-core, 16 GB M2 Pro. The
 acceptance threshold is strictly below 180 seconds. Record cold wall time
 including key preparation as a second result. One minute remains a stretch goal.
 
-The latest run took **566.45 s (9 min 26 s)**, down from **671.61 s** on the
-same saved child proofs. The two runs produced byte-identical 998,119-byte
-roots. Fresh-process verification took 112 ms. Including key setup, the latest
-run took 582.10 s. Reaching three minutes still requires **3.15×** the latest
-throughput. Each build ran the full tree once under ordinary laptop load.
-The alternating standalone tests below isolate the Keccak change more closely.
-[Measurements, revisions and commands](../benchmarks/binary/tree-merge/flock-leanvm-m2.json)
+## Packed recursive parent on the M2 Pro
 
-| Prepared 64-child replay | Before | After |
-| --- | ---: | ---: |
-| 32 first aggregations, total node time | 340.24 s | 288.43 s |
-| 31 higher merges, total node time | 330.91 s | 277.56 s |
-| All outer proving, excluding witness and verification | 614.39 s | 512.60 s |
-| Saved children through fresh root verification | 671.61 s | 566.45 s |
+The version 11 tree aggregated 64 saved children and independently verified
+the root in **373.38 s**. The version 8 run took 579.67 s on the same ordered
+inputs. A prior version 8 run took 566.45 s. Across those comparisons, the
+protocol, native kernels and node schedule reduced elapsed time by 34.1–35.6%.
+Key setup brought the run to 388.06 s. The run proved 32 first pairs under the
+first-aggregation key. All 31 higher merges used one recursive key across five
+levels. The 948,828-byte compressed proof verified in 96 ms (106 ms including
+process launch). Peak process RSS was 6.91 GiB. The machine recorded 8.53 GiB
+of swap-outs across all processes during the command, including setup and
+rejection checks.
 
-Peak physical footprint was 11.16 GiB in the latest run and 11.14 GiB in the
-earlier run. Both saw system swap activity. The smaller Keccak scratch buffer
-helps that phase, while the whole prover still uses most of the machine's
-memory budget. The latest medians were 8.94 s per first aggregation and 8.82 s
-per higher merge. A 63-node tree allows 2.86 s per node before overhead.
+These are single full-tree measurements on a laptop. The final run used
+battery power, 12 threads and up to 2 concurrent nodes. A serial run of the
+packed joint protocol before the native tuning took 457.46 s. Both produced
+byte-identical root proofs. The conditional algebraic estimate was
+146.10 bits for each node type under the Johnson analysis.
+
+| Eight identical saved children with the selected schedule | Through fresh verification | Keccak calls per higher verifier template | Initial codeword cells per node |
+| --- | ---: | ---: | ---: |
+| 8 · separate openings, scalar chi | 54.53 s | 47,182 | 184,549,376 |
+| 9 · joint opening, 1/4 main rate | 52.40 s | 38,204 | 167,772,160 |
+| 10 · joint opening, 1/2 main rate | 47.99 s | 44,018 | 100,663,296 |
+| 11 · packed chi and native buffer changes | 40.91 s | 43,694 | 100,663,296 |
+
+Each row is one release replay at 12 threads with up to 2 nodes. The fourth
+row includes six-round prover checkpoints, fused transposition, ARM carry-less
+multiplication and reuse of fold buffers. The full version 11 tree performed
+the same statement, proof and authority rejection checks as version 8.
+
+| Threads | Concurrent nodes | Eight-child replay, version 11 |
+| ---: | ---: | ---: |
+| 8 | 1 | 42.29 s |
+| 8 | 2 | 41.77 s |
+| 12 | 1 | 47.35 s |
+| 12 | 2 | 40.91 s |
+| 12 | 3 | 41.20 s |
+
+Every schedule produced the same root proof. The full run averaged
+5.93 elapsed seconds per completed parent, against a budget of 2.86 s.
+Three minutes requires 2.07× the measured throughput. A four-input
+tree would perform 21 proofs instead of 63. Its budget with 10 s of overhead
+would be 8.10 s per proof on average. A four-input verifier still needs a
+separate circuit and an end-to-end measurement. [Run data and reproduction command](../benchmarks/binary/tree-merge/joint-packed-parent-m2.json)
+
+## Earlier version 8 replays
+
+The version 8 replay took **579.67 s** with eight-state boundary
+folding. The previous build took 566.45 s on the same children. Both produced
+the same 998,119-byte root proof. Fresh verification took 109 ms, and the
+run including key setup took 594.71 s. Each full-tree result is one run under
+ordinary laptop load. The 579.67 s run required 3.22× its throughput to reach 180 s.
+[Full replay and matched opening trials](../benchmarks/binary/tree-merge/packed-mixed-whir-m2.json) · [Earlier replay](../benchmarks/binary/tree-merge/flock-leanvm-m2.json)
+
+| Prepared 64-child replay | Before compact chi | Compact chi | Eight-state boundary fold |
+| --- | ---: | ---: | ---: |
+| 32 first aggregations, total node time | 340.24 s | 288.43 s | 292.80 s |
+| 31 higher merges, total node time | 330.91 s | 277.56 s | 286.39 s |
+| All outer proving, excluding witness and verification | 614.39 s | 512.60 s | 525.73 s |
+| Saved children through fresh root verification | 671.61 s | 566.45 s | 579.67 s |
+
+The boundary fold transposes eight states and uses each byte to select a sum
+of eight Poly192 weights. On 65,536 states with parent-sized padding, its
+median time fell from 3.82 ms to 1.94 ms. Alternating the two binaries on a
+saved higher merge gave medians of 9.031 s and 8.995 s. The individual times
+overlap, and all eight proofs matched byte for byte. In the 64-child run the
+median first aggregation took 8.85 s and the median higher merge took 9.03 s.
+The budget allows 2.86 s per node before overhead.
 
 ## What transfers from FLOCK and leanVM-b
 
@@ -81,38 +130,104 @@ optimizations preserve the existing transcript. The local midpoint is prover
 scratch, while leanVM also authenticates its midpoint to shorten recursion.
 [Sumcheck implementation](../crates/flock-backend/src/checkpoint_keccak/rounds.rs) · [Round replay](../crates/flock-backend/src/checkpoint_keccak/mod.rs)
 
-Three experiments address different costs in a recursive node.
+### Packed chi and joint WHIR on the M2 Pro
 
-1. **Pack Keccak's nonlinear layer across 16 permutations.** The active leanVM
-   encodes sixteen bits as a binary polynomial of degree at most 23. One
-   carry-less multiplication and a linear projection recover all sixteen
-   pairwise ANDs. The product has degree at most 46, so it fits the current
-   64-bit polynomial basis. The pinned maps passed a local check on all 256
-   ordered pairs of basis vectors and 4,096 pseudorandom pairs of 16-bit words.
-   Compare a packed chi layer against scalar chi, then port the weighted
-   sumcheck with fresh Poly192 challenges.
-   Measure a complete 65,536-permutation proof and its in-circuit verifier.
-   The active leanVM uses 128-bit challenges and an affine WHIR combiner, so
-   its protocol parameters and soundness figures require a separate analysis.
-   [Keccak construction](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/c-keccak-gkr.tex) · [Field and WHIR implementation](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/crates/experimental_prover/pcs/src/whir.rs)
-2. **Reduce the work verified by the parent.** LeanVM commits the round-12
-   state and randomly combines the two 12-round segments, halving the number
-   of sequential GKR layers in the verifier. In our prototype, bind the midpoint
-   before sampling the segment challenge and authenticate the start, midpoint
-   and output against their proper openings and the arithmetic ports. Count
-   the additional committed cells against the saved recursive constraints and
-   Keccak transcript calls. Benchmark both first aggregation and higher merge
-   before selecting a segment length. [Segment construction](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/c-keccak-gkr.tex)
-3. **Move fixed and linear work out of the recursive witness.** FLOCK walks
-   XOR wiring in reverse to obtain the weighted linear form on inputs and AND
-   outputs. Start by counting which rows of our arithmetic and fanout tables
-   implement eligible Boolean wiring. For public preprocessing shared across
-   nodes, leanVM separately demonstrates how to combine claims about one fixed
-   polynomial and check the final evaluation natively. Prototype one public
-   preprocessing block per verifier-key identity. Bind the key, statements,
-   points and claimed values before batching, and require the fresh root
-   verifier to evaluate the block. Measure total padded main cells, root
-   verification time and the cost of accessing the fixed table. [FLOCK circuit walk](https://arxiv.org/html/2607.27491v1#S4) · [Deferred public evaluation](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/10-ethereum.tex)
+The component proves one Keccak round or all 24 rounds over Poly64 with
+Poly192 challenges. Each group of 16 input bits maps to a polynomial of
+degree at most 23. Its raw product has degree at most 46. The prover binds
+all 47 product coefficients before sampling the evaluation point for the
+cubic sumcheck. The verifier checks their projection against the claimed
+chi output. The basis-pair test checks all 256 products. The hash remains
+Keccak-256 and the PCS uses the existing additive WHIR parameters.
+[Keccak construction](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/c-keccak-gkr.tex)
+
+The joint component commits a packed Boolean input table and 25 Poly64
+output-word columns. The midpoint variant commits the round-12 states in the
+second half of the Boolean table. The verifier authenticates both the read
+of the midpoint and the terminal input claim. A fresh segment challenge
+combines the two halves only after the prover binds the midpoint claim.
+The recursive circuit derives all points from the transcript and checks the
+word and bit claims against one WHIR proof. Its public input is the root.
+
+Four alternating release runs per case used 65,536 permutations and 12 Rayon
+threads. The single-round control took 0.283 s with scalar chi and 0.274 s
+with packed chi. For all 24 rounds, the measurements below include boundary
+construction, commitment, GKR and the joint opening. Recursive witness counts
+come from building and executing the whole component verifier, including WHIR.
+
+| Keccak component | Median proving | Poly192 scalars outside WHIR | Proof bytes | Recursive witnesses | Recursive Keccak calls |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Scalar, 24 rounds | 1.795 s | 2,088 | 249,623 | 1,412,020 | 5,269 |
+| Packed, 24 rounds | 1.393 s | 2,936 | 273,859 | 1,511,274 | 5,393 |
+| Scalar, authenticated midpoint | 1.910 s | 1,127 | 247,905 | 1,534,891 | 5,581 |
+| Packed, authenticated midpoint | 1.368 s | 1,555 | 260,202 | 1,585,164 | 5,645 |
+
+Packing saved 22.4% of native proving time for the 24-round schedule.
+Authenticating the midpoint cut the packed scalar count by 47.0%, while the
+complete component verifier needed 73,890 additional witnesses. The midpoint
+adds a Boolean opening and doubles the input table height. For the packed
+midpoint alone, two separate openings proved in 1.279 s and used 411,387
+bytes. One joint opening took 1.368 s and used 260,202 bytes. The conditional
+algebraic estimates at this batch size ranged from 147.10 to 148.02 bits.
+
+A second matched experiment timed the packed 24-round kernel after fusing the
+linear layer with transposition, caching round states every six rounds, and
+keeping fold buffers allocated. On the M2 the 47-bit product fits in one ARM
+carry-less multiplication. Across four alternating runs per build, the median
+for 65,536 permutations went from 1.332 to 1.203 s. The reduction itself went
+from 1.112 to 0.990 s. Every proof was 273,859 bytes and passed independent
+decoding and verification in the benchmark. The live parent uses all 24 rounds
+in one segment. Its recursive verifier also checks the arithmetic bridge.
+[Matched component timings](../benchmarks/binary/tree-merge/joint-packed-parent-m2.json)
+
+### Joint openings on a recursive merge
+
+The higher-merge benchmark first proved and verified a 16-child parent using a
+saved eight-child subtree in both input positions. It captured the 23 arithmetic
+and boundary tables with their 25 prescribed points, then committed and opened
+them under a fresh transcript. Both layouts returned all 373 expected values.
+The recursive opening circuits accepted both proofs and rejected an altered
+public value. Medians below cover five runs per layout in alternating order.
+
+| Affected part of the parent | Separate WHIR | Joint WHIR |
+| --- | ---: | ---: |
+| Commit and open | 3.074 s | 2.800 s |
+| Native verification | 31.15 ms | 32.24 ms |
+| Commitments and opening proofs | 507,001 B | 322,538 B |
+| Initial codeword cells | 150,994,944 | 134,217,728 |
+| Recursive opening-verifier witnesses | 5,206,942 | 4,319,565 |
+| Recursive opening-verifier Keccak calls | 11,228 | 6,739 |
+
+The joint opening fits the boundary tables inside the main commitment's
+existing power-of-two allocation. It saved 0.274 s in this part of the native
+prover and 40.0% of the recursive opening verifier's Keccak calls. The timed
+replay excludes preprocessing and the arithmetic and port-link reductions.
+
+The version 8 parent used for this comparison bound separate arithmetic and
+checkpoint roots. Version 11 binds one root before the arithmetic and Keccak
+challenges and routes both reductions into its opening verifier. The 2.800 s
+in the opening replay measures one part of a parent under the older rate.
+The 180 s target allows 2.86 s for the entire node before overhead.
+
+The first command below checks the closed component circuit. The second
+replays a parent using a saved subtree with its matching verifier identity.
+Substitute its directory for `SUBTREE`. [Raw trials and circuit counts](../benchmarks/binary/tree-merge/packed-mixed-whir-m2.json)
+
+```sh
+RAYON_NUM_THREADS=12 cargo run --locked --release -p imt-flock-backend --features opening-bench --example packed-keccak -- 16 mid packed joint 1 --recursive
+RAYON_NUM_THREADS=12 cargo run --locked --release --features opening-bench --example bench-merge -- SUBTREE SUBTREE --compare-openings --repetitions 5
+```
+
+**Move fixed and linear work out of the recursive witness.** FLOCK walks
+XOR wiring in reverse to obtain the weighted linear form on inputs and AND
+outputs. Start by counting which rows of our arithmetic and fanout tables
+implement eligible Boolean wiring. For public preprocessing shared across
+nodes, leanVM separately demonstrates how to combine claims about one fixed
+polynomial and check the final evaluation natively. Prototype one public
+preprocessing block per verifier-key identity. Bind the key, statements,
+points and claimed values before batching, and require the fresh root
+verifier to evaluate the block. Measure total padded main cells, root
+verification time and the cost of accessing the fixed table. [FLOCK circuit walk](https://arxiv.org/html/2607.27491v1#S4) · [Deferred public evaluation](https://github.com/leanEthereum/leanVM/blob/161cb67e1b54f7031b2603b8628f467f2ec92fca/doc/leanvm/body/10-ethereum.tex)
 
 ## Record-circuit baseline and three-minute budget
 
@@ -246,7 +361,7 @@ recursive proofs could provide.
 
 ```sh
 cargo prove --threads 12 -j 2 --prepare-children run/children64
-cargo prove --threads 12 -j 1 --from-children run/children64 --keep --out run/replay64
+cargo prove --threads 12 -j 2 --parallel-nodes 2 --from-children run/children64 --keep --out run/replay64
 ```
 
 The preparation command saves 64 verified child proofs and their ordered public
@@ -340,8 +455,8 @@ RAYON_NUM_THREADS=12 cargo run --locked --release --example bench-merge -- run/l
 
 ## Smaller recursive commitments
 
-The recursive preprocessing commitment uses rate 1/2 under Johnson. The main
-and linked Keccak commitments use rate 1/4. The higher preprocessing rate
+The version 8 recursive preprocessing commitment used rate 1/2 under Johnson.
+Its main and linked Keccak commitments used rate 1/4. The higher preprocessing rate
 adds queries to the embedded verifier. The five-wire table has room for those
 extra gates, and the four-copy Poly64 fanout table uses half as many rows by
 assigning overflow to spare slots in the wider fanout tables.

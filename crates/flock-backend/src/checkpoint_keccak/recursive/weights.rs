@@ -2,7 +2,7 @@
 use super::{BITS, CF, CircuitBuilder, NativePoly192Target as T, equality_weights, linear};
 use crate::keccak::RHO;
 
-pub(super) enum Weights {
+pub(in crate::checkpoint_keccak) enum Weights {
     Dense(Vec<T>),
     LinearChi {
         lanes: Vec<T>,

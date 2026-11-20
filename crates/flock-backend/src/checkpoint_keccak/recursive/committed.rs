@@ -36,10 +36,18 @@ pub struct PreparedCommittedVerifier {
 
 impl PreparedCommittedVerifier {
     pub fn new(log_batch: usize) -> Result<Self> {
+        Self::with_packing(log_batch, false)
+    }
+
+    pub(super) fn with_packing(log_batch: usize, packed: bool) -> Result<Self> {
         Ok(Self {
             log_batch,
-            reduction: PreparedVerifier::new(log_batch)?,
-            closing: BinaryPolyGenericSumcheckVerifier::new(POSITION_LOG, 2, 0)?,
+            reduction: PreparedVerifier::with_packing(log_batch, packed)?,
+            closing: BinaryPolyGenericSumcheckVerifier::new(
+                POSITION_LOG + 4 * usize::from(packed),
+                2,
+                0,
+            )?,
         })
     }
 
@@ -72,26 +80,27 @@ impl PreparedCommittedVerifier {
             weights,
             value: proof.output.clone(),
         };
-        let reduced = self
+        let super::FactoredReduction {
+            instance: mut input_point,
+            weights,
+            lanes,
+            value,
+            challenger: ch,
+        } = self
             .reduction
-            .verify_reduction(b, ch, &output, &proof.reduction)?;
-        let closing = self.closing.verify_reduction_native(
-            b,
-            reduced.challenger,
-            &reduced.claim.value,
-            &proof.closing,
-        )?;
-        let mut weight = b.native_poly192_constant([0; 3]);
-        for (w, eq) in reduced
-            .claim
-            .weights
-            .iter()
-            .zip(equality_weights(b, &closing.point))
-        {
-            let product = b.native_poly192_mul(w, &eq);
-            weight = b.native_poly192_add(&weight, &product);
-        }
-        let mut input_point = reduced.claim.instance;
+            .verify_factored(b, ch, &output, &proof.reduction)?;
+        let closing = self
+            .closing
+            .verify_reduction_native(b, ch, &value, &proof.closing)?;
+        let weight = if lanes.is_empty() {
+            weights.evaluate(b, &closing.point)
+        } else {
+            let (i, z) = closing.point.split_at(4);
+            let eq = equality_weights(b, i);
+            let lane = crate::checkpoint_keccak::packed::circuit::dot(b, &lanes, &eq);
+            let bit = weights.evaluate(b, z);
+            b.native_poly192_mul(&lane, &bit)
+        };
         input_point.extend(closing.point);
         let mut output_point = instance;
         output_point.extend(position);

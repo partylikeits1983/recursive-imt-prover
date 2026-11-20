@@ -64,22 +64,23 @@ trusted merge key. [Protocol details](docs/protocol.md) · [Recursive design](do
 
 ## Proof sizes
 
-The 64-child record replay ran on a 12-core M2 Pro with 16 GB of RAM. It used
-12 threads and one aggregation node at a time. Children were prepared separately
-with four threads. Timings are medians within this run.
+The 64-child replay on a 12-core, 16 GiB M2 Pro used 12 threads and up to 2
+concurrent aggregation nodes. Child proofs were prepared separately. The table
+gives per-proof medians. Concurrent node times overlap.
 
 | Proof | Leaves covered | Size per proof | Median time |
 | --- | ---: | ---: | ---: |
 | Record child | 1 | 1.13 MB | 3.51 s |
-| First aggregation | 2 | 1.07 MB | 8.94 s |
-| Recursive merge | 4–64 | 1.06 MB | 8.82 s |
+| First aggregation | 2 | 1.01 MB | 11.63 s |
+| Recursive merge | 4–64 | 1.01 MB | 11.75 s |
 
-From saved children to a freshly verified root took **566.45 s (9 min 26 s)**.
-The previous run took 671.61 s on the same child proofs. The three-minute
-target requires **3.15×** the latest measured throughput. Both runs produced
-the same 998,119-byte compressed root proof. The latest fresh verification
-took 112 ms. The ordered statements and verifier key are separate files.
-[Replay and upstream benchmarks](benchmarks/binary/tree-merge/flock-leanvm-m2.json) · [Child preparation](benchmarks/binary/tree-merge/record-replacement.json) · [Performance plan](docs/aggregation-performance.md)
+From saved children to a freshly verified root took **373.38 s** on battery,
+down 35.6% from 579.67 s on the same inputs and 34.1% from the earlier
+566.45 s replay. Including key setup took 388.06 s. The compressed root
+was 948,828 bytes. Fresh-process
+verification took 106 ms including launch. The three-minute target still
+requires 2.07× the measured throughput. The ordered statements and
+verifier key are separate files. [Full replay and trials](benchmarks/binary/tree-merge/joint-packed-parent-m2.json) · [Child preparation](benchmarks/binary/tree-merge/record-replacement.json) · [Performance plan](docs/aggregation-performance.md)
 
 ## Proof stack and security
 
@@ -92,8 +93,8 @@ took 112 ms. The ordered statements and verifier key are separate files.
   [Implementation map](docs/development.md)
 
 WHIR uses the **Johnson bound** with a safety margin. The child uses a code
-rate of 1/16. The recursive prover starts at rate 1/4 for the main and Keccak
-commitments and 1/2 for preprocessing. The pinned analysis uses Dao, Kominers,
+rate of 1/16. The recursive prover uses rate 1/2 for its joint arithmetic and Keccak
+commitment and for preprocessing. The pinned analysis uses Dao, Kominers,
 and Thaler's improved bound within the Johnson regime.
 [Security accounting](docs/binary-security.md#parameters-and-accounting)
 

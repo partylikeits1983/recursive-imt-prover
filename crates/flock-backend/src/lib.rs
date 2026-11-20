@@ -19,6 +19,8 @@ mod keccak;
 #[cfg(test)]
 mod known_openings_tests;
 mod mixed;
+#[cfg(feature = "opening-bench")]
+pub mod opening_bench;
 mod packing;
 mod products;
 mod proof_codec;
@@ -395,7 +397,7 @@ impl Prepared {
             }
         });
         if recursive {
-            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1/pp-rate-half");
+            identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1/pp-rate-half/joint-boundaries-v1/main-rate-half/packed-chi16");
         }
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
@@ -504,8 +506,18 @@ impl Prepared {
         } else {
             WHIR_LOG_INV_RATE
         };
-        let config = Config::new(&shapes, main_encoding, &pp, pp_encoding, pp_log_inv_rate)?;
-        let checkpoint = if backend == HashBackend::Checkpoint {
+        let config = Config::with_boundary(
+            &shapes,
+            main_encoding,
+            &pp,
+            pp_encoding,
+            pp_log_inv_rate,
+            recursive.then_some(log_calls),
+            if recursive { 1 } else { WHIR_LOG_INV_RATE },
+        )?;
+        let checkpoint = if let Some(security) = &config.joint_security {
+            Some(LinkedBatch::joint(log_calls, security, true)?)
+        } else if backend == HashBackend::Checkpoint {
             Some(LinkedBatch::with_bridge(
                 log_calls,
                 config.main_log2_candidates,
@@ -650,52 +662,67 @@ impl Prepared {
         );
         let witness_ms = elapsed(start);
         let start = Instant::now();
-        let pending = boundaries
-            .map(|witness| {
-                self.checkpoint
-                    .as_ref()
-                    .unwrap()
-                    .commit(witness, &self.seed)
-            })
-            .transpose()?;
-        let seed = pending.as_ref().map_or_else(
-            || Ok(self.seed.clone()),
-            |pending| {
-                self.checkpoint
-                    .as_ref()
-                    .unwrap()
-                    .arithmetic_seed(&self.seed, &pending.statement)
-            },
-        )?;
-        let proof = prove(&self.config, instances, 0, &mut challenger(&seed))?;
-        let bytes = if let Some(pending) = pending {
-            let scheme = self.checkpoint.as_ref().unwrap();
-            let ports = checkpoint::arithmetic_opening(
+        let bytes = if let Some(scheme) = self
+            .checkpoint
+            .as_ref()
+            .filter(|_| self.config.joint_security.is_some())
+        {
+            checkpoint::prove_joint(
                 &self.config,
-                verifier_instances(
-                    &self.airs,
-                    &self.hash,
-                    self.hash_index,
-                    &self.log_heights,
-                    &self.vk,
-                    &public,
-                    self.backend,
-                ),
-                &proof,
-                &pending.statement,
+                instances,
+                scheme,
                 &self.seed,
                 self.hash_index,
-                scheme,
-            )?;
-            let statement = pending.statement.clone();
-            let keccak = scheme.prove(pending, &ports)?;
-            proof_codec::encode(&checkpoint::AggregateProof {
-                statement,
-                arithmetic: proof,
-                keccak,
-            })?
+                boundaries.ok_or_else(|| anyhow::anyhow!("missing joint checkpoint boundaries"))?,
+            )?
         } else {
-            proof_codec::encode(&proof)?
+            let pending = boundaries
+                .map(|witness| {
+                    self.checkpoint
+                        .as_ref()
+                        .unwrap()
+                        .commit(witness, &self.seed)
+                })
+                .transpose()?;
+            let seed = pending.as_ref().map_or_else(
+                || Ok(self.seed.clone()),
+                |pending| {
+                    self.checkpoint
+                        .as_ref()
+                        .unwrap()
+                        .arithmetic_seed(&self.seed, &pending.statement)
+                },
+            )?;
+            let proof = prove(&self.config, instances, 0, &mut challenger(&seed))?;
+            if let Some(pending) = pending {
+                let scheme = self.checkpoint.as_ref().unwrap();
+                let ports = checkpoint::arithmetic_opening(
+                    &self.config,
+                    verifier_instances(
+                        &self.airs,
+                        &self.hash,
+                        self.hash_index,
+                        &self.log_heights,
+                        &self.vk,
+                        &public,
+                        self.backend,
+                    ),
+                    &proof,
+                    &pending.statement,
+                    &self.seed,
+                    self.hash_index,
+                    scheme,
+                )?;
+                let statement = pending.statement.clone();
+                let keccak = scheme.prove(pending, &ports)?;
+                proof_codec::encode(&checkpoint::AggregateProof {
+                    statement,
+                    arithmetic: proof,
+                    keccak,
+                })?
+            } else {
+                proof_codec::encode(&proof)?
+            }
         };
         let prove_ms = elapsed(start);
         let start = Instant::now();

@@ -11,7 +11,7 @@ use p3_circuit::{
 use p3_lookup::InteractionSymbolicBuilder;
 use p3_merkle_tree::MerkleCap;
 use p3_multilinear_util::point::Point;
-use p3_sumcheck::{OpeningBatch, generic_degree::GenericDegreeProof};
+use p3_sumcheck::{OpeningBatch, OpeningProtocol, TableSpec, generic_degree::GenericDegreeProof};
 use p3_whir::WhirConfig;
 
 use super::super::{
@@ -63,6 +63,7 @@ pub struct CoordinateWhirInput {
 pub struct AuthenticatedCoordinateOpenings {
     pub point: Vec<NativePoly192Target>,
     pub main: Vec<OpeningBatch<NativePoly192Target>>,
+    pub auxiliary: Vec<OpeningBatch<NativePoly192Target>>,
     pub challenger: BinaryTower128Challenger,
 }
 
@@ -120,6 +121,23 @@ impl BinaryPolyCoordinateWhirVerifier {
         A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
         C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
     {
+        Self::with_auxiliary(airs, heights, main, preprocessing, limits, encodings, &[])
+    }
+
+    /// Append auxiliary columns to the main PCS without adding AIR instances.
+    pub fn with_auxiliary<A, C>(
+        airs: &[&A],
+        heights: &[usize],
+        main: CoordinatePcsParameters<'_, C>,
+        preprocessing: Option<(CoordinatePcsParameters<'_, C>, MerkleCap<F, [u8; 32]>)>,
+        limits: &VerifierLimits,
+        encodings: [CoordinateEncoding; 2],
+        auxiliary: &[TableSpec],
+    ) -> Result<Self, VerificationError>
+    where
+        A: Air<InteractionSymbolicBuilder<F, E>> + Air<BusSymbolicBuilder<F, E>>,
+        C: FieldChallenger<F> + GrindingChallenger<Witness = F>,
+    {
         let (relation, main_protocol, pp_protocol) = PolyMultiStarkRelation::build(
             airs,
             heights,
@@ -149,6 +167,22 @@ impl BinaryPolyCoordinateWhirVerifier {
             .checked_shl(main.cap_height as u32)
             .filter(|&n| n <= limits.max_cap_roots)
             .ok_or_else(|| invalid("invalid coordinate cap height"))?;
+        let main_protocol = if auxiliary.is_empty() {
+            main_protocol
+        } else {
+            let mut batches = alloc::vec![Vec::new(); main_protocol.table_shapes().len()];
+            for (t, b) in main_protocol.iter_openings() {
+                batches[t].push(b.clone());
+            }
+            let mut specs: Vec<_> = main_protocol
+                .table_shapes()
+                .into_iter()
+                .zip(batches)
+                .map(|(s, b)| TableSpec::new(s, b))
+                .collect();
+            specs.extend_from_slice(auxiliary);
+            OpeningProtocol::new(specs)
+        };
         let main = build(main_protocol, main, encodings[0])?;
         let preprocessed = match (preprocessing, pp_protocol) {
             (Some((parameters, cap)), Some(protocol)) => {
@@ -236,10 +270,22 @@ impl BinaryPolyCoordinateWhirVerifier {
     pub fn verify_native_with_preprocessed(
         &self,
         b: &mut CircuitBuilder<F>,
+        ch: BinaryTower128Challenger,
+        public: &[Vec<ExprId>],
+        proof: &CoordinateWhirTargets,
+        pp_cap: Option<&[Vec<ExprId>]>,
+    ) -> Result<AuthenticatedCoordinateOpenings, VerificationError> {
+        self.verify_with_auxiliary_points(b, ch, public, proof, pp_cap, &[])
+    }
+
+    pub fn verify_with_auxiliary_points(
+        &self,
+        b: &mut CircuitBuilder<F>,
         mut ch: BinaryTower128Challenger,
         public: &[Vec<ExprId>],
         proof: &CoordinateWhirTargets,
         pp_cap: Option<&[Vec<ExprId>]>,
+        auxiliary_points: &[Vec<NativePoly192Target>],
     ) -> Result<AuthenticatedCoordinateOpenings, VerificationError> {
         let common = PolyRelationProof {
             bus: proof.bus.as_ref(),
@@ -273,12 +319,12 @@ impl BinaryPolyCoordinateWhirVerifier {
                 b, ch, public, &common,
             )?;
         self.relation.set_unindexed_points(&mut reduction);
+        let mut logical = reduction.main_points.clone();
+        logical.extend_from_slice(auxiliary_points);
         let points = self
             .main
             .columns
-            .opening_points(&reduction.main_points, |raw| {
-                b.native_poly192_constant([raw, 0, 0])
-            })?;
+            .opening_points(&logical, |raw| b.native_poly192_constant([raw, 0, 0]))?;
         let (coordinates, mut ch) = self.main.pcs.verify_at_native(
             b,
             reduction.challenger.clone(),
@@ -286,7 +332,8 @@ impl BinaryPolyCoordinateWhirVerifier {
             &points,
             &proof.main,
         )?;
-        let main = self.main.columns.recombine_native(b, &coordinates)?;
+        let mut main = self.main.columns.recombine_native(b, &coordinates)?;
+        let auxiliary = main.split_off(reduction.main_points.len());
         let pp = if let (Some((verifier, _)), Some(cap), Some(proof), Some(points)) = (
             &self.preprocessed,
             pp_cap,
@@ -310,6 +357,7 @@ impl BinaryPolyCoordinateWhirVerifier {
             pp.as_deref(),
         )?;
         Ok(AuthenticatedCoordinateOpenings {
+            auxiliary,
             point: reduction.point,
             main,
             challenger: ch,
@@ -325,6 +373,24 @@ impl BinaryPolyCoordinateWhirVerifier {
         bus: Option<&BusProof<E>>,
         sumcheck: &GenericDegreeProof<F, E>,
         ch: &mut C,
+    ) -> Result<CoordinateWhirInput, VerificationError>
+    where
+        C: FieldChallenger<F>
+            + GrindingChallenger<Witness = F>
+            + CanObserve<MerkleCap<F, [u8; 32]>>
+            + Clone,
+    {
+        self.import_with_auxiliary_points(cap, public, bus, sumcheck, ch, &[])
+    }
+
+    pub fn import_with_auxiliary_points<C>(
+        &self,
+        cap: &MerkleCap<F, [u8; 32]>,
+        public: &[Vec<F>],
+        bus: Option<&BusProof<E>>,
+        sumcheck: &GenericDegreeProof<F, E>,
+        ch: &mut C,
+        auxiliary_points: &[Vec<E>],
     ) -> Result<CoordinateWhirInput, VerificationError>
     where
         C: FieldChallenger<F>
@@ -358,11 +424,12 @@ impl BinaryPolyCoordinateWhirVerifier {
             .iter()
             .map(|a| a.log_height())
             .collect();
-        let logical =
+        let mut logical =
             self.relation
                 .input
                 .main_schedule
                 .points(&heights, reduction.point.as_slice(), None);
+        logical.extend_from_slice(auxiliary_points);
         let main_points = self
             .main
             .columns

@@ -91,8 +91,8 @@ See [the backend implementation](../crates/flock-backend/README.md).
   preserving every constraint and activation check.
 - Keep Keccak states packed through the first two instance rounds; use upstream
   packed Poly192 arithmetic and accumulate products before field reduction.
-- Encode aggregate field elements at fixed width and use outer rate 1/4 to reduce
-  opening traffic. Johnson, the PCS target and the conditional floor are unchanged.
+- Encode aggregate field elements at fixed width. Version 11 uses rate 1/2 for
+  the recursive joint opening and preprocessing. The trusted key selects the rate.
 
 ## Cyclic 64-child tree
 
@@ -272,8 +272,8 @@ For `l = log2(batch)`, the reduction's conditional error numerator is
 charges the PCS candidate-set bound, and combines this with the prescribed-opening
 security ledger. It requires at least 144 conditional algebraic bits and keeps
 Johnson/152 PCS bits, a 16-bit
-PoW ceiling and fold 4. The measurements below used rate 1/2; the current
-configuration uses rate 1/4. This is a conditional algebraic/PCS calculation,
+PoW ceiling and fold 4. The measurements below used rate 1/2. The standalone
+default uses rate 1/4. This is a conditional algebraic/PCS calculation,
 not a Fiat–Shamir, knowledge or end-to-end security theorem. Keccak's generic
 classical collision work factor is reported separately; no new privacy or
 post-quantum claim is made.

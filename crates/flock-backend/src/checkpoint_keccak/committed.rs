@@ -27,7 +27,7 @@ use crate::{
     encoding::TableEncoding,
 };
 
-pub(super) type Commitment = <Pcs as MultilinearPcs<E, Challenger>>::Commitment;
+pub(crate) type Commitment = <Pcs as MultilinearPcs<E, Challenger>>::Commitment;
 pub(crate) type Opening = <Pcs as MultilinearPcs<E, Challenger>>::Proof;
 const DOMAIN: &[u8] = b"imt-committed-checkpoint-keccak-v1";
 

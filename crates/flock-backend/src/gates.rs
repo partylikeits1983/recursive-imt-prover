@@ -71,13 +71,22 @@ impl GateShard {
             if bytes == 0 {
                 continue;
             }
-            for (value, row) in values
+            let rows = values
                 .iter_mut()
-                .zip(self.preprocessing_bytes.chunks_exact(stride))
-            {
-                let mut id = [0; 8];
-                id[..bytes].copy_from_slice(&row[offset..offset + bytes]);
-                *value = read(u64::from_le_bytes(id) as u32);
+                .zip(self.preprocessing_bytes.chunks_exact(stride));
+            // The cyclic layout has 24-bit wire IDs. Give the compiler a fixed
+            // load width on the repeated path through each prepared gate table.
+            if bytes == 3 {
+                for (value, row) in rows {
+                    let id = u32::from_le_bytes([row[offset], row[offset + 1], row[offset + 2], 0]);
+                    *value = read(id);
+                }
+            } else {
+                for (value, row) in rows {
+                    let mut id = [0; 8];
+                    id[..bytes].copy_from_slice(&row[offset..offset + bytes]);
+                    *value = read(u64::from_le_bytes(id) as u32);
+                }
             }
         }
     }

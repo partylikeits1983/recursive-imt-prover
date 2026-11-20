@@ -29,29 +29,42 @@ pub(crate) type Pcs = MixedTraceCommitment<Poly192, Bits>;
 pub type Data = MixedTraceData<Poly64, BooleanWhirData<Poly64, Poly192, Mmcs>>;
 
 pub struct Config {
-    main: Pcs,
+    pub(crate) main: Pcs,
     preprocessed: Pcs,
+    auxiliary_tables: Vec<TableSpec>,
+    pub(crate) joint_security: Option<p3_sumcheck::PrescribedOpeningSecurity>,
     pub initial_codeword_cells: usize,
+    pub(crate) main_log_inv_rate: usize,
     pub main_codeword_cells: usize,
     pub preprocessed_codeword_cells: usize,
     pub main_log2_candidates: f64,
 }
 
 impl Config {
-    pub fn new(
+    pub fn with_boundary(
         main: &[TableShape],
-        main_encoding: Vec<TableEncoding>,
+        mut main_encoding: Vec<TableEncoding>,
         pp: &[TableShape],
         pp_encoding: Vec<TableEncoding>,
         pp_log_inv_rate: usize,
+        log_batch: Option<usize>,
+        main_log_inv_rate: usize,
     ) -> Result<Self> {
+        let mut shapes = main.to_vec();
+        let extra = log_batch
+            .map(crate::checkpoint_keccak::linked::boundary_specs)
+            .unwrap_or_default();
+        for spec in &extra {
+            shapes.push(*spec.shape());
+            main_encoding.push(TableEncoding::new(vec![1])?);
+        }
         let cells = |shapes: &[TableShape], encoding: &[TableEncoding], log_inv_rate| {
             let (arity, _) = plan_stacked_layout(&committed_shapes(shapes, encoding));
             1usize
                 .checked_shl((arity - 6 + log_inv_rate) as u32)
                 .ok_or_else(|| anyhow::anyhow!("codeword size overflow"))
         };
-        let main_codeword_cells = cells(main, &main_encoding, WHIR_LOG_INV_RATE)?;
+        let main_codeword_cells = cells(&shapes, &main_encoding, main_log_inv_rate)?;
         let preprocessed_codeword_cells = cells(pp, &pp_encoding, pp_log_inv_rate)?;
         let initial_codeword_cells = main_codeword_cells
             .checked_add(preprocessed_codeword_cells)
@@ -60,7 +73,7 @@ impl Config {
             initial_codeword_cells <= 1 << 30,
             "binary initial codeword cells {initial_codeword_cells} exceed this prototype's 2^30 budget"
         );
-        let main_pcs = pcs(main, main_encoding)?;
+        let main_pcs = pcs_with_rate(&shapes, main_encoding, main_log_inv_rate)?;
         let protocol = OpeningProtocol::new(
             main.iter()
                 .map(|&shape| {
@@ -71,6 +84,7 @@ impl Config {
                 })
                 .collect(),
         );
+        let protocol = p3_multi_stark::auxiliary::append_protocol(protocol, &extra);
         let security = main_pcs
             .prescribed_security(&protocol)
             .ok_or_else(|| anyhow::anyhow!("missing main PCS candidate bound"))?;
@@ -79,9 +93,12 @@ impl Config {
             "invalid main PCS candidate bound"
         );
         Ok(Self {
+            joint_security: log_batch.map(|_| security.clone()),
             main: main_pcs,
+            auxiliary_tables: extra,
             preprocessed: pcs_with_rate(pp, pp_encoding, pp_log_inv_rate)?,
             initial_codeword_cells,
+            main_log_inv_rate,
             main_codeword_cells,
             preprocessed_codeword_cells,
             main_log2_candidates: security.log2_max_candidates,
@@ -93,7 +110,7 @@ pub(crate) fn pcs(shapes: &[TableShape], encoding: Vec<TableEncoding>) -> Result
     pcs_with_rate(shapes, encoding, WHIR_LOG_INV_RATE)
 }
 
-fn pcs_with_rate(
+pub(crate) fn pcs_with_rate(
     shapes: &[TableShape],
     encoding: Vec<TableEncoding>,
     log_inv_rate: usize,
@@ -134,6 +151,9 @@ impl MultiStarkConfig for Config {
     }
     fn preprocessed_pcs(&self) -> &Pcs {
         &self.preprocessed
+    }
+    fn auxiliary_tables(&self) -> &[TableSpec] {
+        &self.auxiliary_tables
     }
     fn collision_resistance_bits(&self) -> Option<usize> {
         Some(128)

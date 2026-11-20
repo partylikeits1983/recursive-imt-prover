@@ -38,7 +38,7 @@ commitment inside the proof. See [tree binding](aggregation-tree.md).
 | Fields | Poly64 values, Poly192 challenges |
 | Hashing | Keccak-256 for commitments and transcripts |
 | Child query target | 160 bits; code rate 1/16 |
-| Outer PCS | 152-bit target, at most 16 grinding bits, fold 4. Rate 1/4 for the main and Keccak commitments, 1/2 for recursive preprocessing. |
+| Outer PCS | 152-bit target, at most 16 grinding bits, fold 4. The version 11 recursive parent uses rate 1/2 for both its joint arithmetic and Keccak commitment and its preprocessing commitment. |
 | Conditional algebraic floor | 144 bits |
 | Proximity analysis | Johnson; VEIL binding also capped at half distance |
 
@@ -64,6 +64,12 @@ The ledgers include batching, sumchecks, query candidates and relevant PCS/link
 terms under uniform challenges. A requested PCS target is not an end-to-end
 security guarantee. Composition must charge every child, first aggregate and
 recursive merge, including any normalization proof that is later introduced.
+
+The packed recursive parent charges 24 degree-46 product evaluations and its
+closing reduction in the checkpoint ledger. The prescribed-opening analysis
+includes the arithmetic tables and both Boolean boundary tables. The ledger
+uses the product of the candidate bounds for the two linked reductions.
+[Packed link accounting](../crates/flock-backend/src/checkpoint_keccak/linked.rs)
 
 The older native baseline's combined upstream floor is 127, not rounded to 128.
 That estimate adds the 128-bit hash cap as an error probability. We report the

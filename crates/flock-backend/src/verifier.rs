@@ -3,6 +3,8 @@ mod aggregate;
 mod air;
 pub use aggregate::{AUTHORITY_BYTES, RecursiveAggregate, RecursiveAuthority};
 mod recursive;
+#[cfg(feature = "opening-bench")]
+pub(crate) use recursive::opening_bench::{CircuitInput, check_circuit, check_component};
 mod recursive_air;
 mod replay;
 pub use recursive::RecursiveArithmetic;
@@ -29,6 +31,9 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const PACKED_FORMAT: &str = "imt-binary-trusted-verifier-v11";
+const JOINT_HALF_FORMAT: &str = "imt-binary-trusted-verifier-v10";
+const JOINT_FORMAT: &str = "imt-binary-trusted-verifier-v9";
 const HALF_RATE_PP_FORMAT: &str = "imt-binary-trusted-verifier-v8";
 const DIGIT_FORMAT: &str = "imt-binary-trusted-verifier-v7";
 const BRIDGE_FORMAT: &str = "imt-binary-trusted-verifier-v6";
@@ -50,7 +55,10 @@ struct VerifierData<K> {
 
 impl<K> VerifierData<K> {
     fn preprocessed_encoding(&self) -> CoordinateEncoding {
-        if matches!(self.format.as_str(), DIGIT_FORMAT | HALF_RATE_PP_FORMAT) {
+        if matches!(
+            self.format.as_str(),
+            DIGIT_FORMAT | HALF_RATE_PP_FORMAT | JOINT_FORMAT | JOINT_HALF_FORMAT | PACKED_FORMAT
+        ) {
             CoordinateEncoding::PreprocessedDigits
         } else {
             CoordinateEncoding::Bits
@@ -58,7 +66,10 @@ impl<K> VerifierData<K> {
     }
 
     fn preprocessed_log_inv_rate(&self) -> usize {
-        if self.format == HALF_RATE_PP_FORMAT {
+        if matches!(
+            self.format.as_str(),
+            HALF_RATE_PP_FORMAT | JOINT_FORMAT | JOINT_HALF_FORMAT | PACKED_FORMAT
+        ) {
             RECURSIVE_PP_LOG_INV_RATE
         } else {
             WHIR_LOG_INV_RATE
@@ -94,7 +105,7 @@ impl Prepared {
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
             format: if self.direct_bridge {
-                HALF_RATE_PP_FORMAT
+                PACKED_FORMAT
             } else {
                 FORMAT
             }
@@ -127,7 +138,7 @@ impl Verifier {
             self.data.backend == output.backend
                 && self.data.format
                     == if output.direct_bridge {
-                        HALF_RATE_PP_FORMAT
+                        PACKED_FORMAT
                     } else {
                         FORMAT
                     }
@@ -177,7 +188,13 @@ impl Verifier {
             (data.format == FORMAT
                 || (matches!(
                     data.format.as_str(),
-                    WORD_FORMAT | BRIDGE_FORMAT | DIGIT_FORMAT | HALF_RATE_PP_FORMAT
+                    WORD_FORMAT
+                        | BRIDGE_FORMAT
+                        | DIGIT_FORMAT
+                        | HALF_RATE_PP_FORMAT
+                        | JOINT_FORMAT
+                        | JOINT_HALF_FORMAT
+                        | PACKED_FORMAT
                 ) && data.backend == HashBackend::Checkpoint))
                 && data.binding == binding,
             "trusted verifier configuration mismatch"
@@ -233,7 +250,7 @@ impl Verifier {
         {
             ensure!(shape.width() == widths.len(), "invalid encoding width");
         }
-        let config = Config::new(
+        let config = Config::with_boundary(
             &shapes,
             data.main_coordinates
                 .iter()
@@ -254,6 +271,16 @@ impl Verifier {
                 })
                 .collect::<Result<_>>()?,
             data.preprocessed_log_inv_rate(),
+            matches!(
+                data.format.as_str(),
+                JOINT_FORMAT | JOINT_HALF_FORMAT | PACKED_FORMAT
+            )
+            .then_some(data.airs[data.hash_index].log_height),
+            if matches!(data.format.as_str(), JOINT_HALF_FORMAT | PACKED_FORMAT) {
+                1
+            } else {
+                WHIR_LOG_INV_RATE
+            },
         )?;
         let public_count = data.airs.iter().map(|a| a.public_count).max().unwrap();
         ensure!(
@@ -267,14 +294,27 @@ impl Verifier {
                 data.airs[data.hash_index].width == 232,
                 "invalid native Keccak port count"
             );
-            let scheme = LinkedBatch::with_bridge(
-                data.airs[data.hash_index].log_height,
-                config.main_log2_candidates,
-                matches!(
-                    data.format.as_str(),
-                    BRIDGE_FORMAT | DIGIT_FORMAT | HALF_RATE_PP_FORMAT
-                ),
-            )?;
+            let scheme = if let Some(security) = &config.joint_security {
+                LinkedBatch::joint(
+                    data.airs[data.hash_index].log_height,
+                    security,
+                    data.format == PACKED_FORMAT,
+                )?
+            } else {
+                LinkedBatch::with_bridge(
+                    data.airs[data.hash_index].log_height,
+                    config.main_log2_candidates,
+                    matches!(
+                        data.format.as_str(),
+                        BRIDGE_FORMAT
+                            | DIGIT_FORMAT
+                            | HALF_RATE_PP_FORMAT
+                            | JOINT_FORMAT
+                            | JOINT_HALF_FORMAT
+                            | PACKED_FORMAT
+                    ),
+                )?
+            };
             ensure!(
                 config.initial_codeword_cells + scheme.initial_codeword_cells <= 1 << 30,
                 "arithmetic and checkpoint codewords exceed this prototype's budget"

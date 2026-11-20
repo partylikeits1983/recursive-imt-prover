@@ -48,6 +48,12 @@ pub trait MultiStarkConfig {
     /// Borrow the commitment scheme for the main trace.
     fn pcs(&self) -> &Self::Pcs;
 
+    /// Verifier-fixed tables opened in the main PCS alongside the AIR tables.
+    /// The application supplies their prescribed points and checks the returned values.
+    fn auxiliary_tables(&self) -> &[p3_sumcheck::TableSpec] {
+        &[]
+    }
+
     /// Trusted collision-security cap for the transcript and all commitment hashes.
     ///
     /// Return the minimum supported by these primitives and their parameters.

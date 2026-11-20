@@ -16,6 +16,7 @@
 
 extern crate alloc;
 
+pub mod auxiliary;
 pub mod backend;
 mod bus;
 mod circuit;

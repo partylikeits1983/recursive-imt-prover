@@ -116,3 +116,9 @@ security equation changes.
 `src/keys.rs`: expose the existing preprocessing commitment through a read-only
 getter so the recursive verifier can pin it as a circuit constant. The key
 encoding and native verification equations are unchanged.
+
+`MultiStarkConfig::auxiliary_tables` fixes additional tables in the main
+commitment. Proving and verification append their prescribed points to the AIR
+opening, and the security report charges the combined schedule. The outer
+protocol must check its reduction against the returned auxiliary values. The
+checkpoint parent uses these tables for the input and output bits of Keccak.

@@ -10,6 +10,9 @@ edition = "2024"
 publish = false
 default-run = "tree-demo"
 
+[features]
+opening-bench = ["imt-flock-backend/opening-bench"]
+
 [dependencies]
 imt-flock-backend = { path = "crates/flock-backend" }
 anyhow = "1.0"

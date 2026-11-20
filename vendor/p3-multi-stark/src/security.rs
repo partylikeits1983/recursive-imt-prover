@@ -778,14 +778,13 @@ where
     // A protocol missing them assesses a smaller opening than the proof performs.
     //
     // It also understates the candidate count charged to every outer draw above.
+    let main = instances
+        .main_schedule(indexed.as_ref(), |_, _| ())
+        .into_protocol();
+    let main = crate::auxiliary::append_protocol(main, config.auxiliary_tables());
     builder.add_opening_evidence(
         CommittedTrace::Main,
-        config.pcs().weighted_security(
-            &instances
-                .main_schedule(indexed.as_ref(), |_, _| ())
-                .into_protocol(),
-            weighted_claims,
-        ),
+        config.pcs().weighted_security(&main, weighted_claims),
     );
     if preprocessed_cells > 0 {
         builder.add_opening_evidence(
