@@ -24,13 +24,13 @@ use crate::transcript::{SeedTap, domain_separator_seed};
 use crate::verifier::{InputResourceUsage, VerificationError, VerifierLimits};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct FoldShape {
+pub struct FoldShape {
     pub rounds: usize,
     pub pow_bits: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct OracleSite {
+pub struct OracleSite {
     pub variables: usize,
     pub width: usize,
     pub log_height: usize,
@@ -43,7 +43,7 @@ pub(super) struct OracleSite {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct WhirPlan<F, E = BinaryField128> {
+pub struct WhirPlan<F, E = BinaryField128> {
     _challenge: PhantomData<E>,
     pub protocol: OpeningProtocol,
     pub order: VariableOrder,
@@ -68,12 +68,13 @@ pub(super) struct WhirPlan<F, E = BinaryField128> {
     pub fold_seeds: Vec<Vec<F>>,
 }
 
+#[allow(private_bounds)] // Construction is internal to the supported WHIR field pairs.
 impl<F, E> WhirPlan<F, E>
 where
     F: WhirFieldPair<E>,
     E: ExtensionField<F>,
 {
-    pub fn new<Ch>(
+    pub(super) fn new<Ch>(
         config: &WhirConfig<E, F, Ch>,
         protocol: OpeningProtocol,
         order: VariableOrder,

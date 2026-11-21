@@ -1,16 +1,17 @@
 //! VEIL dot-product and Hadamard protocols over the additive interpolation code.
 //! Adapted from Succinct VEIL at 749b0c63f226063c471a6238a94101f930c14a13.
+use super::hash::RowDomains;
 use anyhow::{Result, ensure};
 use p3_commit::{BatchOpeningRef, Mmcs};
 use p3_field::PrimeCharacteristicRing;
-use p3_matrix::{Dimensions, dense::RowMajorMatrix};
-use p3_merkle_tree::MerkleTreeHidingMmcs;
+use p3_matrix::{Dimensions, dense::RowMajorMatrix, stack::HorizontalPair};
+use p3_merkle_tree::MerkleTreeMmcs;
 use p3_symmetric::{CompressionFunctionFromHasher, MerkleCap, SerializingHasher};
-use rand::{RngExt, SeedableRng, rngs::StdRng};
+use rand::TryCryptoRng;
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
-use super::hash::{DomainHash, LEAF_DOMAIN, NODE_DOMAIN};
+use super::hash::DomainHash;
 use super::{
     E,
     code::BinaryCode,
@@ -23,18 +24,17 @@ use functional::Functional;
 pub(super) mod functional;
 pub(super) mod recursive;
 
-type Tree = MerkleTreeHidingMmcs<
+type Tree = MerkleTreeMmcs<
     E,
     u8,
     SerializingHasher<DomainHash>,
     CompressionFunctionFromHasher<DomainHash, 2, 32>,
-    StdRng,
     2,
     32,
-    2,
 >;
-type TreeData = <Tree as Mmcs<E>>::ProverData<RowMajorMatrix<E>>;
-type TreePath = <Tree as Mmcs<E>>::Proof;
+type TreeData = <Tree as Mmcs<E>>::ProverData<HorizontalPair<RowMajorMatrix<E>, RowMajorMatrix<E>>>;
+type TreePath = (Vec<Vec<E>>, <Tree as Mmcs<E>>::Proof);
+const SALT_FIELDS: usize = 2;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Opening {
@@ -86,20 +86,36 @@ impl CommittedVectors {
             indices.iter().all(|&i| i < self.code.codeword_len),
             "query outside codeword"
         );
-        Ok(indices
-            .iter()
-            .map(|&i| {
-                let (rows, path) = self.tree.open_batch(i, &self.data).unpack();
-                Opening { rows, path }
-            })
-            .collect())
+        Ok(indices.iter().map(|&i| self.open_row(i)).collect())
+    }
+
+    fn open_row(&self, index: usize) -> Opening {
+        let (mut rows, siblings) = self.tree.open_batch(index, &self.data).unpack();
+        let salts = rows
+            .iter_mut()
+            .map(|row| row.split_off(row.len() - SALT_FIELDS))
+            .collect();
+        Opening {
+            rows,
+            path: (salts, siblings),
+        }
     }
 
     pub fn new(
         vectors: &[Vec<E>],
         code: BinaryCode,
         product: bool,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
+    ) -> Result<Self> {
+        Self::with_domains(vectors, code, product, RowDomains::Original, rng)
+    }
+
+    pub fn with_domains(
+        vectors: &[Vec<E>],
+        code: BinaryCode,
+        product: bool,
+        domains: RowDomains,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<Self> {
         ensure!(!vectors.is_empty(), "empty vector batch");
         ensure!(
@@ -115,11 +131,14 @@ impl CommittedVectors {
             "inconsistent vector length"
         );
         let mut padded = vectors.to_vec();
-        padded.push((0..code.message_len).map(|_| rng.random()).collect());
+        padded.push(super::coins::fields(rng, code.message_len)?);
         for column in &mut padded {
-            let mut full: Vec<E> = (0..code.input_len).map(|_| rng.random()).collect();
-            let start = code.message_offset();
-            full[start..start + code.message_len].copy_from_slice(column);
+            let mut full = E::zero_vec(code.input_len);
+            let (prefix, tail) = full.split_at_mut(code.message_offset());
+            let (message, suffix) = tail.split_at_mut(code.message_len);
+            super::coins::fill_fields(rng, prefix)?;
+            message.copy_from_slice(column);
+            super::coins::fill_fields(rng, suffix)?;
             *column = full;
         }
         let mut encoded: Vec<_> = padded
@@ -127,7 +146,7 @@ impl CommittedVectors {
             .map(|v| code.encode(v))
             .collect::<Result<_>>()?;
         let product_mask = if product {
-            let mask: Vec<E> = (0..2 * code.input_len).map(|_| rng.random()).collect();
+            let mask = super::coins::fields(rng, 2 * code.input_len)?;
             encoded.push(code.encode_product(&mask)?);
             Some(mask)
         } else {
@@ -139,8 +158,13 @@ impl CommittedVectors {
             values.extend(encoded.iter().map(|column| column[row]));
         }
         drop(encoded);
-        let tree = mmcs(StdRng::from_rng(rng));
-        let (cap, data) = tree.commit_matrix(RowMajorMatrix::new(values, width));
+        // Salt the same row bytes that the recursive verifier hashes.
+        let salts = super::coins::fields(rng, code.codeword_len * SALT_FIELDS)?;
+        let tree = mmcs(domains);
+        let (cap, data) = tree.commit_matrix(HorizontalPair::new(
+            RowMajorMatrix::new(values, width),
+            RowMajorMatrix::new(salts, SALT_FIELDS),
+        ));
         Ok(Self {
             root: cap[0],
             code,
@@ -201,13 +225,7 @@ impl CommittedVectors {
             CommittedBlend::new(self.code.blend_coefficients(&blend, false)?, parameters)?;
         transcript.bytes(b"dot-blend-commitment-v1", &commitment.root);
         let indices = transcript.indices(self.code.queries, self.code.codeword_len);
-        let openings: Vec<_> = indices
-            .iter()
-            .map(|&i| {
-                let (rows, path) = self.tree.open_batch(i, &self.data).unpack();
-                Opening { rows, path }
-            })
-            .collect();
+        let openings: Vec<_> = indices.iter().map(|&i| self.open_row(i)).collect();
         let columns = claims.len();
         let values: Vec<_> = openings
             .iter()
@@ -275,6 +293,94 @@ impl VectorProof {
         parameters: &Parameters,
         transcript: &mut Transcript,
     ) -> Result<()> {
+        self.verify_with(
+            code,
+            weights,
+            columns,
+            product,
+            transcript,
+            |opening, root, functional, sum, transcript| {
+                opening.verify(root, functional, sum, parameters, transcript)
+            },
+        )
+    }
+
+    pub(super) fn opening_messages(
+        &self,
+        code: &BinaryCode,
+        weights: &[E],
+        params: &Parameters,
+        transcript: &mut Transcript,
+    ) -> Result<super::child::checkpoint::VectorMessages> {
+        use super::child::checkpoint::{
+            CoordinateMessages, OracleRowOpening, StackedBlendCheckpoint, VectorMessages,
+        };
+        use p3_field::RawDataSerializable;
+        let product = self.product.is_some();
+        let mut coordinates = Vec::new();
+        self.verify_with(
+            code,
+            weights,
+            if product { 3 } else { 1 },
+            product,
+            transcript,
+            |opening, root, functional, sum, t| {
+                let point = opening.reduce(root, functional, sum, t)?;
+                let (rounds, value) = opening.round_messages();
+                let blend = StackedBlendCheckpoint {
+                    rounds: rounds.to_vec(),
+                    value,
+                    point: point.as_slice().to_vec(),
+                    seed: t.fingerprint(),
+                };
+                let (raw, seal) = opening.opening_advice(root, &blend, params)?;
+                t.bytes(b"blend-whir-seal-v3", &seal);
+                coordinates.push(CoordinateMessages {
+                    root: *root,
+                    blend,
+                    raw,
+                    seal,
+                });
+                Ok(())
+            },
+        )?;
+        let rows = self
+            .openings
+            .iter()
+            .map(|r| OracleRowOpening {
+                salted_row: r.rows[0]
+                    .iter()
+                    .chain(&r.path.0[0])
+                    .flat_map(|x| x.into_bytes())
+                    .collect(),
+                siblings: r.path.1.clone(),
+            })
+            .collect();
+        Ok(VectorMessages {
+            root: self.root,
+            gamma: self.product.as_ref().map(|p| p.gamma),
+            claims: self.dot.claims.clone(),
+            mask_dot: self.dot.mask_dot,
+            rows,
+            coordinates,
+        })
+    }
+
+    fn verify_with(
+        &self,
+        code: &BinaryCode,
+        weights: &[E],
+        columns: usize,
+        product: bool,
+        transcript: &mut Transcript,
+        mut verify_opening: impl FnMut(
+            &BlendOpening,
+            &[u8; 32],
+            &Functional,
+            E,
+            &mut Transcript,
+        ) -> Result<()>,
+    ) -> Result<()> {
         ensure!(
             code.is_interpolation() && weights.len() == code.message_len,
             "wrong vector verifier geometry"
@@ -306,7 +412,14 @@ impl VectorProof {
         transcript.bytes(b"dot-blend-commitment-v1", &self.dot.root);
         let indices = transcript.indices(code.queries, code.codeword_len);
         let width = columns + 1 + usize::from(product);
-        verify_openings(&self.root, code, width, &indices, &self.openings)?;
+        verify_openings(
+            &self.root,
+            code,
+            width,
+            &indices,
+            &self.openings,
+            RowDomains::Original,
+        )?;
         let values: Vec<_> = self
             .openings
             .iter()
@@ -320,9 +433,13 @@ impl VectorProof {
         let (functional, sum) = Functional::new(
             code, false, weights, &indices, &values, expected, transcript,
         )?;
-        self.dot
-            .opening
-            .verify(&self.dot.root, &functional, sum, parameters, transcript)?;
+        verify_opening(
+            &self.dot.opening,
+            &self.dot.root,
+            &functional,
+            sum,
+            transcript,
+        )?;
         if let (Some(proof), Some((rho, prefix))) = (&self.product, product_check) {
             let values: Vec<_> = self
                 .openings
@@ -341,9 +458,7 @@ impl VectorProof {
                 rho * proof.gamma,
                 transcript,
             )?;
-            proof
-                .opening
-                .verify(&proof.root, &functional, sum, parameters, transcript)?;
+            verify_opening(&proof.opening, &proof.root, &functional, sum, transcript)?;
         }
         Ok(())
     }
@@ -355,6 +470,7 @@ pub(super) fn verify_openings(
     width: usize,
     indices: &[usize],
     openings: &[Opening],
+    domains: RowDomains,
 ) -> Result<()> {
     ensure!(
         openings.len() == code.queries && indices.len() == code.queries,
@@ -364,11 +480,10 @@ pub(super) fn verify_openings(
         indices.iter().all(|&i| i < code.codeword_len),
         "query outside codeword"
     );
-    // This verifier never draws salts; the shared MMCS type requires an RNG.
-    let tree = mmcs(StdRng::from_seed([0; 32]));
+    let tree = mmcs(domains);
     let cap = MerkleCap::new(vec![*root]);
     let dimensions = [Dimensions {
-        width,
+        width: width + SALT_FIELDS,
         height: code.codeword_len,
     }];
     for (&index, opening) in indices.iter().zip(openings) {
@@ -377,30 +492,31 @@ pub(super) fn verify_openings(
             "wrong opened width"
         );
         ensure!(
-            opening.path.0.len() == 1 && opening.path.0[0].len() == 2,
+            opening.path.0.len() == 1 && opening.path.0[0].len() == SALT_FIELDS,
             "wrong salt width"
         );
         ensure!(
             opening.path.1.len() == code.codeword_len.ilog2() as usize,
             "wrong Merkle path length"
         );
+        let salted = [&opening.rows[0][..], &opening.path.0[0][..]].concat();
         tree.verify_batch(
             &cap,
             &dimensions,
             index,
-            BatchOpeningRef::new(&opening.rows, &opening.path),
+            BatchOpeningRef::new(&[salted], &opening.path.1),
         )
         .map_err(|e| anyhow::anyhow!("invalid vector opening: {e:?}"))?;
     }
     Ok(())
 }
 
-fn mmcs(rng: StdRng) -> Tree {
+fn mmcs(domains: RowDomains) -> Tree {
+    let (leaf, node) = domains.tags();
     Tree::new(
-        SerializingHasher::new(DomainHash(LEAF_DOMAIN)),
-        CompressionFunctionFromHasher::new(DomainHash(NODE_DOMAIN)),
+        SerializingHasher::new(DomainHash(leaf)),
+        CompressionFunctionFromHasher::new(DomainHash(node)),
         0,
-        rng,
     )
 }
 

@@ -40,6 +40,7 @@ fn fixture() -> Result<Fixture> {
         variables: 3,
         columns: 5,
         log_stack: 2,
+        domains: Default::default(),
     };
     let code = spec.code(&parameters)?;
     let mut rng = StdRng::seed_from_u64(0x737461636b6564);

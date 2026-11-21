@@ -61,7 +61,7 @@ impl BusPlan {
     }
 
     /// Bind every public dimension that changes a tuple or tree position.
-    fn domain_separator<F, EF>(&self) -> DomainSeparator<Alphabet<F>>
+    pub fn domain_separator<F, EF>(&self) -> DomainSeparator<Alphabet<F>>
     where
         F: TranscriptField,
         EF: ExtensionField<F>,

@@ -33,7 +33,7 @@ pub struct NativeAirProgram {
 }
 
 #[derive(Clone, Debug, Serialize)]
-enum Operation {
+pub enum Operation {
     Public(F),
     Message(usize),
     Challenge,
@@ -153,6 +153,11 @@ impl NativeAirProgram {
             rounds,
             degree,
         })
+    }
+
+    /// Fixed sequence of public observations, masked messages and verifier coins.
+    pub fn operations(&self) -> &[Operation] {
+        &self.operations
     }
 
     pub fn message_count(&self) -> usize {

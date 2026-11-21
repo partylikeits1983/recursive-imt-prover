@@ -38,7 +38,7 @@ const WORD_BITS: usize = 64;
 pub struct MixedTraceCommitment<EF, B> {
     /// The Boolean trace commitment every claim is discharged against.
     inner: BooleanTraceCommitment<EF, B>,
-    encodings: Vec<TableEncoding>,
+    pub(crate) encodings: Vec<TableEncoding>,
     basis: Vec<F>,
     #[cfg(feature = "opening-bench")]
     pub(crate) capture: Option<std::sync::Mutex<Option<crate::opening_bench::Request<EF>>>>,

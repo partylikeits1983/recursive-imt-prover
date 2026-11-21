@@ -123,42 +123,30 @@ fn sum(b: &mut CircuitBuilder<CF>, values: &[T]) -> T {
         })
 }
 
-/// All sums eq(a, z) * eq(c, z + k mod 64), using two carry states per bit.
+/// Cyclic cross-correlations of the two multilinear equality tables. Appending a
+/// low bit turns rotation 2j into rotation j on the upper bits. For 2j+1, the
+/// low bit determines whether the upper bits rotate by j or j+1.
 fn correlations(b: &mut CircuitBuilder<CF>, a: &[T], c: &[T]) -> Vec<T> {
     assert_eq!(a.len(), 6);
     assert_eq!(c.len(), 6);
-    let zero = b.native_poly192_constant([0; 3]);
     let one = b.native_poly192_constant([1, 0, 0]);
-    let mut states = vec![(one.clone(), zero.clone())];
-    for (bit, (a, c)) in a.iter().rev().zip(c.iter().rev()).enumerate() {
+    let mut corr = vec![one];
+    for (a, c) in a.iter().zip(c) {
         let cross = b.native_poly192_mul(a, c);
-        let low_high = b.native_poly192_add(c, &cross);
-        let high_low = b.native_poly192_add(a, &cross);
-        let difference = b.native_poly192_add(a, c);
-        let diagonal = b.native_poly192_add(&one, &difference);
-        let size = states.len();
-        if bit == 5 {
-            let mut values = vec![zero.clone(); 2 * size];
-            for (k, (low, high)) in states.iter().enumerate() {
-                let total = b.native_poly192_add(low, high);
-                let same = b.native_poly192_mul(&total, &diagonal);
-                values[k] = b.native_poly192_add(high, &same);
-                values[k + size] = b.native_poly192_add(low, &same);
-            }
-            return values;
+        let up = b.native_poly192_add(c, &cross); // (1+a)c
+        let down = b.native_poly192_add(a, &cross); // a(1+c)
+        let scaled: Vec<_> = corr
+            .iter()
+            .map(|v| (b.native_poly192_mul(v, &up), b.native_poly192_mul(v, &down)))
+            .collect();
+        let mut next = Vec::with_capacity(2 * corr.len());
+        for (j, value) in corr.iter().enumerate() {
+            // In characteristic two the equal-bit coefficient is 1 + up + down.
+            let even = b.native_poly192_add(value, &scaled[j].0);
+            next.push(b.native_poly192_add(&even, &scaled[j].1));
+            next.push(b.native_poly192_add(&scaled[j].0, &scaled[(j + 1) % corr.len()].1));
         }
-        let mut next = vec![(zero.clone(), zero.clone()); 2 * size];
-        for (k, (low, high)) in states.iter().enumerate() {
-            let l_same = b.native_poly192_mul(low, &diagonal);
-            let h_same = b.native_poly192_mul(high, &diagonal);
-            let l_up = b.native_poly192_mul(low, &low_high);
-            let h_up = b.native_poly192_mul(high, &low_high);
-            let l_down = b.native_poly192_mul(low, &high_low);
-            let h_down = b.native_poly192_mul(high, &high_low);
-            next[k] = (b.native_poly192_add(&l_same, &h_up), h_down);
-            next[k + size] = (l_up, b.native_poly192_add(&l_down, &h_same));
-        }
-        states = next;
+        corr = next;
     }
-    unreachable!()
+    corr
 }

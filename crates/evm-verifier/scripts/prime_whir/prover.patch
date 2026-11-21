@@ -1,0 +1,104 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 8d27b18..ea6b0e5 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2166,6 +2166,7 @@ dependencies = [
+ [[package]]
+ name = "whir-p3"
+ version = "0.1.0"
++source = "git+https://github.com/alxkzmn/whir-p3.git?rev=06dded8025f1a125fcbc720ef6f97e14ed31c2a9#06dded8025f1a125fcbc720ef6f97e14ed31c2a9"
+ dependencies = [
+  "hashbrown 0.16.1",
+  "itertools 0.14.0",
+diff --git a/src/quartic_fixture.rs b/src/quartic_fixture.rs
+index ad6583b..cc83708 100644
+--- a/src/quartic_fixture.rs
++++ b/src/quartic_fixture.rs
+@@ -140,16 +140,22 @@ where
+     );
+     let config = build_checked_whir_config::<EF>(num_variables, &protocol_params)?;
+ 
+-    let polynomial: Vec<F> = (0..(1 << num_variables))
+-        .map(|i| F::from_u32((i + 1) as u32))
+-        .collect();
++    // Deterministic dense synthetic workload, independent of the transcript coins.
++    let mut state = 0x1123581321345589u64;
++    let mut next = || {
++        state ^= state << 13;
++        state ^= state >> 7;
++        state ^= state << 17;
++        F::from_u32(state as u32)
++    };
++    let polynomial: Vec<F> = (0..(1 << num_variables)).map(|_| next()).collect();
+     let poly_evals = WhirEvaluations::new(polynomial.clone());
+ 
+     let mut user_statement = EqStatement::initialize(num_variables);
+     let mut statement_points = Vec::new();
+     let mut statement_evaluations = Vec::new();
+ 
+-    let point = WhirPoint::expand_from_univariate(EF::from(F::from_u32(3)), num_variables);
++    let point = WhirPoint::new((0..num_variables).map(|_| EF::from_basis_coefficients_fn(|_| next())).collect());
+     let evaluation = poly_evals.evaluate_hypercube_base(&point);
+     statement_points.push(point.as_slice().to_vec());
+     statement_evaluations.push(evaluation);
+diff --git a/src/bin/imt_prime_fixture.rs b/src/bin/imt_prime_fixture.rs
+new file mode 100644
+index 0000000..71982dc
+--- /dev/null
++++ b/src/bin/imt_prime_fixture.rs
+@@ -0,0 +1,55 @@
++use alloy_sol_types::SolValue;
++use spartan_whir_export::{
++    abi_export::{proof_to_abi, statement_to_abi},
++    fixed_config_codegen::generate_octic_fixed_config_source_named,
++    quartic_fixture::build_standalone_fixture,
++    OcticBinExtension, SecurityConfig, SoundnessAssumption, WhirParams,
++};
++fn main() -> anyhow::Result<()> {
++    let dir = std::path::PathBuf::from(
++        std::env::args()
++            .nth(1)
++            .ok_or_else(|| anyhow::anyhow!("missing output directory"))?,
++    );
++    let t = std::time::Instant::now();
++    let f = build_standalone_fixture::<OcticBinExtension>(
++        SecurityConfig {
++            security_level_bits: 135,
++            merkle_security_bits: 128,
++            soundness_assumption: SoundnessAssumption::JohnsonBound,
++        },
++        WhirParams {
++            pow_bits: 20,
++            folding_factor: 4,
++            starting_log_inv_rate: 6,
++            rs_domain_initial_reduction_factor: 3,
++            folding_schedule: None,
++            round_log_inv_rates: Vec::new(),
++        },
++        22,
++    )?;
++    let statement = statement_to_abi(&f.statement_points, &f.statement_evaluations);
++    let proof = proof_to_abi(&f.proof)?;
++    std::fs::write(
++        dir.join("call-args.bin"),
++        (proof.initialCommitment, statement, proof).abi_encode_params(),
++    )?;
++    std::fs::write(
++        dir.join("config.sol"),
++        generate_octic_fixed_config_source_named(
++            &f,
++            "OcticWhirFixedConfig_k22_jb100_lir6_ff4_rsv1",
++        ),
++    )?;
++    for r in &f.config.round_parameters {
++        println!(
++            "q={} ood={} foldpow={}",
++            r.num_queries, r.ood_samples, r.folding_pow_bits
++        );
++    }
++    println!(
++        "verified in Rust with checkpoint equality, total elapsed {:?}",
++        t.elapsed()
++    );
++    Ok(())
++}

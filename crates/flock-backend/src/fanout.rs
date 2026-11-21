@@ -259,15 +259,21 @@ fn fixed(mut shards: Vec<FanoutShard>) -> Result<Vec<Arc<FanoutShard>>> {
             .ok_or_else(|| anyhow::anyhow!("missing fixed fanout shard"))?;
         let mut shard = shards.remove(index);
         let capacity = (1 << log) - 1;
-        if width == 64 && copies == 4 && shard.rows.len() > capacity {
+        if width >= 16 && copies == 4 && shard.rows.len() > capacity {
             // Every three- or four-use ID occupies exactly one row. Move whole
             // IDs to unused slots in the wider tables with their exact counts.
             spill = shard.rows.split_off(capacity);
-        } else if width == 64 && copies > 4 {
+        } else if width >= 16 && copies > 4 {
             let available = capacity.saturating_sub(shard.rows.len());
             shard
                 .rows
                 .extend(spill.drain(spill.len().saturating_sub(available)..));
+        }
+        if copies == usize::from(MAX_COPIES_PER_ROW) {
+            ensure!(
+                spill.is_empty(),
+                "fixed fanout capacity exceeded for width {width}"
+            );
         }
         ensure!(
             shard.rows.len() < 1 << log,

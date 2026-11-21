@@ -15,15 +15,15 @@ use super::{E, F, compiler::MaskedReader, constraints::Linear};
 pub(super) mod recursive;
 
 pub(super) struct AirAlgebra {
-    gates: Vec<Gate>,
-    private: Vec<bool>,
-    outputs: Vec<usize>,
+    pub(super) gates: Vec<Gate>,
+    pub(super) private: Vec<bool>,
+    pub(super) outputs: Vec<usize>,
     pub products: usize,
     pub identity: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize)]
-enum Gate {
+pub enum Gate {
     Constant(F),
     Main(usize, usize),
     Preprocessed(usize, usize),

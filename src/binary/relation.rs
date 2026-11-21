@@ -38,6 +38,14 @@ pub struct AggregatePublic {
 }
 
 impl ClientPublic {
+    pub fn membership_root(root: Hash) -> Self {
+        Self {
+            root,
+            input_tag: [0; 32],
+            output_commitment: [0; 32],
+        }
+    }
+
     pub fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
         self.root
             .iter()

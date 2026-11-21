@@ -1,3 +1,5 @@
+mod privacy;
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use anyhow::Result;
@@ -10,19 +12,59 @@ use crate::binary::{
     tree::{commitment, input_tag},
     veil::{
         F,
-        membership_air::{DIRECTION, MembershipAir, NONCE, ROWS_PER_HASH, STATE_START, WIDTH},
+        membership_air::{
+            CheckLayout, DIRECTION, MembershipAir, NONCE, ROWS_PER_HASH, STATE_START, WIDTH,
+        },
         parameters::Parameters,
     },
 };
 
 #[test]
 fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
-    let depth = 32;
+    for layout in [
+        CheckLayout::Bitwise,
+        CheckLayout::Packed,
+        CheckLayout::PackedInputs,
+    ] {
+        check_hash_chain(32, layout)?;
+    }
+    Ok(())
+}
+
+fn check_hash_chain(depth: usize, layout: CheckLayout) -> Result<()> {
     let (public, witness) = fixtures(depth, 1)?.remove(0);
-    let air = MembershipAir::new(depth)?;
+    let mut air = MembershipAir::new(depth)?;
+    air.checks = layout;
     let trace = air.trace(&public, &witness)?;
     let inputs = MembershipAir::public_values(&public);
     check_constraints(&air, &trace, &inputs);
+    if layout == CheckLayout::PackedInputs {
+        for pos in [
+            ROWS_PER_HASH * WIDTH + STATE_START + 47 * 8,
+            24 * WIDTH + STATE_START + 255,
+            875 * WIDTH + STATE_START + 16 * 8,
+            1023 * WIDTH + STATE_START + 199 * 8,
+        ] {
+            let mut bad = trace.clone();
+            bad.values[pos] += F::new(2);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| check_constraints(&air, &bad, &inputs))).is_err()
+            );
+        }
+    }
+    // This mutation leaves the packed value of the lane unchanged in GF(2^64).
+    // It must fail because the Keccak AIR constrains the individual bits.
+    let mut nonboolean = trace.clone();
+    nonboolean.values[STATE_START] += F::new(2);
+    nonboolean.values[STATE_START + 1] += F::ONE;
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| check_constraints(
+            &air,
+            &nonboolean,
+            &inputs
+        )))
+        .is_err()
+    );
     for kind in 0..10 {
         let mut bad = trace.clone();
         let cell = match kind {
@@ -122,8 +164,18 @@ fn membership_air_constrains_the_entire_hash_chain() -> Result<()> {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "depth-32 child proof; run with --release")]
 fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
+    for (protocol, other) in [
+        (super::PROTOCOL, super::PACKED_PROTOCOL),
+        (super::PACKED_PROTOCOL, super::PROTOCOL),
+    ] {
+        check_compiled_roundtrip(protocol, other)?;
+    }
+    Ok(())
+}
+
+fn check_compiled_roundtrip(protocol: &str, other: &str) -> Result<()> {
     let parameters = Parameters::default();
-    let prepared = PreparedMembership::new(32, parameters.clone())?;
+    let prepared = PreparedMembership::for_protocol(32, parameters.clone(), protocol)?;
     let (public, witness) = fixtures(32, 1)?.remove(0);
     let proof = prepared.prove(&public, &witness)?;
     let bytes = proof.to_bytes()?;
@@ -141,6 +193,9 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
         assert!(MaskedMembershipProof::from_bytes(&old).is_err());
     }
     prepared.verify(&public, &decoded)?;
+    let foreign = PreparedMembership::for_protocol(32, parameters.clone(), other)?;
+    assert_ne!(foreign.identity(), prepared.identity());
+    assert!(foreign.verify(&public, &decoded).is_err());
     for kind in 0..3 {
         let mut altered = public.clone();
         if kind == 0 {
@@ -153,12 +208,13 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
         assert!(prepared.verify(&altered, &decoded).is_err());
     }
     assert!(
-        PreparedMembership::new(
+        PreparedMembership::for_protocol(
             32,
             Parameters {
                 query_bits: 161,
                 ..parameters.clone()
-            }
+            },
+            protocol
         )?
         .verify(&public, &decoded)
         .is_err()
@@ -182,12 +238,8 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
     let trace = prepared.witness(&public, &witness)?;
     let mut false_public = public.clone();
     false_public.output_commitment[0] ^= 1;
-    let PendingChild {
-        root,
-        ctx,
-        opening,
-        mut rng,
-    } = prepared.prepare(&false_public, trace)?;
+    let mut rng = rand::rngs::SysRng;
+    let PendingChild { root, ctx, opening } = prepared.prepare(&false_public, trace, &mut rng)?;
     let inner = ctx.finish_unchecked(
         |reader| prepared.replay(&false_public, &root, &opening, reader),
         &mut rng,
@@ -198,5 +250,67 @@ fn compiled_child_roundtrip_and_forged_public_input_rejection() -> Result<()> {
         opening,
     };
     assert!(prepared.verify(&false_public, &forged).is_err());
+    Ok(())
+}
+
+#[test]
+fn preimage_profile_enforces_the_root_path_and_reserved_fields() -> Result<()> {
+    use crate::binary::{
+        IMT_DEPTH,
+        cli::membership_fixtures,
+        tree::{Imt, keccak},
+    };
+    let mut air = MembershipAir::new(IMT_DEPTH)?;
+    air.checks = CheckLayout::Preimage;
+    let (public, witness) = membership_fixtures(IMT_DEPTH, 1, true)?.remove(0);
+    let trace = air.preimage_trace(
+        &witness.input_label,
+        witness.leaf_index,
+        &witness.merkle_path,
+    )?;
+    let inputs = public.fields();
+    check_constraints(&air, &trace, &inputs);
+    assert_eq!(trace.width, DIRECTION + 1);
+    let rejects = |trace: &p3_matrix::dense::RowMajorMatrix<F>, inputs: &[F]| {
+        catch_unwind(AssertUnwindSafe(|| check_constraints(&air, trace, inputs))).is_err()
+    };
+    for field in [0, 32, 95] {
+        let mut wrong = inputs.clone();
+        wrong[field] += F::ONE;
+        assert!(rejects(&trace, &wrong));
+    }
+    let mut preimage = witness.input_label;
+    preimage[31] ^= 1;
+    let mut path = witness.merkle_path.clone();
+    path[IMT_DEPTH - 1][0] ^= 1;
+    for (preimage, index, path) in [
+        (&preimage, witness.leaf_index, &witness.merkle_path),
+        (
+            &witness.input_label,
+            witness.leaf_index ^ 1,
+            &witness.merkle_path,
+        ),
+        (&witness.input_label, witness.leaf_index, &path),
+    ] {
+        assert!(rejects(
+            &air.preimage_trace(preimage, index, path)?,
+            &inputs
+        ));
+    }
+    assert!(
+        air.preimage_trace(&preimage, 0, &path[..IMT_DEPTH - 1])
+            .is_err()
+    );
+    let mut altered = trace.clone();
+    altered.values[24 * trace.width + DIRECTION] = F::new(2);
+    assert!(rejects(&altered, &inputs));
+    let mut tree = Imt::new(IMT_DEPTH)?;
+    // An ordinary Keccak-256 commitment without the protocol domain has a different root.
+    tree.append(keccak(&preimage))?;
+    let untagged = super::ClientPublic::membership_root(tree.root()).fields();
+    assert!(rejects(
+        &air.preimage_trace(&preimage, 0, &tree.path(0)?)?,
+        &untagged
+    ));
     Ok(())
 }

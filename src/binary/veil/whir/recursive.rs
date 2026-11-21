@@ -23,7 +23,7 @@ use crate::binary::veil::{E, F, parameters::Parameters};
 
 pub(super) type Targets = BinaryPolyWhirProofTargets<NativePoly192Target, ExprId>;
 
-pub(super) struct PreparedWhir {
+pub(in crate::binary::veil) struct PreparedWhir {
     pcs: Pcs,
     verifier: BinaryPolyWhirVerifier,
     shape: BinaryPolyWhirInputShape,
@@ -59,6 +59,10 @@ impl PreparedWhir {
         })
     }
 
+    pub fn plan(&self) -> &p3_recursion::pcs::binary::BinaryWhirPlan<F, E> {
+        self.verifier.plan()
+    }
+
     pub fn allocate(&self, builder: &mut CircuitBuilder<F>) -> Result<Targets> {
         Ok(self.shape.allocate_native_targets(builder)?)
     }
@@ -90,7 +94,7 @@ impl PreparedWhir {
         Ok(input.private_native_values(&self.shape)?)
     }
 
-    pub fn verify(
+    pub(super) fn verify(
         &self,
         builder: &mut CircuitBuilder<F>,
         seed: &[ExprId; 32],

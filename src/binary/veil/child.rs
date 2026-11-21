@@ -13,7 +13,7 @@ use p3_multi_stark::{
 };
 use p3_multilinear_util::point::Point;
 use p3_sumcheck::layout::Table;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{TryCryptoRng, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
@@ -22,7 +22,7 @@ use super::{
     air_algebra::{AirAlgebra, PublicEvaluation, add, scale},
     compiler::{MaskedProver, MaskedReader},
     constraints::{ExperimentalProof, Linear, Relation},
-    membership_air::{MembershipAir, PREPROCESSED_WIDTH, WIDTH},
+    membership_air::{CheckLayout, MembershipAir, PREPROCESSED_WIDTH},
     native::{NativeAirProgram, OraclePoint},
     parameters::Parameters,
     stacked_oracle::{StackedOpening, StackedOracle, StackedSpec},
@@ -34,9 +34,14 @@ use crate::binary::{
 };
 
 pub const PROTOCOL: &str = "experimental-binary-masked-record-v1";
+const PACKED_V2_PROTOCOL: &str = "experimental-binary-masked-record-packed-lanes-v2";
+pub const PREIMAGE_PROTOCOL: &str = "experimental-binary-masked-preimage-v1";
+pub const ALIGNED_PREIMAGE_PROTOCOL: &str = "experimental-binary-masked-preimage-aligned-v2";
+pub const PACKED_PROTOCOL: &str = "experimental-binary-masked-record-packed-inputs-v3";
 const PROOF_MAGIC: &[u8; 8] = b"IMTRCA01";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
+pub mod checkpoint;
 pub mod recursive;
 #[cfg(test)]
 mod tests;
@@ -64,13 +69,23 @@ struct PendingChild {
     root: [u8; 32],
     ctx: MaskedProver,
     opening: StackedOpening,
-    rng: StdRng,
 }
 
 impl PreparedMembership {
     pub fn new(depth: usize, parameters: Parameters) -> Result<Self> {
+        Self::for_protocol(depth, parameters, PROTOCOL)
+    }
+
+    pub fn for_protocol(depth: usize, parameters: Parameters, protocol: &str) -> Result<Self> {
         parameters.validate()?;
-        let air = MembershipAir::new(depth)?;
+        let mut air = MembershipAir::new(depth)?;
+        air.checks = match protocol {
+            PROTOCOL => CheckLayout::Bitwise,
+            PACKED_V2_PROTOCOL => CheckLayout::Packed,
+            PREIMAGE_PROTOCOL | ALIGNED_PREIMAGE_PROTOCOL => CheckLayout::Preimage,
+            PACKED_PROTOCOL => CheckLayout::PackedInputs,
+            _ => anyhow::bail!("unknown masked membership protocol"),
+        };
         let expressions = get_symbolic_constraints::<F, _>(&air, AirLayout::from_air::<F>(&air));
         let degree = expressions
             .iter()
@@ -90,8 +105,13 @@ impl PreparedMembership {
         let algebra = AirAlgebra::new(&expressions)?;
         let oracle = StackedSpec {
             variables,
-            columns: WIDTH,
+            columns: air.width(),
             log_stack: 7,
+            domains: if protocol == ALIGNED_PREIMAGE_PROTOCOL {
+                super::hash::RowDomains::Aligned
+            } else {
+                super::hash::RowDomains::Original
+            },
         };
         oracle.code(&parameters)?;
         let messages = program.message_count() + oracle.messages(2)? + algebra.products;
@@ -101,7 +121,7 @@ impl PreparedMembership {
         );
         let preprocessed = air.preprocessed_trace().unwrap().transpose();
         let identity = Keccak256::digest(postcard::to_allocvec(&(
-            PROTOCOL,
+            protocol,
             depth,
             algebra.identity,
             program.binding()?,
@@ -128,6 +148,18 @@ impl PreparedMembership {
         })
     }
 
+    pub fn protocol(&self) -> &'static str {
+        match self.air.checks {
+            CheckLayout::Bitwise => PROTOCOL,
+            CheckLayout::Packed => PACKED_V2_PROTOCOL,
+            CheckLayout::Preimage if self.oracle.domains == super::hash::RowDomains::Aligned => {
+                ALIGNED_PREIMAGE_PROTOCOL
+            }
+            CheckLayout::Preimage => PREIMAGE_PROTOCOL,
+            CheckLayout::PackedInputs => PACKED_PROTOCOL,
+        }
+    }
+
     pub fn identity(&self) -> [u8; 32] {
         self.identity
     }
@@ -138,7 +170,7 @@ impl PreparedMembership {
         self.air.height()
     }
     pub fn trace_width(&self) -> usize {
-        WIDTH
+        self.air.width()
     }
     pub fn masked_messages(&self) -> usize {
         self.messages
@@ -148,7 +180,7 @@ impl PreparedMembership {
     }
 
     pub fn oracle_columns(&self) -> usize {
-        WIDTH.div_ceil(1 << self.oracle.log_stack) + 1
+        self.air.width().div_ceil(1 << self.oracle.log_stack) + 1
     }
 
     pub fn stacking_factor(&self) -> usize {
@@ -167,6 +199,19 @@ impl PreparedMembership {
         self.air.trace(public, witness)
     }
 
+    /// Prove knowledge of a private 32-byte preimage and its depth-32 IMT path.
+    /// The recursive batch record represents this profile with two zero reserved words.
+    pub fn prove_preimage(
+        &self,
+        root: [u8; 32],
+        preimage: &[u8; 32],
+        index: u32,
+        siblings: &[[u8; 32]],
+    ) -> Result<MaskedMembershipProof> {
+        let trace = self.air.preimage_trace(preimage, index, siblings)?;
+        self.prove_trace(&ClientPublic::membership_root(root), trace)
+    }
+
     pub fn prove(
         &self,
         public: &ClientPublic,
@@ -182,16 +227,19 @@ impl PreparedMembership {
         public: &ClientPublic,
         trace: RowMajorMatrix<F>,
     ) -> Result<MaskedMembershipProof> {
-        let PendingChild {
-            root,
-            ctx,
-            opening,
-            mut rng,
-        } = self.prepare(public, trace)?;
-        let inner = ctx.finish(
-            |reader| self.replay(public, &root, &opening, reader),
-            &mut rng,
-        )?;
+        self.prove_trace_with_coins(public, trace, &mut SysRng)
+    }
+
+    /// All private masks and salts consume the supplied byte stream directly.
+    /// Statistical masking arguments require independent, uniform private coins.
+    pub fn prove_trace_with_coins(
+        &self,
+        public: &ClientPublic,
+        trace: RowMajorMatrix<F>,
+        coins: &mut impl TryCryptoRng,
+    ) -> Result<MaskedMembershipProof> {
+        let PendingChild { root, ctx, opening } = self.prepare(public, trace, coins)?;
+        let inner = ctx.finish(|reader| self.replay(public, &root, &opening, reader), coins)?;
         Ok(MaskedMembershipProof {
             oracle_root: root,
             inner,
@@ -199,26 +247,31 @@ impl PreparedMembership {
         })
     }
 
-    fn prepare(&self, public: &ClientPublic, trace: RowMajorMatrix<F>) -> Result<PendingChild> {
+    fn prepare(
+        &self,
+        public: &ClientPublic,
+        trace: RowMajorMatrix<F>,
+        coins: &mut impl TryCryptoRng,
+    ) -> Result<PendingChild> {
         ensure!(
-            trace.width == WIDTH && trace.values.len() == WIDTH * self.air.height(),
+            trace.width == self.air.width()
+                && trace.values.len() == self.air.width() * self.air.height(),
             "wrong membership trace shape"
         );
-        let mut rng = StdRng::from_rng(&mut rand::rng());
         let transposed = trace.transpose();
         let columns: Vec<Vec<E>> = transposed
             .values
             .chunks_exact(self.air.height())
             .map(|c| c.iter().copied().map(E::from).collect())
             .collect();
-        let data = StackedOracle::new(self.oracle.clone(), &columns, &self.parameters, &mut rng)?;
+        let data = StackedOracle::new(self.oracle.clone(), &columns, &self.parameters, coins)?;
         drop(columns);
         let root = data.root();
         let mut ctx = MaskedProver::new(
             &self.parameters,
             &self.binding(public, &root)?,
             self.messages,
-            &mut rng,
+            coins,
         )?;
         let table = Table::new(transposed);
         let values = MembershipAir::public_values(public);
@@ -234,7 +287,7 @@ impl PreparedMembership {
         // The ordinary native proof is private intermediate state. Only the
         // corresponding masked messages, oracle proof and consistency argument
         // below enter the transport format.
-        let mut next = vec![E::ZERO; WIDTH];
+        let mut next = vec![E::ZERO; self.air.width()];
         for (column, &value) in self
             .air
             .main_next_row_columns()
@@ -262,12 +315,7 @@ impl PreparedMembership {
             &mut ctx,
         )?;
         ctx.send(b"air-verifier-products", &products)?;
-        Ok(PendingChild {
-            root,
-            ctx,
-            opening,
-            rng,
-        })
+        Ok(PendingChild { root, ctx, opening })
     }
 
     pub fn verify(&self, public: &ClientPublic, proof: &MaskedMembershipProof) -> Result<()> {
@@ -338,8 +386,9 @@ impl PreparedMembership {
         [current, vec![E::ZERO; PREPROCESSED_WIDTH]]
     }
 
-    fn binding(&self, public: &ClientPublic, root: &[u8; 32]) -> Result<Vec<u8>> {
-        let mut bytes = PROTOCOL.as_bytes().to_vec();
+    /// Fixed verifier identity and parameters at the beginning of every statement.
+    pub fn binding_prefix(&self) -> Vec<u8> {
+        let mut bytes = self.protocol().as_bytes().to_vec();
         bytes.extend(self.identity);
         for value in [
             self.parameters.query_bits,
@@ -349,6 +398,25 @@ impl PreparedMembership {
         ] {
             bytes.extend((value as u64).to_le_bytes());
         }
+        bytes
+    }
+
+    /// Trusted AIR schedule for independent verifier implementations.
+    pub fn air_program(&self) -> &NativeAirProgram {
+        &self.program
+    }
+
+    pub fn stacked_row_domains(&self) -> (&'static [u8], &'static [u8]) {
+        self.oracle.domains.tags()
+    }
+
+    pub fn stacked_query_geometry(&self) -> Result<(usize, usize)> {
+        let code = self.oracle.code(&self.parameters)?;
+        Ok((code.queries, code.codeword_len.ilog2() as usize))
+    }
+
+    fn binding(&self, public: &ClientPublic, root: &[u8; 32]) -> Result<Vec<u8>> {
+        let mut bytes = self.binding_prefix();
         bytes.extend(public.bytes());
         bytes.extend(root);
         Ok(bytes)

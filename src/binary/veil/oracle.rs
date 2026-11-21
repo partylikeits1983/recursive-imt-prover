@@ -6,7 +6,7 @@ use anyhow::{Result, ensure};
 use p3_field::PrimeCharacteristicRing;
 use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_sumcheck::{constraints::statement::NextStatement, strategy::VariableOrder};
-use rand::rngs::StdRng;
+use rand::TryCryptoRng;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -156,7 +156,7 @@ impl CommittedOracle {
         spec: OracleSpec,
         columns: &[Vec<E>],
         parameters: &Parameters,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<Self> {
         let code = spec.code(parameters)?;
         ensure!(columns.len() == spec.columns, "wrong oracle column count");
@@ -245,7 +245,14 @@ impl OracleOpening {
         let alpha_powers = powers(alpha, spec.columns + 1);
         let transcript = ctx.public_transcript();
         let indices = query_schedule(&code, &self.blend_root, &self.blend_evals, transcript);
-        verify_openings(root, &code, spec.columns + 1, &indices, &self.rows)?;
+        verify_openings(
+            root,
+            &code,
+            spec.columns + 1,
+            &indices,
+            &self.rows,
+            super::hash::RowDomains::Original,
+        )?;
         let row_values = combine_rows(&self.rows, &alpha_powers);
         let (weights, sum) = functional(
             &code,

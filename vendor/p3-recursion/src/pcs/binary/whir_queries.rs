@@ -90,7 +90,7 @@ impl BinaryWhirQueryPlan {
     }
 
     /// Consecutive native query ranges, each covering every high-bit stratum once.
-    pub(super) fn groups(&self) -> impl Iterator<Item = (core::ops::Range<usize>, usize)> + '_ {
+    pub fn groups(&self) -> impl Iterator<Item = (core::ops::Range<usize>, usize)> + '_ {
         let mut start = 0;
         (self.query_draws == 0)
             .then_some(self.index_bits)

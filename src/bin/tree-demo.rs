@@ -1,3 +1,5 @@
+#[path = "tree-demo/leanvm.rs"]
+mod leanvm;
 #[path = "tree-demo/progress.rs"]
 mod progress;
 #[path = "tree-demo/resources.rs"]
@@ -19,14 +21,14 @@ use std::{
 };
 
 use anyhow::{Result, ensure};
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum, parser::ValueSource};
 use imt_flock_backend::{
     HashBackend, MAX_VERIFIER_BYTES, WHIR_FOLD, WHIR_LOG_INV_RATE, compact_aggregate_proof,
     verifier_key_digest,
 };
 use mimalloc::MiMalloc;
 use rayon::{ThreadPoolBuilder, prelude::*};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use recursive_imt_prover::{
@@ -34,17 +36,17 @@ use recursive_imt_prover::{
     binary::{
         IMT_DEPTH, MAX_CHILDREN,
         aggregation_tree::{
-            TreeProof,
-            cyclic::{CyclicVerifier, PROTOCOL, PreparedCyclicMerge},
+            RootVerifier, STATEMENT_BYTES, TreeProof, TreeStatement,
+            cyclic::{CyclicVerifier, PROTOCOL, PreparedCyclicMerge, TrustedVerifier},
         },
-        cli::fixtures,
+        cli::membership_fixtures,
         engine::Settings,
         relation::{AggregatePublic, ClientPublic, ClientWitness},
         veil::{
             aggregate::{
                 AggregationMetrics, MaskedChildInput, PreparedMaskedAggregate, StatementFormat,
             },
-            child::{MaskedMembershipProof, PreparedMembership},
+            child::{self, MaskedMembershipProof, PreparedMembership},
             parameters::Parameters,
         },
     },
@@ -59,22 +61,32 @@ use storage::{StoredProof, scratch_directory};
 #[global_allocator]
 static ALLOCATOR: MiMalloc = MiMalloc;
 
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Backend {
+    Leanvm,
+    LeanvmMasked,
+    Masked,
+}
+
 #[derive(Parser)]
 #[command(
     name = "cargo prove",
     bin_name = "cargo prove",
-    about = "Prove a tree of independent child proofs and verify its root. Temporary proofs are written to disk and cleaned up.",
+    about = "Watch synthetic Keccak IMT client proofs aggregate into a verified root. The default LeanVM client is non-hiding.",
     after_help = "Examples:\n  cargo prove -j 3                     Prove a 64-child tree, up to three proofs at once across levels\n  cargo prove -n 8 -j 3                Prove a smaller eight-child tree\n  cargo prove -j 3 --parallel-nodes 1  Allow one aggregate within the three-proof budget"
 )]
 struct Args {
-    /// Number of child proofs (4, 8, 16, 32 or 64).
+    /// Prover backend. The default synthetic demo uses non-hiding LeanVM recursion.
+    #[arg(long, value_enum)]
+    backend: Option<Backend>,
+    /// Number of child proofs (powers of two through 64, at least 2 for LeanVM or 4 for masked).
     #[arg(short = 'n', long, default_value_t = MAX_CHILDREN)]
     batch_size: usize,
-    /// Total CPU worker threads shared by all proofs.
-    #[arg(long, default_value_t = available_parallelism().map_or(1, usize::from).min(64))]
+    /// Total prover threads. LeanVM uses up to 5 by default; masked uses available CPUs.
+    #[arg(long, hide_default_value = true, default_value_t = available_parallelism().map_or(1, usize::from).min(64))]
     threads: usize,
-    /// Total concurrent proofs across all levels.
-    #[arg(short = 'j', long, default_value = "2")]
+    /// Maximum simultaneous proofs across all levels. Defaults to 1 for LeanVM and 2 for masked.
+    #[arg(short = 'j', long, default_value = "2", hide_default_value = true)]
     jobs: NonZeroUsize,
     /// Limit child proofs within the shared --jobs budget.
     #[arg(long)]
@@ -85,7 +97,7 @@ struct Args {
     /// Directory for --keep or --verify. Temporary demos use an isolated directory under run/.
     #[arg(short, long)]
     out: Option<PathBuf>,
-    /// Keep the final proof, statement, verifier key and report in a fresh --out directory.
+    /// Save the verified root, public statements, verifier metadata and report in a fresh directory.
     #[arg(long, requires = "out", conflicts_with = "verify")]
     keep: bool,
     /// Also print the machine-readable summary when stdout is a terminal.
@@ -94,6 +106,12 @@ struct Args {
     /// Verify a saved proof from --out.
     #[arg(long)]
     verify: bool,
+    /// Independently expected 33-byte ordered digest and count, in hex. Replaces statement.json.
+    #[arg(long, requires_all = ["verify", "trusted"], value_parser = parse_expected_statement)]
+    expected_statement: Option<TreeStatement>,
+    /// Independently trusted protocol, verifier identity and key digest for a saved proof.
+    #[arg(long, requires = "verify")]
+    trusted: Option<PathBuf>,
     /// Prepare the circuits and exit before generating proofs.
     #[arg(long, conflicts_with = "verify")]
     setup_only: bool,
@@ -103,9 +121,27 @@ struct Args {
     /// Aggregate a prepared directory of child proofs without proving any children.
     #[arg(long, conflicts_with_all = ["verify", "setup_only"])]
     from_children: Option<PathBuf>,
+    /// Use the masked leaf circuit with 64-bit packed path and padding checks.
+    #[arg(long, conflicts_with = "verify")]
+    packed_lanes: bool,
+    /// Select the experimental masked preimage client in place of the default LeanVM demo.
+    #[arg(long, conflicts_with_all = ["packed_lanes", "verify"])]
+    preimage: bool,
 }
 
 impl Args {
+    fn child_protocol(&self) -> &'static str {
+        if self.backend == Some(Backend::LeanvmMasked) {
+            child::ALIGNED_PREIMAGE_PROTOCOL
+        } else if self.preimage {
+            child::PREIMAGE_PROTOCOL
+        } else if self.packed_lanes {
+            child::PACKED_PROTOCOL
+        } else {
+            child::PROTOCOL
+        }
+    }
+
     fn proof_limits(&self) -> Limits {
         let jobs = self.jobs.get().min(self.threads);
         let limit = |setting: Option<NonZeroUsize>, width: usize| {
@@ -117,14 +153,6 @@ impl Args {
             aggregates: limit(self.parallel_nodes, self.batch_size - 1),
         }
     }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Trusted {
-    protocol: String,
-    identity: String,
-    verifier_digest: [u8; 32],
 }
 
 #[derive(Serialize)]
@@ -164,7 +192,51 @@ fn node_reports(nodes: &[NodeMetrics]) -> Vec<&Value> {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let matches = Args::command().get_matches();
+    let mut args = Args::from_arg_matches(&matches)?;
+    let masked_inputs = args.preimage
+        || args.packed_lanes
+        || args.from_children.is_some()
+        || args.prepare_children.is_some();
+    let backend = match args.backend {
+        Some(backend) => backend,
+        None if args.verify => {
+            let dir = args.out.as_deref().unwrap_or(Path::new("run/cyclic-tree"));
+            let trust: Value = read_json(
+                args.trusted
+                    .clone()
+                    .unwrap_or_else(|| dir.join("trusted.json"))
+                    .as_path(),
+            )?;
+            if trust["protocol"] == leanvm::MASKED_PROTOCOL {
+                Backend::LeanvmMasked
+            } else if trust["protocol"] == leanvm::PROTOCOL {
+                Backend::Leanvm
+            } else {
+                Backend::Masked
+            }
+        }
+        None if masked_inputs || args.setup_only => Backend::Masked,
+        None => Backend::Leanvm,
+    };
+    let vm = matches!(backend, Backend::Leanvm | Backend::LeanvmMasked);
+    let private_vm = backend == Backend::LeanvmMasked;
+    if vm {
+        ensure!(
+            if private_vm {
+                !args.packed_lanes
+            } else {
+                !masked_inputs
+            },
+            "these client options are incompatible with the selected LeanVM backend"
+        );
+        if matches.value_source("threads") == Some(ValueSource::DefaultValue) {
+            args.threads = available_parallelism().map_or(1, usize::from).min(5);
+        }
+        if matches.value_source("jobs") == Some(ValueSource::DefaultValue) {
+            args.jobs = NonZeroUsize::MIN;
+        }
+    }
     ensure!(
         (1..=64).contains(&args.threads),
         "threads must be in 1..=64"
@@ -172,15 +244,20 @@ fn main() -> Result<()> {
     ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()?;
-    if args.verify {
+    if vm && args.verify {
+        return leanvm::verify_saved(&args, private_vm);
+    } else if args.verify {
         return verify_files(
             args.out.as_deref().unwrap_or(Path::new("run/cyclic-tree")),
+            args.trusted.as_deref(),
+            args.expected_statement.as_ref(),
             ProcessMonitor::start(|_| {}),
         );
     }
+    let minimum = if vm { 2 } else { 4 };
     ensure!(
-        args.batch_size.is_power_of_two() && (4..=MAX_CHILDREN).contains(&args.batch_size),
-        "tree batch size must be 4, 8, 16, 32 or 64"
+        args.batch_size.is_power_of_two() && (minimum..=MAX_CHILDREN).contains(&args.batch_size),
+        "tree batch size must be a power of two in {minimum}..={MAX_CHILDREN}"
     );
     if let Some(path) = &args.prepare_children {
         return prepare_children(&args, path);
@@ -199,6 +276,17 @@ fn main() -> Result<()> {
     };
     let scratch = scratch_directory(parent)?;
     let out = scratch.path();
+    if vm {
+        eprintln!(
+            "Preparing LeanVM for {}",
+            if private_vm {
+                "masked IMT client proofs"
+            } else {
+                "synthetic IMT preimages with non-hiding client proofs"
+            }
+        );
+        return leanvm::run(&args, scratch, destination, private_vm);
+    }
     let report_path = destination.map(|dir| dir.join("report.json"));
     let limits = args.proof_limits();
     eprintln!("Preparing circuits…");
@@ -212,7 +300,9 @@ fn main() -> Result<()> {
     let child = args
         .from_children
         .is_none()
-        .then(|| PreparedMembership::new(IMT_DEPTH, parameters.clone()))
+        .then(|| {
+            PreparedMembership::for_protocol(IMT_DEPTH, parameters.clone(), args.child_protocol())
+        })
         .transpose()?;
     let child_setup_ms = child.as_ref().map(|_| ms(start));
     let settings = Settings {
@@ -224,11 +314,12 @@ fn main() -> Result<()> {
         ..Settings::default()
     };
     let t = Instant::now();
-    let first = PreparedMaskedAggregate::with_format(
+    let first = PreparedMaskedAggregate::with_child_protocol(
         &settings,
         parameters.clone(),
         HashBackend::Checkpoint,
         StatementFormat::CyclicPair,
+        args.child_protocol(),
     )?;
     let first_setup_ms = ms(t);
     let first_key = first.export_verifier_key()?;
@@ -236,7 +327,7 @@ fn main() -> Result<()> {
     let merge = PreparedCyclicMerge::new(first.cyclic_verifier()?)?;
     let merge_setup_ms = ms(t);
     let key = merge.export_verifier_key()?;
-    let trusted = Trusted {
+    let trusted = TrustedVerifier {
         protocol: PROTOCOL.to_owned(),
         identity: merge.identity(),
         verifier_digest: verifier_key_digest(&key),
@@ -246,7 +337,7 @@ fn main() -> Result<()> {
         "protocol": PROTOCOL, "environment": environment, "depth": IMT_DEPTH,
         "batch_size": args.batch_size, "jobs": limits.jobs, "parallel_children": limits.leaves, "parallel_nodes": limits.aggregates,
         "field": "Poly64/Poly192", "hash": "Keccak-256", "bound": "Johnson",
-        "child_parameters": parameters, "child_identity": child.as_ref().map(PreparedMembership::identity),
+        "child_parameters": parameters, "child_protocol": args.child_protocol(), "child_identity": child.as_ref().map(PreparedMembership::identity),
         "precomputed_children": args.from_children.is_some(),
         "first_verifier_digest": verifier_key_digest(&first_key), "merge_verifier_digest": trusted.verifier_digest,
         "circuit_constructions": {"child":usize::from(child.is_some()), "first_aggregation":1, "merge":1},
@@ -288,7 +379,7 @@ fn main() -> Result<()> {
             .collect();
         (leaves, public)
     } else {
-        let notes = fixtures(IMT_DEPTH, args.batch_size)?;
+        let notes = membership_fixtures(IMT_DEPTH, args.batch_size, args.preimage)?;
         report["fixture_ms"] = json!(ms(input_start));
         let public = AggregatePublic {
             children: notes.iter().map(|(public, _)| public.clone()).collect(),
@@ -617,9 +708,14 @@ fn prepare_children(args: &Args, destination: &Path) -> Result<()> {
     let limits = args.proof_limits();
     let monitor = ProcessMonitor::start(|_| {});
     let t = Instant::now();
-    let child = PreparedMembership::new(IMT_DEPTH, Parameters::default())?;
+    let child =
+        PreparedMembership::for_protocol(IMT_DEPTH, Parameters::default(), args.child_protocol())?;
     let child_setup_ms = ms(t);
-    let notes = fixtures(IMT_DEPTH, args.batch_size)?;
+    let notes = membership_fixtures(
+        IMT_DEPTH,
+        args.batch_size,
+        args.preimage || args.backend == Some(Backend::LeanvmMasked),
+    )?;
     let statement = AggregatePublic {
         children: notes.iter().map(|(public, _)| public.clone()).collect(),
     };
@@ -646,7 +742,7 @@ fn prepare_children(args: &Args, destination: &Path) -> Result<()> {
         }
     }
     let mut report = json!({
-        "environment": environment(), "batch_size": args.batch_size, "child_identity": child.identity(),
+        "environment": environment(), "batch_size": args.batch_size, "child_protocol": args.child_protocol(), "child_identity": child.identity(),
         "setup_ms": child_setup_ms, "wall_ms": ms(start), "parallel_children": limits.leaves,
         "children": metrics,
     });
@@ -655,10 +751,12 @@ fn prepare_children(args: &Args, destination: &Path) -> Result<()> {
     write_json(&out.join("statement.json"), &statement)?;
     write_json(&out.join("report.json"), &report)?;
     finish_run(scratch, Some(destination))?;
-    println!(
-        "{}",
-        json!({"children": args.batch_size, "out": destination, "wall_ms": report["wall_ms"]})
-    );
+    if args.prepare_children.is_some() {
+        println!(
+            "{}",
+            json!({"children": args.batch_size, "out": destination, "wall_ms": report["wall_ms"]})
+        );
+    }
     Ok(())
 }
 
@@ -723,18 +821,35 @@ fn check_authorities(
     Ok(())
 }
 
-fn verify_files(directory: &Path, monitor: ProcessMonitor) -> Result<()> {
+fn parse_expected_statement(value: &str) -> Result<TreeStatement> {
+    let mut bytes = [0; STATEMENT_BYTES];
+    hex::decode_to_slice(value.strip_prefix("0x").unwrap_or(value), &mut bytes)?;
+    Ok(TreeStatement {
+        digest: bytes[..32].try_into()?,
+        count: bytes[32],
+    })
+}
+
+fn verify_files(
+    directory: &Path,
+    trusted_path: Option<&Path>,
+    expected: Option<&TreeStatement>,
+    monitor: ProcessMonitor,
+) -> Result<()> {
     let start = Instant::now();
-    let trusted: Trusted = read_json(&directory.join("trusted.json"))?;
-    ensure!(trusted.protocol == PROTOCOL, "incorrect cyclic protocol");
+    let default_trust = directory.join("trusted.json");
+    let trusted: TrustedVerifier = read_json(trusted_path.unwrap_or(&default_trust))?;
     let key = read_bounded(&directory.join("verifier.key"), MAX_VERIFIER_BYTES)?;
-    let verifier = CyclicVerifier::from_bytes(&key, &trusted.verifier_digest, &trusted.identity)?;
-    let public: AggregatePublic = read_json(&directory.join("statement.json"))?;
+    let verifier = RootVerifier::from_trusted(&key, &trusted)?;
+    let statement = match expected {
+        Some(statement) => statement.clone(),
+        None => TreeStatement::from_public(&read_json(&directory.join("statement.json"))?)?,
+    };
     let proof = read_bounded(&directory.join("aggregate.proof"), 16 << 20)?;
     let setup_ms = ms(start);
     let t = Instant::now();
-    verifier.verify(&proof, &public)?;
-    let mut summary = json!({"verified":true,"children":public.children.len(),"setup_ms":setup_ms,"verify_ms":ms(t)});
+    verifier.verify_statement(&proof, &statement)?;
+    let mut summary = json!({"verified":true,"children":statement.count,"statement":hex::encode(statement.bytes()),"setup_ms":setup_ms,"verify_ms":ms(t)});
     let peaks = monitor.finish();
     peaks.record(&mut summary);
     peaks.print();
@@ -800,6 +915,19 @@ fn negative_checks(verifier: &CyclicVerifier, proof: &TreeProof) -> Result<Vec<&
 #[cfg(test)]
 mod tests {
     use super::{Args, Limits, Parser};
+
+    #[test]
+    fn compact_statement_requires_trusted_verifier_metadata() {
+        let statement = format!("0x{}40", "ab".repeat(32));
+        let args = ["prove", "--verify", "--expected-statement", &statement];
+        assert!(Args::try_parse_from(args).is_err());
+        let parsed =
+            Args::try_parse_from(args.into_iter().chain(["--trusted", "expected.json"])).unwrap();
+        let expected = parsed.expected_statement.unwrap();
+        assert_eq!(expected.digest, [0xab; 32]);
+        assert_eq!(expected.count, 64);
+        assert!(super::parse_expected_statement(&statement[2..66]).is_err());
+    }
 
     #[test]
     fn proof_limits_share_one_budget() {

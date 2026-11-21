@@ -29,3 +29,26 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Unit tests
         run: cargo test --locked --workspace --lib
+
+  verifier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Verify native sumcheck vectors in pinned LeanVM
+        run: cargo test --locked --release --manifest-path adapters/leanvm/Cargo.toml
+      - uses: foundry-rs/foundry-toolchain@8b0419c685ef46cb79ec93fbdc131174afceb730 # v1.6.0
+        with:
+          version: v1.5.1
+      - name: Test native IMT root verification in Solidity
+        run: forge test --root crates/evm-verifier
+      - name: Test comparison-profile IMT root verification in Solidity
+        run: FOUNDRY_PROFILE=comparison forge test --root crates/evm-verifier
+      - name: Test the compact binary IMT polynomial opening
+        run: FOUNDRY_PROFILE=binary-compact forge test --root crates/evm-verifier
+      - name: Replay the reference terminal proof on Osaka
+        run: python3 crates/evm-verifier/scripts/replay.py --solc "$HOME/.svm/0.8.28/solc-0.8.28"

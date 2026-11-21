@@ -2,10 +2,46 @@ use std::{env, fs, path::PathBuf, process::Command};
 
 use anyhow::{Result, ensure};
 use recursive_imt_prover::{
-    binary::{IMT_DEPTH, relation::AggregatePublic},
+    binary::{IMT_DEPTH, aggregation_tree::TreeStatement, relation::AggregatePublic},
     files::{read_json, write_json},
 };
 use serde_json::Value;
+
+#[test]
+#[ignore = "builds the pinned LeanVM adapter and generates real recursive proofs"]
+fn fast_cli_verifies_a_saved_preimage_tree() -> Result<()> {
+    let scratch = tempfile::tempdir()?;
+    let dir = scratch.path().join("batch");
+    let bin = env!("CARGO_BIN_EXE_tree-demo");
+    let proved = Command::new(bin)
+        .args(["-n", "4", "-j", "2", "--threads", "2", "--keep", "--out"])
+        .arg(&dir)
+        .output()?;
+    ensure!(
+        proved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&proved.stderr)
+    );
+    let report: Value = read_json(&dir.join("report.json"))?;
+    assert_eq!(report["jobs"], 2);
+    assert_eq!(report["merge_count"], 3);
+    assert_eq!(report["client_privacy"], "non-hiding");
+    let expected = TreeStatement::from_public(&read_json(&dir.join("statement.json"))?)?;
+    let mut bytes = expected.bytes();
+    for accepted in [true, false] {
+        let result = Command::new(bin)
+            .args(["--verify", "--out"])
+            .arg(&dir)
+            .arg("--trusted")
+            .arg(dir.join("trusted.json"))
+            .arg("--expected-statement")
+            .arg(hex::encode(bytes))
+            .output()?;
+        assert_eq!(result.status.success(), accepted);
+        bytes[0] ^= 1;
+    }
+    Ok(())
+}
 
 #[cfg(unix)]
 #[test]
@@ -55,7 +91,16 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     let threads = env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "4".to_owned());
     ensure!(
         Command::new(executable)
-            .args(["-j", "3", "--threads", &threads, "--keep", "--out"])
+            .args([
+                "--backend",
+                "masked",
+                "-j",
+                "3",
+                "--threads",
+                &threads,
+                "--keep",
+                "--out"
+            ])
             .arg(&directory)
             .status()?
             .success(),
@@ -151,6 +196,38 @@ fn sixty_four_children_reuse_one_merge_key_and_verify_independently() -> Result<
     let verified: Value = serde_json::from_slice(&result.stdout)?;
     assert_eq!(verified["verified"], true);
     assert_eq!(verified["children"], 64);
+    let statement = TreeStatement::from_public(&public)?;
+    assert_eq!(verified["statement"], hex::encode(statement.bytes()));
+    // A relying party can have only the proof, key and its independently known statement.
+    let compact = scratch.path().join("compact");
+    fs::create_dir(&compact)?;
+    for name in ["aggregate.proof", "verifier.key"] {
+        fs::hard_link(directory.join(name), compact.join(name))?;
+    }
+    let check_compact = |expected: &TreeStatement| {
+        Command::new(executable)
+            .args(["--verify", "--threads", &threads, "--out"])
+            .arg(&compact)
+            .arg("--trusted")
+            .arg(directory.join("trusted.json"))
+            .arg("--expected-statement")
+            .arg(hex::encode(expected.bytes()))
+            .output()
+    };
+    assert!(check_compact(&statement)?.status.success());
+    let mut wrong_digest = statement.clone();
+    wrong_digest.digest[31] ^= 1;
+    assert!(!check_compact(&wrong_digest)?.status.success());
+    for count in [0, 2, 3, 32, 65] {
+        assert!(
+            !check_compact(&TreeStatement {
+                count,
+                ..statement.clone()
+            })?
+            .status
+            .success()
+        );
+    }
     let mut altered = public.clone();
     altered.children[0].root[0] ^= 1;
     write_json(&independent.join("statement.json"), &altered)?;

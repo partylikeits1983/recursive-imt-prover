@@ -128,7 +128,7 @@ impl ProductGkrShape {
     }
 
     /// Bind the protocol identity and the complete verifier-derived shape.
-    pub(crate) fn domain_separator<F, EF>(&self) -> DomainSeparator<Alphabet<F>>
+    pub fn domain_separator<F, EF>(&self) -> DomainSeparator<Alphabet<F>>
     where
         F: TranscriptField,
         EF: ExtensionField<F>,

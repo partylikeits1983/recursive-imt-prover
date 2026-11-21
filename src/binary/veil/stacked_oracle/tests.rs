@@ -23,6 +23,7 @@ fn coefficient_generator_and_compact_functional_match_dense_evaluation() -> Resu
             variables,
             columns: 5,
             log_stack: 2,
+            domains: Default::default(),
         };
         let code = BinaryCode::coefficients(1 << (variables + 2), 5, 2)?;
         let input: Vec<E> = (0..code.input_len).map(|_| rng.random()).collect();
@@ -166,6 +167,7 @@ fn stacked_oracle_authenticates_original_column_order_and_successors() -> Result
         variables: 3,
         columns: 5,
         log_stack: 2,
+        domains: Default::default(),
     };
     let columns: Vec<Vec<E>> = (0..spec.columns)
         .map(|_| (0..8).map(|_| rng.random()).collect())

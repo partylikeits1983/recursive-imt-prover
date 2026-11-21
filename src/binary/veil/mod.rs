@@ -5,6 +5,7 @@ pub mod aggregate;
 mod air_algebra;
 pub mod child;
 pub mod code;
+mod coins;
 mod compiler;
 pub mod components;
 pub mod constraints;

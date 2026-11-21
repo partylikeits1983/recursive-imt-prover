@@ -1,0 +1,31 @@
+[profile.default]
+src = "contracts"
+out = "out"
+cache_path = "cache"
+solc = "0.8.28"
+evm_version = "cancun"
+via_ir = true
+optimizer = true
+optimizer_runs = 833
+fs_permissions = [{ access = "read", path = "./test/fixtures" }]
+
+[profile.comparison]
+test = "profiles/comparison/test"
+match_path = "profiles/comparison/test/**"
+out = "out-comparison"
+cache_path = "cache-comparison"
+remappings = ["contracts/imt/NativeMidpointPolicy.sol=profiles/comparison/NativeMidpointPolicy.sol"]
+
+[profile.binary-compact]
+test = "profiles/binary-compact/test"
+match_path = "profiles/binary-compact/test/**"
+out = "out-binary-compact"
+cache_path = "cache-binary-compact"
+remappings = ["contracts/binary/BinaryTerminalProfile.sol=profiles/binary-compact/BinaryTerminalProfile.sol"]
+
+[profile.binary-masked]
+test = "profiles/binary-masked/test"
+match_path = "profiles/binary-masked/test/**"
+out = "out-binary-masked"
+cache_path = "cache-binary-masked"
+remappings = ["contracts/binary/BinaryTerminalProfile.sol=profiles/binary-masked/BinaryTerminalProfile.sol"]

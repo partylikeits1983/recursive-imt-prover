@@ -166,15 +166,19 @@ impl CommittedBlend {
 }
 
 impl BlendOpening {
-    pub fn verify<W: BlendFunctional + ?Sized>(
+    pub(super) fn round_messages(&self) -> (&[[E; 2]], E) {
+        (&self.rounds, self.value)
+    }
+
+    /// Check the functional sumcheck through the terminal equality. The PCS
+    /// must still authenticate the returned point and this opening's value.
+    pub(super) fn reduce<W: BlendFunctional + ?Sized>(
         &self,
         root: &[u8; 32],
         weights: &W,
         sum: E,
-        parameters: &Parameters,
         transcript: &mut Transcript,
-    ) -> Result<()> {
-        let (pcs, protocol, _) = backend(weights.length(), parameters)?;
+    ) -> Result<Point<E>> {
         ensure!(
             self.rounds.len() == weights.length().ilog2() as usize,
             "wrong blend sumcheck round count"
@@ -195,11 +199,60 @@ impl BlendOpening {
             "blend functional sumcheck failed"
         );
         transcript.fields(b"blend-sumcheck-terminal", &[self.value]);
+        Ok(point)
+    }
+
+    pub fn verify<W: BlendFunctional + ?Sized>(
+        &self,
+        root: &[u8; 32],
+        weights: &W,
+        sum: E,
+        parameters: &Parameters,
+        transcript: &mut Transcript,
+    ) -> Result<()> {
+        let (pcs, protocol, _) = backend(weights.length(), parameters)?;
+        let point = self.reduce(root, weights, sum, transcript)?;
         let mut challenger = challenger(&transcript.fingerprint());
         let cap = MerkleCap::new(vec![*root]);
         pcs.observe_commitment(&cap, &mut challenger);
+        let seal = self.verify_opening(&pcs, &protocol, point, &cap, challenger)?;
+        transcript.bytes(b"blend-whir-seal-v3", &seal);
+        Ok(())
+    }
+
+    pub(super) fn opening_advice(
+        &self,
+        root: &[u8; 32],
+        cp: &super::child::checkpoint::StackedBlendCheckpoint,
+        parameters: &Parameters,
+    ) -> Result<(Vec<F>, [u8; 32])> {
+        ensure!(
+            (8..=22).contains(&cp.point.len()),
+            "unexpected coordinate opening arity"
+        );
+        let length = 1 << cp.point.len();
+        let prepared = recursive::PreparedWhir::new(length, parameters)?;
+        let private = prepared.import(&cp.seed, root, &cp.point, &self.pcs)?;
+        let (pcs, protocol, _) = backend(length, parameters)?;
+        let mut ch = challenger(&cp.seed);
+        let cap = MerkleCap::new(vec![*root]);
+        pcs.observe_commitment(&cap, &mut ch);
+        Ok((
+            private,
+            self.verify_opening(&pcs, &protocol, Point::new(cp.point.clone()), &cap, ch)?,
+        ))
+    }
+
+    fn verify_opening(
+        &self,
+        pcs: &Pcs,
+        protocol: &OpeningProtocol,
+        point: Point<E>,
+        cap: &MerkleCap<F, [u8; 32]>,
+        mut challenger: Challenger,
+    ) -> Result<[u8; 32]> {
         let evals = pcs
-            .verify_at(&cap, &self.pcs, &protocol, &[point], &mut challenger)
+            .verify_at(cap, &self.pcs, protocol, &[point], &mut challenger)
             .map_err(|e| anyhow::anyhow!("invalid blend WHIR proof: {e:?}"))?;
         ensure!(
             evals.len() == 1 && evals[0].current().len() == 3 && evals[0].next().is_empty(),
@@ -219,8 +272,7 @@ impl BlendOpening {
             reconstructed == self.value,
             "WHIR opening does not authenticate sumcheck terminal"
         );
-        transcript.bytes(b"blend-whir-seal-v3", &seal(&mut challenger));
-        Ok(())
+        Ok(seal(&mut challenger))
     }
 }
 

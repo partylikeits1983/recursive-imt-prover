@@ -5,9 +5,15 @@ the resulting proofs over Poly64/Poly192 binary fields. Children use experimenta
 statistical masking. Aggregates are non-ZK. Joint child ZK and end-to-end 128-bit
 security remain unestablished; this is research code.
 
+## Preimage membership client
+
+The experimental `--preimage` profile proves knowledge of a 32-byte secret, its private 32-bit leaf position and 32 private siblings. The application supplies the 32-byte root. The leaf is Keccak-256 of the 16 ASCII bytes `IMT-PREIMAGE-V01` followed by the secret. At each of the 32 levels the next least-significant index bit orders the current digest and sibling, and Keccak-256 hashes `IMT-KECCAK-NODE1` followed by those two digests. Every hash uses Ethereum Keccak padding and 24 rounds. The AIR binds the final digest to the supplied root. [Client AIR](../src/binary/veil/membership_air.rs) · [Reference hash](../src/binary/tree.rs)
+
+The batch encoding reserves the last 64 bytes of its existing 96-byte record as zeros for this profile. The AIR enforces these zeros and the profile has its own trusted verifier identity. Only the 32 root bytes vary. Clients can call `PreparedMembership::prove_preimage` with the secret and path directly. `tree-demo --preimage` verifies and aggregates those proofs without receiving their witnesses. For four clients on an M2 Pro with five threads and one proof slot, average client witness generation and proving took 3.47 seconds and average aggregation took 7.81 seconds. A fresh verifier authenticated the ordered four-leaf digest and count. The statistical privacy and end-to-end knowledge claims remain open. [Client API](../src/binary/veil/child.rs) · [Security accounting](binary-security.md)
+
 ## Child statement
 
-Each child replaces one private record with another of the same quantity. Its
+In the original record profile, each child replaces one private record with another of the same quantity. Its
 96 public bytes are the root, input tag and output commitment, in that order.
 The witness holds two 32-byte labels, two 32-byte nonces, one unsigned 64-bit
 quantity, the 32-bit input position and 32 sibling hashes. Both records use
@@ -33,8 +39,7 @@ model. The application selects accepted roots, checks tag uniqueness and
 appends outputs. Reusing a nonce repeats the tag, including across roots.
 Anyone who knows a record nonce can predict its tag.
 Key-based authorization, encrypted delivery and multi-record balancing are
-outside this relation. The public/private split is modeled on an action with
-one hidden input and one hidden output. [Orchard circuit](https://github.com/zcash/orchard/blob/main/src/circuit.rs)
+outside this relation.
 
 ## Membership AIR
 
@@ -167,8 +172,7 @@ carried authority. The final key bytes match the earlier eight-child run.
 The membership/nullifier relation is established prior art. For example,
 [Tornado Cash's circuit](https://github.com/tornadocash/tornado-core/blob/master/circuits/withdraw.circom)
 binds the same private nullifier in a note commitment and a public nullifier hash,
-using different hashes and encodings. [Zerocash](https://eprint.iacr.org/2014/349)
-is a foundational anonymous-payment reference. Transparent recursion and the
+using different hashes and encodings. Transparent recursion and the
 masking approach also have prior art in [Fractal](https://eprint.iacr.org/2019/1076)
 and [VEIL](https://eprint.iacr.org/2026/683).
 

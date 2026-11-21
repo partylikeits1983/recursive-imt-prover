@@ -1,5 +1,8 @@
 //! PCS-only replay of a verified parent. Preserve its actual tables, hints and
 //! prescribed queries. The independent replay transcript has no AIR acceptance role.
+mod fixed;
+pub use fixed::FixedColumnProfile;
+
 use crate::{
     F, Prepared,
     config::{challenger, pcs_with_rate},

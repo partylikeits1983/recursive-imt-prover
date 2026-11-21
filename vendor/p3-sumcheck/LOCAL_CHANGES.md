@@ -8,6 +8,8 @@ The root source fingerprint includes this crate's manifest and all Rust sources.
 
 ## Changes
 
+- Evaluate generic-degree round polynomials with the product form of Lagrange interpolation. The domain and weights stay fixed. The per-challenge evaluation uses one pass without temporary vectors or inversions and also works at interpolation nodes.
+
 `src/ring_switch/bits/reduction.rs`: deferred suffix-bank tensors restrict their
 input to the contiguous run selected by leading Boolean **head** coordinates.
 Every omitted row has equality weight zero. Prefix coordinates that reach into
@@ -29,6 +31,10 @@ cargo test --locked --release --manifest-path vendor/p3-sumcheck/Cargo.toml --ta
 ```
 
 Unused development dependencies removed: `criterion`.
+
+The layout verifier exposes the canonical domains for virtual evaluations and
+claim batching. The Solidity differential replay uses the same shapes as the
+native Fiat–Shamir verifier.
 
 The generic-degree prover has an opt-in running sum. The checkpoint Keccak
 prover uses the same round interpolator as the verifier to recover a Boolean

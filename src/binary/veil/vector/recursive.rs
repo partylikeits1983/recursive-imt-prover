@@ -269,7 +269,14 @@ impl PreparedVector {
         let queries = transcript.indices(b, self.code.queries, self.code.codeword_len)?;
         let width = self.columns + 1 + usize::from(self.product.is_some());
         let mut values = Vec::new();
-        authenticate_batch(b, &proof.root, &proof.rows, &queries, width)?;
+        authenticate_batch(
+            b,
+            &proof.root,
+            &proof.rows,
+            &queries,
+            width,
+            crate::binary::veil::hash::RowDomains::Original,
+        )?;
         for row in &proof.rows {
             values.push(circuit_dot(b, &row.values[..self.columns + 1], &factors)?);
         }

@@ -1,0 +1,102 @@
+--- a/crates/verifier/src/bus.rs
++++ b/crates/verifier/src/bus.rs
+@@ -111,7 +111,9 @@
+ impl ColumnClaim {
+     /// `None` for a column nothing commits, whose claim never reaches the stack.
+     pub fn on_stack(&self, layout: &Layout) -> Option<StackClaim<'static>> {
+-        let point = layout.placements[self.column]?.stack_point(&self.point, layout.stack_log);
++        let placement = layout.placements[self.column]?;
++        crate::transcript::trace_basis_point("column", placement.index, &self.point);
++        let point = placement.stack_point(&self.point, layout.stack_log);
+         Some((Box::new(move |x| eq_eval(&point, x)), self.value))
+     }
+ }
+@@ -149,6 +151,7 @@
+     // name them: the memory image on push, then each array's final count on pull.
+     let memory_low = &point[..layout.log_memory];
+     let bytecode_low = &point[..layout.log_bytecode];
++    eprintln!("PROFILE raw_target {} 4", transcript.stream_offset());
+     let memory = transcript.next_scalars(2)?;
+     let memory_final = transcript.next_scalar()?;
+     let bytecode_final = transcript.next_scalar()?;
+--- a/crates/verifier/src/keccak.rs
++++ b/crates/verifier/src/keccak.rs
+@@ -277,6 +277,7 @@
+     let mut outputs = None;
+     if shape.segments() > 1 {
+         let (slot, weights, value) = open(transcript, shape, &first, 1, shape.segments() - 1, committed)?;
++        eprintln!("PROFILE output_target {}", transcript.stream_offset());
+         let word = transcript.next_scalar()?;
+         if transcript.checked() {
+             require(weights[0] * word == value, VerifierError::KeccakOutputOpening)?;
+@@ -286,6 +287,7 @@
+     // The inputs: the instances of a pack first, then the slot.
+     let (low, value) = sumcheck(transcript, claim.value, 3, &[None; PACK_BITS])?;
+     let (slot, weights, value) = open(transcript, shape, &claim, 0, shape.segments(), value)?;
++    eprintln!("PROFILE slice_target {}", transcript.stream_offset());
+     let slices = transcript.next_scalars(K_BITS)?;
+     if transcript.checked() {
+         require(
+--- a/crates/verifier/src/lib.rs
++++ b/crates/verifier/src/lib.rs
+@@ -171,6 +171,8 @@
+ fn read_ood(transcript: &mut Transcript, vars: usize, bits: u32) -> Result<StackClaim<'static>, VerifierError> {
+     transcript.grind_check(bits)?;
+     let z = transcript.samples(vars);
++    crate::transcript::trace_basis_point("ood", 0, &z);
++    eprintln!("PROFILE ood_target {}", transcript.stream_offset());
+     let value = transcript.next_scalar()?;
+     Ok((Box::new(move |x| eq_eval(&z, x)), value))
+ }
+@@ -318,7 +320,14 @@
+         &mut transcript,
+     )?;
+     let mut claims = bus.claims;
++    let mut offset = transcript.stream_offset() - evaluations.iter().map(|(_, values)| values.len()).sum::<usize>();
+     for (base, (point, values)) in GLOBAL_COLUMN_BASES.into_iter().zip(&evaluations) {
++        for i in 0..values.len() {
++            if layout.placements[base + i].is_some() {
++                eprintln!("PROFILE raw_target {} 1", offset + i);
++            }
++        }
++        offset += values.len();
+         claims.extend(values.iter().enumerate().map(|(local, &value)| ColumnClaim {
+             column: base + local,
+             point: point.clone(),
+@@ -328,6 +337,7 @@
+ 
+     // 5] binding the public input: each memory limb's claim is that limb's public line at the challenge, which the verifier
+     // evaluates itself, so the prover sends nothing. A line: numerator one, no grind.
++    eprintln!("PROFILE public_target {}", transcript.stream_offset());
+     let public_challenge = transcript.sample();
+     let (first, second) = public_input.halves();
+     let mut public_point = vec![ZERO; layout.placements[MEMORY_0].expect("memory is committed").variables];
+@@ -362,6 +372,7 @@
+ 
+     // 7] Ring-switching
+     let (point, slices) = openings.inputs;
++    crate::transcript::trace_basis_point("ring", layout.placements[QKECCAK].unwrap().index, &point);
+     let (ringswitch_target, ringswitch_weight) = ring_switch(point, &slices, &mut transcript)?;
+     // That claim is supported on q_keccak's region of the stack, so its weight carries the
+     // placement's selector, and it leads the batch, taking the first power.
+--- a/crates/verifier/src/ring_switch.rs
++++ b/crates/verifier/src/ring_switch.rs
+@@ -79,6 +79,7 @@
+     transcript: &mut Transcript,
+ ) -> Result<(E, impl Fn(&[E]) -> E + use<>), VerifierError> {
+     transcript.grind_check(BATCH_GRINDING_BITS)?;
++    eprintln!("PROFILE map_target {}", transcript.stream_offset());
+     let challenges = transcript.samples(2 * RING_MAP_WIDTH);
+     let (f, g) = challenges.split_at(RING_MAP_WIDTH);
+     let coefficients = ring_coefficients(f, g);
+--- a/crates/verifier/src/transcript.rs
++++ b/crates/verifier/src/transcript.rs
+@@ -292,3 +292,8 @@
+     }
+     Ok((point, claim))
+ }
++
++pub(crate) fn trace_basis_point(group: &str, index: u64, point: &[E]) {
++    let words: Vec<u128> = point.iter().map(|v| u128::from(v.c0) | u128::from(v.c1) << 64).collect();
++    eprintln!("PROFILE basis_point {group} {index} {words:?}");
++}

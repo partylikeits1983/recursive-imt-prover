@@ -88,7 +88,7 @@ impl Batch {
         );
         self.verify(statement, proof, context)?;
         let entry = crate::verifier::CircuitInput {
-            log_inv_rate: crate::WHIR_LOG_INV_RATE,
+            log_inv_rate: self.log_inv_rate,
             root: statement.commitments[0].clone(),
             proof: proof.openings[0].clone(),
             protocol: self.groups[0].1.clone(),

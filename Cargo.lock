@@ -371,10 +371,85 @@ dependencies = [
 ]
 
 [[package]]
+name = "evm-verifier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+]
+
+[[package]]
+name = "experimental_keccak_gkr"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "experimental_parallel",
+ "experimental_pcs",
+ "experimental_primitives",
+ "fiat_shamir_prover",
+ "tracing",
+ "verifier",
+]
+
+[[package]]
+name = "experimental_lean_vm_core"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "experimental_keccak_gkr",
+ "experimental_parallel",
+ "experimental_pcs",
+ "experimental_primitives",
+ "fiat_shamir_prover",
+ "isa",
+ "tracing",
+ "verifier",
+]
+
+[[package]]
+name = "experimental_parallel"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "experimental_pcs"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "experimental_parallel",
+ "experimental_primitives",
+ "fiat_shamir_prover",
+ "tracing",
+ "verifier",
+]
+
+[[package]]
+name = "experimental_primitives"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "experimental_parallel",
+ "fiat_shamir_prover",
+ "keccak256",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+
+[[package]]
+name = "fiat_shamir_prover"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "keccak256",
+ "verifier",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -468,6 +543,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "clap",
  "hex",
  "miniz_oxide",
  "p3-air 0.8.0",
@@ -510,10 +586,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "imt-leanvm-masked-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "experimental_lean_vm_core",
+ "isa",
+ "p3-binary-field 0.9.0-rc.2",
+ "recursive-imt-prover",
+ "sha3",
+ "tempfile",
+ "verifier",
+ "zkdsl_compiler",
+]
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "isa"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "verifier",
+]
 
 [[package]]
 name = "itertools"
@@ -538,6 +638,11 @@ checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
 dependencies = [
  "cpufeatures 0.2.17",
 ]
+
+[[package]]
+name = "keccak256"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
 
 [[package]]
 name = "libc"
@@ -2279,6 +2384,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "verifier"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+
+[[package]]
 name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2297,6 +2407,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
+]
+
+[[package]]
+name = "zkdsl_compiler"
+version = "0.1.0"
+source = "git+https://github.com/leanEthereum/leanVM?rev=73c2cc094c0be4a1c5af6ec613e8021c9e16da87#73c2cc094c0be4a1c5af6ec613e8021c9e16da87"
+dependencies = [
+ "isa",
+ "keccak256",
+ "verifier",
 ]
 
 [[package]]

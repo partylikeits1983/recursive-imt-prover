@@ -42,6 +42,10 @@ impl BinaryPolyWhirVerifier {
         Ok(())
     }
 
+    /// Trusted transcript separators and query geometry for external verification backends.
+    pub fn plan(&self) -> &WhirPlan<Poly64, Poly192> {
+        &self.plan
+    }
     /// Conservative checked input counters retained by the trusted plan.
     pub const fn input_resource_usage(&self) -> InputResourceUsage {
         self.plan.usage

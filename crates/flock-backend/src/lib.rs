@@ -21,11 +21,14 @@ mod known_openings_tests;
 mod mixed;
 #[cfg(feature = "opening-bench")]
 pub mod opening_bench;
+#[cfg(feature = "opening-bench")]
+pub mod opening_trace;
 mod packing;
 mod products;
 mod proof_codec;
 mod recursive_layout;
 mod swaps;
+pub mod terminal_opening;
 mod verifier;
 mod witness;
 
@@ -75,7 +78,7 @@ pub enum HashBackend {
 }
 
 pub struct Prepared {
-    direct_bridge: bool,
+    profile: Profile,
     backend: HashBackend,
     checkpoint: Option<LinkedBatch>,
     circuit: Circuit<OldF>,
@@ -91,6 +94,14 @@ pub struct Prepared {
     vk: VerifyingKey<Config>,
     seed: Vec<u8>,
     pub geometry: Geometry,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Profile {
+    Standard,
+    Cyclic,
+    Terminal,
+    TerminalWideWitness,
 }
 
 #[derive(Serialize)]
@@ -132,6 +143,10 @@ pub struct Metrics {
 }
 
 impl Prepared {
+    fn direct_bridge(&self) -> bool {
+        self.profile != Profile::Standard
+    }
+
     pub fn new(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
         Self::repeated(circuit, 1, domain, HashBackend::Flock)
     }
@@ -146,11 +161,32 @@ impl Prepared {
         domain: &[u8],
         backend: HashBackend,
     ) -> Result<Self> {
-        Self::prepare(circuit, instances, domain, backend, false)
+        Self::prepare(circuit, instances, domain, backend, Profile::Standard)
     }
 
     pub fn recursive_pair(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
-        Self::prepare(circuit, 2, domain, HashBackend::Checkpoint, true)
+        Self::prepare(circuit, 2, domain, HashBackend::Checkpoint, Profile::Cyclic)
+    }
+
+    /// Prove two instances for a fixed final merge, with trusted circuit-specific wiring.
+    pub fn terminal_pair(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
+        Self::prepare(
+            circuit,
+            2,
+            domain,
+            HashBackend::Checkpoint,
+            Profile::Terminal,
+        )
+    }
+
+    pub fn terminal_pair_wide_witness(circuit: Circuit<OldF>, domain: &[u8]) -> Result<Self> {
+        Self::prepare(
+            circuit,
+            2,
+            domain,
+            HashBackend::Checkpoint,
+            Profile::TerminalWideWitness,
+        )
     }
 
     fn prepare(
@@ -158,8 +194,10 @@ impl Prepared {
         instances: usize,
         domain: &[u8],
         backend: HashBackend,
-        recursive: bool,
+        profile: Profile,
     ) -> Result<Self> {
+        let recursive = profile != Profile::Standard;
+        let cyclic = profile == Profile::Cyclic;
         ensure!((1..=64).contains(&instances), "unsupported instance count");
         if recursive {
             ensure!(
@@ -234,7 +272,7 @@ impl Prepared {
         let extension_products = packing.products.as_ref().map_or(0, |s| s.rows.len());
         let conditional_swaps = packing.swaps.as_ref().map_or(0, |s| s.rows.len());
         let (shards, mut copies) =
-            fanout::partition(&widths, &fanout_pp.values, &packing.removed_uses, recursive)?;
+            fanout::partition(&widths, &fanout_pp.values, &packing.removed_uses, cyclic)?;
         drop(fanout_pp);
         let gates = gates::partition(
             &widths,
@@ -377,7 +415,7 @@ impl Prepared {
             );
         }
         for air in &mut airs {
-            if recursive && air.is_public_table() {
+            if cyclic && air.is_public_table() {
                 air.commit_public_ids()?;
             }
             air.prune_copies(&mut copies)?;
@@ -396,8 +434,14 @@ impl Prepared {
                 b"imt-checkpoint-backend-v6/708900d7a730d6ce4d5421d43e2193f2301920fa".as_slice()
             }
         });
-        if recursive {
+        if cyclic {
             identity.update(b"/poly64-word-openings-v1/direct-bridge-v1/pp-digits-v1/pp-rate-half/joint-boundaries-v1/main-rate-half/packed-chi16");
+        } else if matches!(profile, Profile::Terminal | Profile::TerminalWideWitness) {
+            identity.update(b"/terminal-v1/direct-bridge/pp-digits/joint-boundaries/packed-chi16");
+            identity.update((config::TERMINAL_LOG_INV_RATE as u64).to_le_bytes());
+            if profile == Profile::TerminalWideWitness {
+                identity.update(b"/witness-first-fold-5-v1");
+            }
         }
         identity.update((domain.len() as u64).to_le_bytes());
         identity.update(domain);
@@ -420,7 +464,7 @@ impl Prepared {
                         coordinates[column] |= raw;
                     }
                 }
-                let widths = if recursive {
+                let widths = if cyclic {
                     let widths = a.recursive_preprocessed_widths()?;
                     recursive_layout::check_coordinates(&coordinates, &widths)?;
                     widths
@@ -501,19 +545,28 @@ impl Prepared {
             }
         }
         let seed = identity.finalize().to_vec();
-        let pp_log_inv_rate = if recursive {
-            config::RECURSIVE_PP_LOG_INV_RATE
-        } else {
-            WHIR_LOG_INV_RATE
+        let (main_rate, pp_rate) = match profile {
+            Profile::Standard => (WHIR_LOG_INV_RATE, WHIR_LOG_INV_RATE),
+            Profile::Cyclic => (1, config::RECURSIVE_PP_LOG_INV_RATE),
+            Profile::Terminal | Profile::TerminalWideWitness => {
+                (config::TERMINAL_LOG_INV_RATE, config::TERMINAL_LOG_INV_RATE)
+            }
         };
         let config = Config::with_boundary(
             &shapes,
             main_encoding,
             &pp,
             pp_encoding,
-            pp_log_inv_rate,
+            pp_rate,
             recursive.then_some(log_calls),
-            if recursive { 1 } else { WHIR_LOG_INV_RATE },
+            config::MainCode {
+                log_inv_rate: main_rate,
+                first_fold: if profile == Profile::TerminalWideWitness {
+                    5
+                } else {
+                    WHIR_FOLD
+                },
+            },
         )?;
         let checkpoint = if let Some(security) = &config.joint_security {
             Some(LinkedBatch::joint(log_calls, security, true)?)
@@ -604,7 +657,7 @@ impl Prepared {
             security_terms: terms,
         };
         Ok(Self {
-            direct_bridge: recursive,
+            profile,
             backend,
             checkpoint,
             circuit,
@@ -640,7 +693,7 @@ impl Prepared {
             )
         });
         let boundaries = (self.backend == HashBackend::Checkpoint).then_some(states);
-        if !self.direct_bridge {
+        if !self.direct_bridge() {
             tables[self.hash_index] = boundaries.as_ref().map(BoundaryWitness::ports);
         }
         let public = self.public(public)?;

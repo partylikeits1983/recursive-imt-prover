@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    child::{MaskedMembershipProof, recursive::PreparedMaskedVerifier},
+    child::{self, MaskedMembershipProof, recursive::PreparedMaskedVerifier},
     parameters::Parameters,
 };
 use crate::{
@@ -100,19 +100,34 @@ impl PreparedMaskedAggregate {
         backend: HashBackend,
         format: StatementFormat,
     ) -> Result<Self> {
+        Self::with_child_protocol(settings, parameters, backend, format, child::PROTOCOL)
+    }
+
+    pub fn with_child_protocol(
+        settings: &Settings,
+        parameters: Parameters,
+        backend: HashBackend,
+        format: StatementFormat,
+        child_protocol: &str,
+    ) -> Result<Self> {
         validate_configuration(settings, &parameters)?;
         let binding = configuration_binding(settings, &parameters, backend, format)?;
-        let verifier = PreparedMaskedVerifier::new(settings.depth, parameters)?;
+        let verifier =
+            PreparedMaskedVerifier::for_protocol(settings.depth, parameters, child_protocol)?;
         let circuit = match format {
             StatementFormat::Ordered => verifier.circuit()?,
             StatementFormat::CyclicPair => tree_pair_circuit(&verifier)?,
         };
-        let domain = format!(
+        let mut domain = format!(
             "{}/{}/{}",
             format.protocol(backend),
             settings.depth,
             settings.batch_size
         );
+        if child_protocol != child::PROTOCOL {
+            domain.push('/');
+            domain.push_str(child_protocol);
+        }
         let outer = if format == StatementFormat::CyclicPair {
             Prepared::recursive_pair(circuit, domain.as_bytes())?
         } else {

@@ -17,7 +17,6 @@ use crate::binary::{
             recursive::{CircuitReader, LinearTarget, constant},
         },
         constraints::recursive::{PreparedInner, RelationTarget},
-        membership_air::WIDTH,
         parameters::Parameters,
         stacked_oracle::recursive::opening::{OpeningTargets, PreparedStacked, circuit_powers},
         whir::recursive::transcript::CircuitTranscript,
@@ -32,7 +31,11 @@ pub struct PreparedMaskedVerifier {
 
 impl PreparedMaskedVerifier {
     pub fn new(depth: usize, parameters: Parameters) -> Result<Self> {
-        let child = PreparedMembership::new(depth, parameters.clone())?;
+        Self::for_protocol(depth, parameters, PROTOCOL)
+    }
+
+    pub fn for_protocol(depth: usize, parameters: Parameters, protocol: &str) -> Result<Self> {
+        let child = PreparedMembership::for_protocol(depth, parameters.clone(), protocol)?;
         let inner = PreparedInner::new(child.messages, child.algebra.products, &parameters)?;
         let oracle = PreparedStacked::new(child.oracle.clone(), &parameters)?;
         Ok(Self {
@@ -88,7 +91,7 @@ impl PreparedMaskedVerifier {
         let mut transcript = CircuitTranscript::from_state([ExprId::ZERO; 32]);
         let protocol = bytes(b, compiler::PROTOCOL);
         transcript.bytes(b, b"protocol", &protocol)?;
-        let mut binding = PROTOCOL.as_bytes().to_vec();
+        let mut binding = self.child.protocol().as_bytes().to_vec();
         binding.extend(self.child.identity);
         for value in [
             self.child.parameters.query_bits,
@@ -137,16 +140,16 @@ impl PreparedMaskedVerifier {
         reader.consume_authenticated(oracle.masked.len())?;
         let main: Vec<Vec<_>> = (0..2)
             .map(|j| {
-                (0..WIDTH)
-                    .map(|i| LinearTarget::wire(b, start + j * WIDTH + i))
+                (0..self.child.trace_width())
+                    .map(|i| LinearTarget::wire(b, start + j * self.child.trace_width() + i))
                     .collect()
             })
             .collect();
         let mut linear = Vec::new();
         for (j, values) in main.iter().enumerate() {
             // Match the native canonical ordering, including zero constants.
-            let mask =
-                LinearTarget::wire(b, start + 2 * WIDTH + j).scale(b, &opening.mask_coefficient);
+            let mask = LinearTarget::wire(b, start + 2 * self.child.trace_width() + j)
+                .scale(b, &opening.mask_coefficient);
             let mut check = LinearTarget::constant(opening.constants[j].clone()).add(b, &mask);
             for (value, coefficient) in values.iter().zip(&opening.coefficients) {
                 let term = value.scale(b, coefficient);

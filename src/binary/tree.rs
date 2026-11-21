@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, ensure};
 use sha3::{Digest, Keccak256};
 
+pub const PREIMAGE_DOMAIN: &[u8; 16] = b"IMT-PREIMAGE-V01";
 pub const RECORD_DOMAIN: &[u8; 16] = b"IMT-RECORD-OPEN1";
 pub const NODE_DOMAIN: &[u8; 16] = b"IMT-KECCAK-NODE1";
 pub const TAG_DOMAIN: &[u8; 16] = b"IMT-RECORD-USED1";
@@ -18,6 +19,14 @@ pub struct Imt {
 
 pub fn keccak(bytes: &[u8]) -> Hash {
     Keccak256::digest(bytes).into()
+}
+
+/// Leaf commitment used by the root-only preimage membership profile.
+pub fn preimage_leaf(preimage: &Hash) -> Hash {
+    let mut hash = Keccak256::new();
+    hash.update(PREIMAGE_DOMAIN);
+    hash.update(preimage);
+    hash.finalize().into()
 }
 
 pub fn commitment(label: &Hash, nonce: &Hash, quantity: u64) -> Hash {

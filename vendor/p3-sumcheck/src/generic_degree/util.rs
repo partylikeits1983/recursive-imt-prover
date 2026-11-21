@@ -2,9 +2,8 @@
 
 use alloc::vec::Vec;
 
-use p3_field::{Field, batch_multiplicative_inverse};
-use p3_matrix::dense::RowMajorMatrix;
-use p3_matrix::interpolation::{InterpolateArbitrary, barycentric_weights};
+use p3_field::Field;
+use p3_matrix::interpolation::barycentric_weights;
 
 /// Evaluates each round polynomial at the sampled challenge.
 ///
@@ -12,7 +11,7 @@ use p3_matrix::interpolation::{InterpolateArbitrary, barycentric_weights};
 ///
 /// - The barycentric weights depend only on that domain.
 /// - They are precomputed once and reused across all rounds.
-/// - Each round then contributes only the per-challenge difference inverses.
+/// - Each round evaluates the interpolation polynomial by products and sums.
 pub struct RoundPolyInterpolator<EF> {
     /// Integer domain nodes `0, 1, …, degree`, lifted into the field.
     x_coords: Vec<EF>,
@@ -59,32 +58,24 @@ impl<EF: Field> RoundPolyInterpolator<EF> {
     pub fn eval(&self, evals: &[EF], sum_constraint: EF, r: EF) -> EF {
         // Width contract, enforced upstream by the round polynomial's fixed-length step.
         // A bounded length there would replace that rejection with a silent mis-interpolation.
-        debug_assert_eq!(evals.len() + 1, self.x_coords.len());
-
-        // Reconstruct the full evaluation vector at the integer nodes 0, 1, …, degree.
-        //
-        //     evals[0] = h(0)
-        //     evals[i] = h(i + 1) for i in 1..degree
-        //     h(1)     = sum_constraint - h(0)        (sumcheck invariant)
-        let mut full: Vec<EF> = Vec::with_capacity(self.x_coords.len());
-        full.push(evals[0]);
-        full.push(sum_constraint - evals[0]);
-        full.extend_from_slice(&evals[1..]);
-
-        // Distance from the challenge to each domain node.
-        let diffs: Vec<EF> = self.x_coords.iter().map(|&x| r - x).collect();
-
-        // A challenge that lands on a domain node is evaluated exactly there.
-        //
-        // This both returns the right answer and avoids inverting a zero below.
-        if let Some(i) = diffs.iter().position(|d| d.is_zero()) {
-            return full[i];
+        assert_eq!(evals.len() + 1, self.x_coords.len());
+        let (&h0, rest) = evals.split_first().expect("a round has positive degree");
+        let values = core::iter::once(sum_constraint - h0).chain(rest.iter().copied());
+        // After visiting nodes 0..i, product is their vanishing polynomial at r.
+        // Each weighted sample contributes the product with only its own factor omitted.
+        // This polynomial form of Lagrange interpolation also holds at the nodes.
+        let mut product = r - self.x_coords[0];
+        let mut sum = self.weights[0] * h0;
+        for ((&node, &weight), value) in self.x_coords[1..]
+            .iter()
+            .zip(&self.weights[1..])
+            .zip(values)
+        {
+            let difference = r - node;
+            sum = sum * difference + product * (weight * value);
+            product *= difference;
         }
-
-        // Off-domain: invert the differences and apply the precomputed weights.
-        let diff_invs = batch_multiplicative_inverse(&diffs);
-        RowMajorMatrix::new_col(full)
-            .interpolate_arbitrary_with_precomputation(&self.weights, &diff_invs)[0]
+        sum
     }
 
     /// Extend a round polynomial's transmitted evaluations up to `target_len` entries.
@@ -162,7 +153,7 @@ mod tests {
 
     #[test]
     fn round_poly_eval_on_domain_node_is_exact() {
-        // Invariant: a challenge on a domain node returns that node's value via the zero-difference shortcut, not the inversion path.
+        // A challenge on a domain node returns exactly the corresponding value.
         //
         // Fixture state: random degree-3 polynomial.
         //

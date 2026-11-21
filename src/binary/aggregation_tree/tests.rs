@@ -73,6 +73,11 @@ fn accepts(circuit: &Circuit<F>, public: &[F], private: &[F]) -> Result<bool> {
 
 #[test]
 fn ordered_statement_binds_input_tag_root_and_count() -> Result<()> {
+    let full = TreeStatement::from_public(&public(64))?;
+    assert_eq!(
+        hex::encode(full.bytes()),
+        "7293b4bcf5ed3ad8ad655d255c6c63ac7a99632fced837e931290728a21a502540"
+    );
     let public = public(8);
     let expected = TreeStatement::from_public(&public)?;
     for i in 0..8 {

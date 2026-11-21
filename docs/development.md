@@ -14,12 +14,21 @@ See [security limits](binary-security.md) and [measurements](binary-veil.md).
 | `src/binary/aggregation_tree.rs`, `aggregation_tree/` | Ordered statement commitments and the reusable merge prover and verifier |
 | `src/binary/veil/` | Masked child, recursive verifier and aggregation |
 | `crates/flock-backend/` | Native product-bus prover and linked Keccak backends |
+| `adapters/leanvm/`, `benches/leanvm-recursion.rs` | Pinned LeanVM guest, native sumcheck conformance vector and default synthetic preimage recursion benchmark |
+| [`crates/evm-verifier/`](../crates/evm-verifier/) | Solidity terminal verifier, Rust calldata encoder and local EVM replay |
 | `src/binary/engine.rs`, `security.rs` | Non-ZK baseline and conditional security budgets |
 | `src/bin/`, `src/benchmark.rs`, `src/files.rs` | CLI, measurements and bounded file I/O |
 | `scripts/`, `benchmarks/` | Benchmark drivers and retained measurements |
 | `vendor/` | Pinned sources required by documented upstream patches |
 
 ## Next work
+
+The release gate is one standard Ethereum transaction that verifies the final
+recursive IMT root proof in Solidity for under 11 million gas, including calldata.
+Pin the authority and verify against the independently expected 64-leaf statement.
+Record proof bytes, prover time and memory, transaction receipt and deployed sizes.
+Keep the Rust prover independent of Ethereum. Profile LeanVM separately.
+[Production plan](ethereum-terminal-proof-plan.md)
 
 Retain the 64-child integration test as the correctness gate after changes to the
 recursive format: 32 first aggregates, then 16, 8, 4, 2 and 1 merges. Build the
@@ -49,12 +58,12 @@ increased the final eight-child proof from 1.446 MB to 1.514 MB.
 [ZisK's proving orchestration](https://github.com/0xPolygonHermez/zisk/blob/main/distributed/README.md)
 inform this work. Their timings are not matched-security benchmarks of this path.
 Keep binary fields, Keccak, Johnson bounds and the 128-bit classical target.
-Formal ZK analysis is deferred; conditional algebraic budgets remain distinct
-from an end-to-end security claim.
+Production privacy and soundness claims require a joint child masking analysis
+and an end-to-end soundness budget including recursion and terminal verification.
 
 Avoid repeating two rejected experiments: indexed Logup* required large
 transmitted pushforwards; a shared AIR expression DAG gave about 2% improvement
-with overlapping timing ranges. Do not implement Ethereum verification yet.
+with overlapping timing ranges.
 
 ## Checks
 
@@ -62,10 +71,13 @@ with overlapping timing ranges. Do not implement Ethereum verification yet.
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --release --workspace
+cargo test --manifest-path adapters/leanvm/Cargo.toml --locked --release
 ```
 
 Vendored prover patches have targeted checks in their `LOCAL_CHANGES.md` files.
 GitHub CI runs formatting, default-feature Clippy and library tests in one job.
+A second job proves the LeanVM arithmetic vectors, checks the Solidity batch
+digest and native Merkle checks, and replays the KoalaBear reference fixture on a local Osaka chain.
 The full depth-32 child proof is release-only; debug CI skips it.
 Benchmarks and release regressions run locally.
 

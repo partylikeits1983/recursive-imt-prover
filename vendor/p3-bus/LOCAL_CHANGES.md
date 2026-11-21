@@ -21,6 +21,9 @@ cargo test --locked --release --manifest-path vendor/p3-bus/Cargo.toml --target-
 
 Unused development dependencies removed: `criterion`.
 
+`BusPlan::domain_separator` exposes the statement-derived separator used by both
+native transcript drivers so an independent verifier can reproduce its encoding.
+
 `BusInteractionRecorder::RECORDS_BUS_INTERACTIONS` defaults to true. Constraint-only
 builders opt out of payload construction through `push_bus_interaction_with`.
 The existing declaration method still emits every activation constraint, in the

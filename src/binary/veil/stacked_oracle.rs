@@ -6,7 +6,7 @@
 use anyhow::{Result, ensure};
 use p3_field::PrimeCharacteristicRing;
 use p3_multilinear_util::point::Point;
-use rand::rngs::StdRng;
+use rand::TryCryptoRng;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -29,6 +29,9 @@ pub(super) struct StackedSpec {
     pub variables: usize,
     pub columns: usize,
     pub log_stack: usize,
+    // Included in the trusted client protocol ID. Preserve the v1 spec encoding.
+    #[serde(skip)]
+    pub domains: super::hash::RowDomains,
 }
 
 pub(super) struct StackedOracle {
@@ -150,7 +153,7 @@ impl StackedOracle {
         spec: StackedSpec,
         columns: &[Vec<E>],
         parameters: &Parameters,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<Self> {
         let code = spec.code(parameters)?;
         let height = 1 << spec.variables;
@@ -166,7 +169,7 @@ impl StackedOracle {
         // The final incomplete stack has zero unused slots. The same slot
         // functional then applies to every column. Independent padding and the
         // auxiliary column hide these known values along with the actual trace.
-        let data = CommittedVectors::new(&stacked, code, false, rng)?;
+        let data = CommittedVectors::with_domains(&stacked, code, false, spec.domains, rng)?;
         Ok(Self {
             spec,
             parameters: parameters.clone(),
@@ -268,16 +271,32 @@ impl StackedOracle {
     }
 }
 
+pub(super) struct StackedQueries {
+    views: Vec<View>,
+    values: Vec<Linear>,
+    masks: Vec<Linear>,
+    pub(super) theta: E,
+    pub(super) alpha: E,
+    pub indices: Vec<usize>,
+}
+
 impl StackedOpening {
-    pub fn verify(
+    pub(super) fn opened_rows(&self) -> &[Opening] {
+        &self.rows
+    }
+
+    pub(super) fn blend_messages(&self) -> (&[u8; 32], &[E]) {
+        (&self.blend_root, &self.blend_evals)
+    }
+
+    pub(super) fn read_queries(
         &self,
         spec: &StackedSpec,
         root: &[u8; 32],
         points: &[OraclePoint<'_>],
-        parameters: &Parameters,
+        code: &BinaryCode,
         ctx: &mut MaskedReader<'_>,
-    ) -> Result<OracleClaims> {
-        let code = spec.code(parameters)?;
+    ) -> Result<StackedQueries> {
         let views = spec.bind(root, points, ctx.public_transcript())?;
         ensure!(
             self.blend_evals.len() == points.len(),
@@ -287,16 +306,91 @@ impl StackedOpening {
         let theta = ctx.challenge(b"stacked-slot-combination")?;
         let masks = ctx.read(b"stacked-mask-evaluations", points.len())?;
         let alpha = ctx.challenge(b"stacked-column-combination")?;
+        let transcript = ctx.public_transcript();
+        let indices = query_schedule(code, &self.blend_root, &self.blend_evals, transcript);
+        Ok(StackedQueries {
+            views,
+            values,
+            masks,
+            theta,
+            alpha,
+            indices,
+        })
+    }
+
+    pub(super) fn opening_advice(
+        &self,
+        cp: &super::child::checkpoint::StackedBlendCheckpoint,
+        params: &Parameters,
+    ) -> Result<(Vec<super::F>, [u8; 32])> {
+        self.whir.opening_advice(&self.blend_root, cp, params)
+    }
+
+    pub(super) fn blend_checkpoint(
+        &self,
+        spec: &StackedSpec,
+        code: BinaryCode,
+        queries: StackedQueries,
+        transcript: &mut Transcript,
+    ) -> Result<super::child::checkpoint::StackedBlendCheckpoint> {
+        let factors = powers(queries.alpha, spec.width() + 1);
+        let rows = self.row_combinations(&factors);
+        let (weights, sum) = functional(
+            code,
+            spec,
+            queries.views,
+            queries.indices,
+            queries.theta,
+            &self.blend_evals,
+            &rows,
+            transcript,
+        )?;
+        let point = self
+            .whir
+            .reduce(&self.blend_root, &weights, sum, transcript)?;
+        let (rounds, value) = self.whir.round_messages();
+        Ok(super::child::checkpoint::StackedBlendCheckpoint {
+            rounds: rounds.to_vec(),
+            value,
+            point: point.as_slice().to_vec(),
+            seed: transcript.fingerprint(),
+        })
+    }
+
+    fn row_combinations(&self, factors: &[E]) -> Vec<E> {
+        self.rows.iter().map(|r| dot(&r.rows[0], factors)).collect()
+    }
+
+    pub fn verify(
+        &self,
+        spec: &StackedSpec,
+        root: &[u8; 32],
+        points: &[OraclePoint<'_>],
+        parameters: &Parameters,
+        ctx: &mut MaskedReader<'_>,
+    ) -> Result<OracleClaims> {
+        let code = spec.code(parameters)?;
+        let queries = self.read_queries(spec, root, points, &code, ctx)?;
+        let StackedQueries {
+            views,
+            values,
+            masks,
+            theta,
+            alpha,
+            indices,
+        } = queries;
         let factors = powers(alpha, spec.width() + 1);
         let slots = powers(theta, spec.stack());
         let transcript = ctx.public_transcript();
-        let indices = query_schedule(&code, &self.blend_root, &self.blend_evals, transcript);
-        verify_openings(root, &code, spec.width() + 1, &indices, &self.rows)?;
-        let row_values: Vec<E> = self
-            .rows
-            .iter()
-            .map(|r| dot(&r.rows[0], &factors))
-            .collect();
+        verify_openings(
+            root,
+            &code,
+            spec.width() + 1,
+            &indices,
+            &self.rows,
+            spec.domains,
+        )?;
+        let row_values = self.row_combinations(&factors);
         let (functional, sum) = functional(
             code,
             spec,

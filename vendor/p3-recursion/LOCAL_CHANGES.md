@@ -25,6 +25,11 @@ Changes:
   transcript. Existing constructors keep the unprefixed behavior. Legacy
   rejection-query continuation tokens reject a prefixed challenger; the
   selected WHIR path uses stratified queries.
+- `src/pcs/binary/whir_kernel.rs` reuses the upper Merkle nodes authenticated by
+  the deepest binary query group for all subsequent groups in the same WHIR
+  site. Each stratum has a protocol-fixed prefix. Every query still checks its
+  lower path and every upper sibling is connected to its corresponding tree node.
+  The cap, path inputs, transcript and native proof format are unchanged.
 - `src/pcs/binary/{whir_domains,whir_kernel,poly_whir_verifier}.rs` and the
   `src/pcs/binary.rs` re-export: optionally authenticate WHIR leaves and nodes
   with distinct, trusted Keccak prefixes. This adapter supports binary trees
@@ -110,3 +115,5 @@ The coordinate verifier accepts a trusted auxiliary table schedule on the main
 WHIR commitment. The parent circuit supplies the additional points and checks
 the returned auxiliary values. AIR and bus verification consume the original
 arithmetic openings, and preprocessing continues from the joint PCS transcript.
+
+The Poly64 WHIR verifier exposes its trusted schedule and query groups for independently compiled verifier backends.

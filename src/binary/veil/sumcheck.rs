@@ -7,7 +7,7 @@
 use anyhow::{Result, ensure};
 use p3_multilinear_util::{point::Point, poly::Poly};
 use p3_sumcheck::strategy::{Basis, VariableOrder};
-use rand::{SeedableRng, rngs::StdRng};
+use rand::rngs::SysRng;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -49,7 +49,7 @@ impl PublicSumcheck {
             .map(|(&a, &b)| a * b)
             .sum();
         ensure!(sum == self.claimed_sum, "incorrect public sumcheck claim");
-        let mut rng = StdRng::from_rng(&mut rand::rng());
+        let mut rng = SysRng;
         let mut prover =
             MaskedProver::new(parameters, &self.binding()?, self.message_count(), &mut rng)?;
         let mut left = Poly::new(self.left.clone());

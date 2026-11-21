@@ -31,6 +31,8 @@ use crate::{
 };
 
 pub const MAX_VERIFIER_BYTES: usize = 4 << 20;
+const TERMINAL_WIDE_FORMAT: &str = "imt-binary-trusted-verifier-terminal-wide-v1";
+const TERMINAL_FORMAT: &str = "imt-binary-trusted-verifier-terminal-v1";
 const PACKED_FORMAT: &str = "imt-binary-trusted-verifier-v11";
 const JOINT_HALF_FORMAT: &str = "imt-binary-trusted-verifier-v10";
 const JOINT_FORMAT: &str = "imt-binary-trusted-verifier-v9";
@@ -57,7 +59,13 @@ impl<K> VerifierData<K> {
     fn preprocessed_encoding(&self) -> CoordinateEncoding {
         if matches!(
             self.format.as_str(),
-            DIGIT_FORMAT | HALF_RATE_PP_FORMAT | JOINT_FORMAT | JOINT_HALF_FORMAT | PACKED_FORMAT
+            DIGIT_FORMAT
+                | HALF_RATE_PP_FORMAT
+                | JOINT_FORMAT
+                | JOINT_HALF_FORMAT
+                | PACKED_FORMAT
+                | TERMINAL_FORMAT
+                | TERMINAL_WIDE_FORMAT
         ) {
             CoordinateEncoding::PreprocessedDigits
         } else {
@@ -65,7 +73,18 @@ impl<K> VerifierData<K> {
         }
     }
 
+    fn main_log_inv_rate(&self) -> usize {
+        match self.format.as_str() {
+            TERMINAL_FORMAT | TERMINAL_WIDE_FORMAT => crate::config::TERMINAL_LOG_INV_RATE,
+            JOINT_HALF_FORMAT | PACKED_FORMAT => 1,
+            _ => WHIR_LOG_INV_RATE,
+        }
+    }
+
     fn preprocessed_log_inv_rate(&self) -> usize {
+        if matches!(self.format.as_str(), TERMINAL_FORMAT | TERMINAL_WIDE_FORMAT) {
+            return crate::config::TERMINAL_LOG_INV_RATE;
+        }
         if matches!(
             self.format.as_str(),
             HALF_RATE_PP_FORMAT | JOINT_FORMAT | JOINT_HALF_FORMAT | PACKED_FORMAT
@@ -95,6 +114,15 @@ pub fn verifier_key_digest(bytes: &[u8]) -> [u8; 32] {
 }
 
 impl Prepared {
+    fn verifier_format(&self) -> &'static str {
+        match self.profile {
+            crate::Profile::Terminal => TERMINAL_FORMAT,
+            crate::Profile::TerminalWideWitness => TERMINAL_WIDE_FORMAT,
+            crate::Profile::Cyclic => PACKED_FORMAT,
+            crate::Profile::Standard => FORMAT,
+        }
+    }
+
     pub fn export_verifier(&self, binding: &[u8]) -> Result<Vec<u8>> {
         let airs = self
             .airs
@@ -104,12 +132,7 @@ impl Prepared {
             .collect::<Result<Vec<_>>>()?;
         // Borrow the succinct commitment; no proving tables are serialized.
         let data = VerifierData {
-            format: if self.direct_bridge {
-                PACKED_FORMAT
-            } else {
-                FORMAT
-            }
-            .to_owned(),
+            format: self.verifier_format().to_owned(),
             backend: self.backend,
             binding: binding.to_vec(),
             seed: self
@@ -133,15 +156,21 @@ impl Prepared {
 }
 
 impl Verifier {
+    #[cfg(feature = "opening-bench")]
+    pub fn single_wiring_root(&self) -> Result<[u8; 32]> {
+        let cap = self
+            .data
+            .key
+            .preprocessed_commitment()
+            .filter(|cap| cap.num_roots() == 1)
+            .ok_or_else(|| anyhow::anyhow!("expected a single trusted wiring root"))?;
+        Ok(cap[0])
+    }
+
     pub fn require_same_layout(&self, output: &Prepared) -> Result<()> {
         ensure!(
             self.data.backend == output.backend
-                && self.data.format
-                    == if output.direct_bridge {
-                        PACKED_FORMAT
-                    } else {
-                        FORMAT
-                    }
+                && self.data.format == output.verifier_format()
                 && self.data.hash_index == output.hash_index
                 && self.data.main_coordinates == output.geometry.main_coordinate_widths
                 && self.data.preprocessed_coordinates
@@ -195,6 +224,8 @@ impl Verifier {
                         | JOINT_FORMAT
                         | JOINT_HALF_FORMAT
                         | PACKED_FORMAT
+                        | TERMINAL_FORMAT
+                        | TERMINAL_WIDE_FORMAT
                 ) && data.backend == HashBackend::Checkpoint))
                 && data.binding == binding,
             "trusted verifier configuration mismatch"
@@ -273,13 +304,20 @@ impl Verifier {
             data.preprocessed_log_inv_rate(),
             matches!(
                 data.format.as_str(),
-                JOINT_FORMAT | JOINT_HALF_FORMAT | PACKED_FORMAT
+                JOINT_FORMAT
+                    | JOINT_HALF_FORMAT
+                    | PACKED_FORMAT
+                    | TERMINAL_FORMAT
+                    | TERMINAL_WIDE_FORMAT
             )
             .then_some(data.airs[data.hash_index].log_height),
-            if matches!(data.format.as_str(), JOINT_HALF_FORMAT | PACKED_FORMAT) {
-                1
-            } else {
-                WHIR_LOG_INV_RATE
+            crate::config::MainCode {
+                log_inv_rate: data.main_log_inv_rate(),
+                first_fold: if data.format == TERMINAL_WIDE_FORMAT {
+                    5
+                } else {
+                    crate::WHIR_FOLD
+                },
             },
         )?;
         let public_count = data.airs.iter().map(|a| a.public_count).max().unwrap();
@@ -298,7 +336,10 @@ impl Verifier {
                 LinkedBatch::joint(
                     data.airs[data.hash_index].log_height,
                     security,
-                    data.format == PACKED_FORMAT,
+                    matches!(
+                        data.format.as_str(),
+                        PACKED_FORMAT | TERMINAL_FORMAT | TERMINAL_WIDE_FORMAT
+                    ),
                 )?
             } else {
                 LinkedBatch::with_bridge(
@@ -358,23 +399,8 @@ impl Verifier {
     }
 
     pub fn verify(&self, bytes: &[u8], public: &[OldF]) -> Result<()> {
-        ensure!(
-            public.len() == self.public_count,
-            "incorrect public input count"
-        );
+        let public = self.public_values(public)?;
         ensure!(bytes.len() <= 16 << 20, "oversized aggregate proof");
-        let public: Vec<Vec<F>> = self
-            .data
-            .airs
-            .iter()
-            .map(|a| {
-                if a.public_count == 0 {
-                    vec![]
-                } else {
-                    public.iter().copied().map(convert).collect()
-                }
-            })
-            .collect();
         if let Some(scheme) = &self.checkpoint {
             return checkpoint::verify(
                 &self.config,
@@ -395,6 +421,78 @@ impl Verifier {
         )?;
         Ok(())
     }
+    pub fn verify_shared_terminal(&self, bytes: &[u8], public: &[OldF]) -> Result<()> {
+        self.verify_shared_terminal_with_schedule(
+            bytes,
+            public,
+            crate::terminal_opening::OpeningSchedule::ThreeVariableFolds,
+        )
+    }
+
+    pub fn verify_shared_terminal_with_schedule(
+        &self,
+        bytes: &[u8],
+        public: &[OldF],
+        schedule: crate::terminal_opening::OpeningSchedule,
+    ) -> Result<()> {
+        self.verify_shared_terminal_bound(bytes, public, schedule)
+            .map(|_| ())
+    }
+
+    /// Return the key-specific algebraic bound after all proof checks pass.
+    pub fn verify_shared_terminal_bound(
+        &self,
+        bytes: &[u8],
+        public: &[OldF],
+        schedule: crate::terminal_opening::OpeningSchedule,
+    ) -> Result<f64> {
+        ensure!(
+            self.data.format == TERMINAL_WIDE_FORMAT,
+            "shared terminal key required"
+        );
+        let scheme = self
+            .checkpoint
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("missing terminal checkpoint scheme"))?;
+        let heights = self
+            .data
+            .airs
+            .iter()
+            .map(|a| a.log_height)
+            .collect::<Vec<_>>();
+        crate::terminal_opening::integrated::verify(
+            &self.config,
+            &self.data.key,
+            &self.data.airs,
+            &heights,
+            &self.public_values(public)?,
+            scheme,
+            self.data.hash_index,
+            &self.data.seed,
+            schedule,
+            bytes,
+        )
+    }
+
+    fn public_values(&self, public: &[OldF]) -> Result<Vec<Vec<F>>> {
+        ensure!(
+            public.len() == self.public_count,
+            "incorrect public input count"
+        );
+        Ok(self
+            .data
+            .airs
+            .iter()
+            .map(|a| {
+                if a.public_count == 0 {
+                    vec![]
+                } else {
+                    public.iter().copied().map(convert).collect()
+                }
+            })
+            .collect())
+    }
+
     fn instances<'a>(&'a self, public: &'a [Vec<F>]) -> VerifierInstances<'a, Config, VerifierAir> {
         VerifierInstances::new(
             self.data

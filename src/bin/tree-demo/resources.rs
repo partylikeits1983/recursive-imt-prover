@@ -14,6 +14,47 @@ pub(super) struct ProcessMonitor {
 }
 
 impl ProcessMonitor {
+    /// Sample the resident memory and CPU of the persistent LeanVM prover processes together.
+    pub fn workers(pids: &[u32], on_sample: impl Fn(ProcessPeaks) + Send + 'static) -> Self {
+        let pids = pids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let (stop, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let mut peaks = ProcessPeaks::default();
+            loop {
+                if let Ok(sample) = std::process::Command::new("ps")
+                    .args(["-o", "rss=,pcpu=", "-p", &pids])
+                    .env("LC_ALL", "C")
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&sample.stdout);
+                    let rows = stdout.lines().filter_map(|line| {
+                        let mut fields = line.split_whitespace();
+                        Some((
+                            fields.next()?.parse::<u64>().ok()? * 1024,
+                            fields.next()?.parse::<f64>().ok()?,
+                        ))
+                    });
+                    let (rss, cpu) = rows.fold((0, 0.), |(r, c), (rr, cc)| (r + rr, c + cc));
+                    if rss > 0 {
+                        peaks.rss_bytes = peaks.rss_bytes.max(Some(rss));
+                        peaks.cpu_percent = Some(peaks.cpu_percent.unwrap_or(0.).max(cpu));
+                        on_sample(peaks);
+                    }
+                }
+                if receiver.recv_timeout(SAMPLE_INTERVAL) != Err(RecvTimeoutError::Timeout) {
+                    return peaks;
+                }
+            }
+        });
+        Self {
+            worker: Some((stop, worker)),
+        }
+    }
+
     pub fn start(on_sample: impl Fn(ProcessPeaks) + Send + 'static) -> Self {
         let (stop, receiver) = mpsc::channel();
         let initial = cpu_sample();

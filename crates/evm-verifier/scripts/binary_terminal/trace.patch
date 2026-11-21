@@ -1,0 +1,80 @@
+--- a/crates/verifier/src/transcript.rs
++++ b/crates/verifier/src/transcript.rs
+@@ -128,6 +128,7 @@
+     }
+ 
+     pub(crate) fn with_chain(proof: &'a Proof, fiat_shamir_iv: Digest, public_input: Digest, checked: bool, hash_chain: bool) -> Self {
++        eprintln!("PROFILE init {:?} {:?}", fiat_shamir_iv.0, public_input.0);
+         let mut sponge = Sponge::new(fiat_shamir_iv, public_input);
+         if hash_chain {
+             let mut seed = crate::TERMINAL_TRANSCRIPT_DOMAIN.to_vec();
+@@ -152,7 +153,9 @@
+     }
+ 
+     pub fn sample(&mut self) -> E {
+-        self.sponge.sample()
++        let value = self.sponge.sample();
++        eprintln!("PROFILE sample {} {} {}", self.stream_offset, value.c0, value.c1);
++        value
+     }
+ 
+     /// How many scalars of the stream have been read.
+@@ -190,6 +193,7 @@
+         if bits == 0 {
+             return Ok(());
+         }
++        eprintln!("PROFILE grind {} {}", self.stream_offset, bits);
+         let nonce = self.next()?;
+         let pow = self.sponge.absorb_nonce(nonce);
+         if self.checked {
+@@ -210,6 +214,7 @@
+         queries: &[u64],
+         leaf_words: usize,
+     ) -> Result<Vec<&'a [K]>, VerifierError> {
++        eprintln!("PROFILE open {:?} {} {} {:?}", root.0, block_length, leaf_words, queries);
+         let height = log2_strict(block_length)?;
+         let paths = self
+             .proof
+--- a/crates/verifier/src/whir.rs
++++ b/crates/verifier/src/whir.rs
+@@ -86,6 +86,7 @@
+ 
+ fn sample_queries(transcript: &mut Transcript, block_length: u64, count: usize) -> Result<Vec<u64>, VerifierError> {
+     let depth = log2_strict(block_length)?;
++    eprintln!("PROFILE query {} {}", depth, count);
+     let per_word = 128 / depth;
+     let mut result = Vec::with_capacity(count);
+     while result.len() < count {
+@@ -233,12 +234,14 @@
+     let config = derive_config(log_n, log_inv_rate)?;
+     let levels = config.folds.len();
+ 
++    eprintln!("PROFILE target {} {}", target.c0, target.c1);
+     let mut claim = target;
+     let mut alphas: Vec<E> = Vec::new();
+     let mut glued: Vec<GluedClaim> = Vec::new();
+     let mut current_root = root;
+ 
+     for (level, (&fold_count, &level_rate)) in config.folds.iter().zip(&config.log_inv_rates).enumerate() {
++        eprintln!("PROFILE folds {}", fold_count);
+         let mut rounds = Vec::with_capacity(fold_count);
+         for _ in 0..fold_count {
+             let table = transcript.next_scalars(4)?;
+@@ -292,6 +295,7 @@
+             let point = [&alphas[..], &tail].concat();
+             let lane_folds = config.folds[0];
+             let mut weight = evaluate_basis(&[&point[lane_folds..], &point[..lane_folds]].concat());
++            eprintln!("PROFILE basis {} {}", weight.c0, weight.c1);
+             for glued_claim in &glued {
+                 weight += glued_claim.scalar * (glued_claim.weight_at)(&point[glued_claim.fold_start..])?;
+             }
+--- a/crates/aggregation/src/imt.rs
++++ b/crates/aggregation/src/imt.rs
+@@ -85,6 +85,7 @@
+     transcript: Transcript,
+ ) -> bool {
+     let deferred = DeferredBytecodeClaim::recompute(proof.bytecode_point.clone());
++    eprintln!("PROFILE deferred {}", hex(&cell_bytes([deferred.bytecode_value])));
+     let check = match transcript {
+         Transcript::Recursive => verifier::verify_execution,
+         Transcript::Terminal => verifier::verify_hash_chain_execution,

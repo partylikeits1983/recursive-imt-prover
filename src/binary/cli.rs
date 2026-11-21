@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::engine::{Geometry, PreparedAggregate, PreparedChild, ProofMetrics, Settings};
 use super::relation::{AggregatePublic, ClientPublic, ClientWitness};
 use super::security::BatchAssessment;
-use super::tree::{Imt, commitment, input_tag};
+use super::tree::{Imt, commitment, input_tag, preimage_leaf};
 use crate::benchmark::{environment, ms, peak_rss, statistics};
 use crate::files::{read_bounded, read_json, write_json};
 
@@ -286,6 +286,14 @@ pub fn run(mut args: Args, demo: bool) -> Result<()> {
 }
 
 pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientWitness)>> {
+    membership_fixtures(depth, count, false)
+}
+
+pub fn membership_fixtures(
+    depth: usize,
+    count: usize,
+    preimage_only: bool,
+) -> Result<Vec<(ClientPublic, ClientWitness)>> {
     let mut rng = StdRng::from_rng(&mut rand::rng());
     let mut tree = Imt::new(depth)?;
     let capacity = 1u64 << depth;
@@ -301,7 +309,12 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
         let input_label = rng.random();
         let input_nonce = rng.random();
         let quantity = rng.random();
-        let leaf_index = tree.append(commitment(&input_label, &input_nonce, quantity))?;
+        let leaf = if preimage_only {
+            preimage_leaf(&input_label)
+        } else {
+            commitment(&input_label, &input_nonce, quantity)
+        };
+        let leaf_index = tree.append(leaf)?;
         notes.push((input_label, input_nonce, quantity, leaf_index));
     }
     // Each proof uses a different later root, never its insertion root.
@@ -311,10 +324,14 @@ pub fn fixtures(depth: usize, count: usize) -> Result<Vec<(ClientPublic, ClientW
         let output_nonce = rng.random();
         tree.append(rng.random())?;
         inputs.push((
-            ClientPublic {
-                root: tree.root(),
-                input_tag: input_tag(&input_nonce),
-                output_commitment: commitment(&output_label, &output_nonce, quantity),
+            if preimage_only {
+                ClientPublic::membership_root(tree.root())
+            } else {
+                ClientPublic {
+                    root: tree.root(),
+                    input_tag: input_tag(&input_nonce),
+                    output_commitment: commitment(&output_label, &output_nonce, quantity),
+                }
             },
             ClientWitness {
                 input_label,

@@ -1,0 +1,129 @@
+--- a/crates/verifier/src/lib.rs
++++ b/crates/verifier/src/lib.rs
+@@ -217,6 +217,10 @@
+         log_steps >= layout::KECCAK_MIN_STEPS_LOG && depth > 0 && ROUNDS.is_multiple_of(depth),
+         VerifierError::CommittedSize,
+     )?;
++    require(
++        (MIN_LOG_INV_RATE..=MAX_LOG_INV_RATE).contains(&log_inv_rate),
++        VerifierError::WhirShape,
++    )?;
+     let shape = KeccakShape { log_steps, depth };
+     let stack_log = log_steps + shape.slot_bits();
+     require(
+@@ -274,7 +278,8 @@
+     let table_rows: Vec<u64> = announced[1..1 + N_TABLES].iter().map(|value| value.c0).collect();
+     let log_inverse_rate = announced[1 + N_TABLES].c0;
+     require(
+-        (MIN_LOG_INV_RATE as u64..=MAX_LOG_INV_RATE as u64).contains(&log_inverse_rate),
++        (MIN_LOG_INV_RATE as u64..=MAX_LOG_INV_RATE as u64).contains(&log_inverse_rate)
++            || (hash_chain && log_inverse_rate == 5),
+         VerifierError::PcsInverseRate,
+     )?;
+     let layout = build_layout(bytecode, log_memory, &table_rows)?;
+--- a/crates/verifier/src/whir.rs
++++ b/crates/verifier/src/whir.rs
+@@ -56,6 +56,13 @@
+ 
+ /// The opening shape at this size and rate: the ladder geometry, then the tabulated query counts.
+ pub fn derive_config(log_n: usize, log_inv_rate: usize) -> Result<WhirConfig, VerifierError> {
++    if log_inv_rate == 5 && log_n == 24 {
++        return Ok(WhirConfig {
++            log_inv_rates: vec![5, 6, 9, 12, 15],
++            folds: vec![4; 5],
++            queries: &[44, 37, 25, 19, 16],
++        });
++    }
+     let queries = whir_queries(log_n, log_inv_rate).ok_or(VerifierError::WhirShape)?;
+     let mut folds = vec![INITIAL_FOLDING_FACTOR];
+     let mut log_inv_rates = vec![log_inv_rate];
+--- a/crates/experimental_prover/lean_vm_core/src/cpu/mod.rs
++++ b/crates/experimental_prover/lean_vm_core/src/cpu/mod.rs
+@@ -204,7 +204,7 @@
+     log_inv_rate: usize,
+     hash_chain: bool,
+ ) -> Result<(Proof, Stats), ProveError> {
+-    if ::pcs::whir::validate_log_inv_rate(log_inv_rate).is_err() {
++    if !(hash_chain && log_inv_rate == 5) && ::pcs::whir::validate_log_inv_rate(log_inv_rate).is_err() {
+         return Err(ProveError::InvalidRate { log_inv_rate });
+     }
+     let (exec, keccak_blocks) = crate::stage!("Execute program", || {
+@@ -232,6 +232,13 @@
+     }
+     let cycles = exec.cycles;
+     let mut w = crate::stage!("Build witness", || build(program, &exec, layout, keccak_blocks));
++    if hash_chain && log_inv_rate == 5 {
++        if w.layout.shape.mu != 24 {
++            return Err(ProveError::InvalidRate { log_inv_rate });
++        }
++        let block = 1 << (24 - 4);
++        w.q.resize(w.q.len().next_multiple_of(block), F64::ZERO);
++    }
+     let memory_used = exec.mem_used;
+     drop(exec);
+     let committed_size = w.committed_size();
+--- a/crates/experimental_prover/lean_vm_core/src/pcs.rs
++++ b/crates/experimental_prover/lean_vm_core/src/pcs.rs
+@@ -58,8 +58,12 @@
+             mu >= MIN_STACKED_LOG,
+             "witness must be ≥ 2^{MIN_STACKED_LOG} elements (padded by placements_of)"
+         );
+-        let config = config_for_rate(mu, log_inv_rate)
+-            .unwrap_or_else(|e| panic!("whir config for mu={mu}, log_inv_rate={log_inv_rate}: {e}"));
++        let config = if (mu, log_inv_rate) == (24, 5) {
++            ::pcs::whir_config::WhirSecurityConfig::compact_terminal()
++        } else {
++            config_for_rate(mu, log_inv_rate)
++        }
++        .unwrap_or_else(|e| panic!("whir config for mu={mu}, log_inv_rate={log_inv_rate}: {e}"));
+         Arc::new(config)
+     }))
+ }
+@@ -99,12 +103,13 @@
+         mu >= MIN_STACKED_LOG,
+         "witness must be ≥ 2^{MIN_STACKED_LOG} elements (padded by placements_of)"
+     );
++    let initial_k = whir_config(mu, log_inv_rate).initial_k;
+     assert_eq!(
+         witness.len(),
+-        shape.committed_len(),
++        shape.committed_len().next_multiple_of(1 << (mu - initial_k)),
+         "witness must be the committed lanes"
+     );
+-    let (commitment, prover_data) = whir_commit(witness, mu, LOG_BATCH, log_inv_rate);
++    let (commitment, prover_data) = whir_commit(witness, mu, initial_k, log_inv_rate);
+     ps.add_root(&commitment.root);
+     let ood = ood_sample(ps, witness, mu);
+     Committed {
+--- a/crates/experimental_prover/pcs/src/whir_config.rs
++++ b/crates/experimental_prover/pcs/src/whir_config.rs
+@@ -683,11 +683,28 @@
+ 
+     pub(crate) fn derive_with(m: usize, log_inv_rate: usize, grinding: Grinding) -> Result<Self, String> {
+         validate_log_inv_rate(log_inv_rate)?;
++        Self::derive_folds(m, log_inv_rate, grinding, INITIAL_FOLDING_FACTOR)
++    }
++
++    /// Independently check the pinned 24-variable terminal query table against the finite Johnson search.
++    pub fn compact_terminal() -> Result<ProverConfig, String> {
++        let sec = Self::derive_folds(24 + crate::LOG_PACKING, 5, PRODUCTION_GRINDING, 4)?;
++        let config = sec.to_config()?;
++        let pinned = verifier::derive_config(24, 5).map_err(|e| e.to_string())?;
++        if config.queries != pinned.queries
++            || config.log_inv_rates != pinned.log_inv_rates
++            || config.level_shapes(24).ks != pinned.folds
++        {
++            return Err("terminal opening disagrees with finite Johnson search".into());
++        }
++        Ok(config)
++    }
++
++    fn derive_folds(m: usize, log_inv_rate: usize, grinding: Grinding, initial_k: usize) -> Result<Self, String> {
+         let target = SECURITY_BITS;
+         let log_n = m
+             .checked_sub(crate::LOG_PACKING)
+             .ok_or_else(|| format!("m ({m}) < LOG_PACKING ({})", crate::LOG_PACKING))?;
+-        let initial_k = INITIAL_FOLDING_FACTOR;
+         let shape = derive_ladder_shape(log_n, initial_k, log_inv_rate)?;
+         let n_levels = shape.log_inv_rates.len();
+         let searched = (0..n_levels)

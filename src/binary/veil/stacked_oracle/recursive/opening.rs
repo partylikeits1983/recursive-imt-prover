@@ -11,7 +11,7 @@ use super::{FunctionalTarget, ViewTarget, bind_views};
 use crate::binary::veil::{
     E, F,
     code::BinaryCode,
-    hash::{LEAF_DOMAIN, NODE_DOMAIN},
+    hash::RowDomains,
     native::OraclePoint,
     parameters::Parameters,
     stacked_oracle::{StackedOpening, StackedSpec, functional, query_schedule},
@@ -224,7 +224,14 @@ impl PreparedStacked {
             proof.rows.len() == queries.len(),
             "wrong oracle query count"
         );
-        authenticate_batch(b, root, &proof.rows, &queries, self.spec.width() + 1)?;
+        authenticate_batch(
+            b,
+            root,
+            &proof.rows,
+            &queries,
+            self.spec.width() + 1,
+            self.spec.domains,
+        )?;
         for row in &proof.rows {
             row_values.push(circuit_dot(b, &row.values, &factors)?);
         }
@@ -278,6 +285,7 @@ pub(in crate::binary::veil) fn authenticate_batch(
     rows: &[RowTargets],
     queries: &[Query],
     width: usize,
+    domains: RowDomains,
 ) -> Result<()> {
     ensure!(
         !rows.is_empty() && rows.len() == queries.len(),
@@ -294,7 +302,14 @@ pub(in crate::binary::veil) fn authenticate_batch(
     for (range, depth) in query_groups(rows.len(), height) {
         let low = height - depth;
         if depth == 0 {
-            authenticate(b, &root, &rows[range.start], &queries[range.start], low)?;
+            authenticate(
+                b,
+                &root,
+                &rows[range.start],
+                &queries[range.start],
+                low,
+                domains,
+            )?;
             continue;
         }
         let mut layer: Vec<_> = (0..range.len())
@@ -307,7 +322,7 @@ pub(in crate::binary::veil) fn authenticate_batch(
                 let expected = b.define_const(F::new(((s >> bit) & 1) as u64));
                 b.connect(actual, expected);
             }
-            authenticate(b, cap, &rows[range.start + s], query, low)?;
+            authenticate(b, cap, &rows[range.start + s], query, low, domains)?;
         }
         for k in 0..depth {
             for s in 0..range.len() {
@@ -323,7 +338,7 @@ pub(in crate::binary::veil) fn authenticate_batch(
                 .0
                 .iter()
                 .map(|pair| {
-                    let mut words = constants(b, NODE_DOMAIN);
+                    let mut words = constants(b, domains.tags().1);
                     words.extend(&pair[0]);
                     words.extend(&pair[1]);
                     Ok(NativeBinaryEncoding::hash_words(b, ByteHash::Keccak256, &words)?.to_vec())
@@ -343,12 +358,13 @@ fn authenticate(
     row: &RowTargets,
     query: &Query,
     height: usize,
+    domains: RowDomains,
 ) -> Result<()> {
     ensure!(
         height <= row.path.len() && row.path.len() == query.bits.len() && root.len() == 16,
         "wrong salted opening dimensions"
     );
-    let mut words = constants(b, LEAF_DOMAIN);
+    let mut words = constants(b, domains.tags().0);
     for value in row.values.iter().chain(&row.salts) {
         for &coefficient in value.coefficients() {
             words.extend(b.native_poly64_unchecked_words(coefficient, 4)?);
@@ -357,7 +373,7 @@ fn authenticate(
     let mut digest = NativeBinaryEncoding::hash_words(b, ByteHash::Keccak256, &words)?;
     for (&bit, sibling) in query.bits.iter().zip(&row.path).take(height) {
         b.assert_bool(bit);
-        let mut bytes = constants(b, NODE_DOMAIN);
+        let mut bytes = constants(b, domains.tags().1);
         bytes.extend(
             digest
                 .iter()

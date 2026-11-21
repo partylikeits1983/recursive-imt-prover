@@ -1,0 +1,9 @@
+/out/
+/cache/
+/scripts/__pycache__/
+/out-comparison/
+/cache-comparison/
+/out-binary-compact/
+/cache-binary-compact/
+/out-binary-masked/
+/cache-binary-masked/

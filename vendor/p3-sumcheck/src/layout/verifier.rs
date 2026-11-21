@@ -4,7 +4,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use p3_challenger::fs::TranscriptField;
+use p3_challenger::fs::{DomainSeparator, FieldUnit, TranscriptField};
 use p3_challenger::{FieldChallenger, GrindingChallenger};
 use p3_field::{ExtensionField, Field, dot_product};
 use p3_multilinear_util::point::Point;
@@ -278,7 +278,7 @@ impl<F: Field, EF: ExtensionField<F>> Verifier<F, EF> {
         Ch: FieldChallenger<F> + GrindingChallenger<Witness = F>,
     {
         // The stacked arity is the whole configuration of this component.
-        let shape = VirtualShape::new(self.binding());
+        let shape = self.virtual_shape();
         let mut transcript = VirtualVerifierTranscript::<Ch, F, EF>::new(challenger, shape);
 
         // Draw first, then bind, exactly as the prover did.
@@ -329,9 +329,32 @@ impl<F: Field, EF: ExtensionField<F>> Verifier<F, EF> {
         Ch: FieldChallenger<F> + GrindingChallenger<Witness = F>,
     {
         // Both counts come from the claims this run recorded, never from a proof.
-        let shape =
-            BatchingShape::new(self.binding(), self.num_claims(), self.virtual_claims.len());
+        let shape = self.batching_shape();
         verifier_batching_challenge::<Ch, F, EF>(challenger, &shape)
+    }
+
+    fn virtual_shape(&self) -> VirtualShape {
+        VirtualShape::new(self.binding())
+    }
+
+    fn batching_shape(&self) -> BatchingShape {
+        BatchingShape::new(self.binding(), self.num_claims(), self.virtual_claims.len())
+    }
+
+    /// Canonical transcript domain preceding an out-of-domain evaluation.
+    pub fn virtual_domain(&self) -> DomainSeparator<FieldUnit<F>>
+    where
+        F: TranscriptField,
+    {
+        self.virtual_shape().domain_separator::<F, EF>()
+    }
+
+    /// Domain preceding the batching challenge for the claims currently recorded.
+    pub fn batching_domain(&self) -> DomainSeparator<FieldUnit<F>>
+    where
+        F: TranscriptField,
+    {
+        self.batching_shape().domain_separator::<F, EF>()
     }
 
     /// Returns the layout geometry every claim of this run is bound against.

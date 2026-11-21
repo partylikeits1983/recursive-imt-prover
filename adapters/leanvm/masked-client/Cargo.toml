@@ -1,0 +1,17 @@
+[package]
+name = "imt-leanvm-masked-client"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+recursive-imt-prover = { path = "../../.." }
+p3-binary-field = "=0.9.0-rc.2"
+sha3 = "0.10"
+tempfile = "3"
+isa = { git = "https://github.com/leanEthereum/leanVM", rev = "73c2cc094c0be4a1c5af6ec613e8021c9e16da87" }
+zkdsl_compiler = { git = "https://github.com/leanEthereum/leanVM", rev = "73c2cc094c0be4a1c5af6ec613e8021c9e16da87" }
+verifier = { git = "https://github.com/leanEthereum/leanVM", rev = "73c2cc094c0be4a1c5af6ec613e8021c9e16da87" }
+experimental_lean_vm_core = { git = "https://github.com/leanEthereum/leanVM", rev = "73c2cc094c0be4a1c5af6ec613e8021c9e16da87" }

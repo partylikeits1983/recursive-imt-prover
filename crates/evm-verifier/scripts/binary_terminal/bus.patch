@@ -1,0 +1,86 @@
+--- a/crates/verifier/src/layout.rs
++++ b/crates/verifier/src/layout.rs
+@@ -18,6 +18,15 @@
+ }
+ 
+ impl Form {
++    pub(crate) fn trace_terms(&self, slot: usize) -> Vec<Vec<u64>> {
++        self.terms.iter().filter(|(_, v)| **v != ZERO).map(|(vars, v)| {
++            assert_eq!(v.c1, 0);
++            let mut record = vec![slot as u64, v.c0];
++            record.extend(vars.iter().map(|i| *i as u64));
++            record
++        }).collect()
++    }
++
+     fn term(monomial: Vec<usize>, coefficient: E) -> Self {
+         Self {
+             terms: BTreeMap::from([(monomial, coefficient)]),
+--- a/crates/verifier/src/bus.rs
++++ b/crates/verifier/src/bus.rs
+@@ -31,6 +31,7 @@
+ /// and its challenge), every tree's children, a grind and `y`. Returns the count root, the point zeta and the trees'
+ /// leaf values there.
+ fn verify_gkr_grand_products(depth: usize, transcript: &mut Transcript) -> Result<(E, Vec<E>, Vec<E>), VerifierError> {
++    eprintln!("PROFILE grand_start {} {depth}", transcript.stream_offset());
+     let (shared, count) = (transcript.next_scalar()?, transcript.next_scalar()?);
+     let mut values = vec![shared, shared, count];
+     let mut point: Vec<E> = Vec::new();
+@@ -41,12 +42,14 @@
+         let step = if layer % 2 == 1 { 1 } else { 2 };
+         // The combiner batches the trees' claims, degree N_TREES - 1 in it.
+         transcript.grind_check(grinding_bits(N_TREES as u128 - 1))?;
++        eprintln!("PROFILE grand_layer {step} {}", transcript.stream_offset());
+         let combiner = transcript.sample();
+         let claim = poly_eval(&values, combiner);
+         // The product is degree 2^step, so one more coefficient than that per round.
+         let equalities: Vec<Option<E>> = point.iter().copied().map(Some).collect();
+         let (x, claim) = sumcheck(transcript, claim, (1 << step) + 1, &equalities)?;
+ 
++        eprintln!("PROFILE grand_children {}", transcript.stream_offset());
+         let children = (0..N_TREES)
+             .map(|_| transcript.next_scalars(1 << step))
+             .collect::<Result<Vec<_>, _>>()?;
+@@ -140,6 +143,7 @@
+     require(push_layout.depth < 64, VerifierError::AnnouncedTableSizes)?;
+ 
+     transcript.grind_check(bus_grinding_bits(push_layout.depth))?;
++    eprintln!("PROFILE fingerprint {}", transcript.stream_offset());
+     let weights = transcript.samples(1 << BUS_BITS);
+     let beta = transcript.sample();
+     let (count_root, point, tree_values) = verify_gkr_grand_products(push_layout.depth, transcript)?;
+@@ -217,6 +221,14 @@
+     let mut forms = vec![vec![Form::default(); N_TREES]; layout.tables.len()];
+     for (side, (blocks, side_layout, framework_fingerprints, side_weights, side_beta)) in sides.into_iter().enumerate()
+     {
++        for p in &side_layout.framework {
++            eprintln!("PROFILE bus_framework {side} {} {}", p.variables, p.index);
++        }
++        for (p, block) in side_layout.tables.iter().zip(blocks) {
++            let terms: Vec<_> = block.coordinates.iter().enumerate().flat_map(|(s, f)| f.trace_terms(s)).collect();
++            let pad: Vec<_> = block.coordinates.iter().map(|f| f.evaluate(&layout.tables[block.owner].padding).c0).collect();
++            eprintln!("PROFILE bus_block {side} {} {} {} {terms:?} | {pad:?}", block.owner, p.variables, p.index);
++        }
+         let framework_selectors: Vec<E> = side_layout.framework.iter().map(|p| p.eq_above(&point)).collect();
+         let table_selectors: Vec<E> = side_layout.tables.iter().map(|p| p.eq_above(&point)).collect();
+         let shifted: Vec<E> = framework_fingerprints.iter().map(|&f| side_beta + f).collect();
+@@ -266,6 +278,9 @@
+     target: E,
+     transcript: &mut Transcript,
+ ) -> Result<Vec<TableEvaluations>, VerifierError> {
++    let specs: Vec<_> = tables.iter().map(|t| [t.width(),t.n_constraints()]).collect();
++    let jump: Vec<_> = ["v_cond", "w", "b"].iter().map(|name| tables[4].columns.iter().position(|c| c == name).unwrap()).collect();
++    eprintln!("PROFILE cpu_tables {} {specs:?} | {jump:?}", transcript.stream_offset());
+     let n_rounds = table_log_heights.iter().copied().max().unwrap_or(0);
+     let (challenges, claim) = sumcheck(transcript, target, 4, &vec![None; n_rounds])?;
+     let point: Vec<E> = challenges.into_iter().rev().collect();
+--- a/crates/verifier/src/lib.rs
++++ b/crates/verifier/src/lib.rs
+@@ -305,6 +305,7 @@
+     let n_constraints: usize = layout.tables.iter().map(|table| table.n_constraints()).sum();
+     let n_powers = n_constraints + N_TREES;
+     transcript.grind_check(grinding_bits(n_powers as u128 - 1))?;
++    eprintln!("PROFILE cpu_xi {}", transcript.stream_offset());
+     let xi = transcript.sample();
+     let xi_powers = powers(xi, n_powers);
+     let (constraint_powers, form_powers) = xi_powers.split_at(n_constraints);

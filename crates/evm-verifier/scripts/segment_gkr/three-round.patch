@@ -1,0 +1,666 @@
+diff --git a/rust/benchmark/Cargo.toml b/rust/benchmark/Cargo.toml
+index 50f8d43..d89a036 100644
+--- a/rust/benchmark/Cargo.toml
++++ b/rust/benchmark/Cargo.toml
+@@ -4,17 +4,13 @@ version = "0.1.0"
+ edition = "2024"
+ 
+ [dependencies]
++sha3 = "0.10"
+ ark-bn254.workspace = true
+-ark-ec.workspace = true
+ ark-ff.workspace = true
+-blake3.workspace = true
+-hex.workspace = true
+ keccak.workspace = true
+ gkr = { path = "../gkr", default-features = false }
+-rayon.workspace = true
+-tracing.workspace = true
+-tracing-forest.workspace = true
+ 
+ [features]
++field192 = ["gkr/field192"]
+ default = ["whir"]
+ whir = ["gkr/whir"]
+diff --git a/rust/gkr/Cargo.toml b/rust/gkr/Cargo.toml
+index f05e486..7c56650 100644
+--- a/rust/gkr/Cargo.toml
++++ b/rust/gkr/Cargo.toml
+@@ -4,6 +4,7 @@ version = "0.1.0"
+ edition = "2024"
+ 
+ [dependencies]
++sha3 = "0.10"
+ ark-bn254.workspace = true
+ ark-ec.workspace = true
+ ark-ff.workspace = true
+@@ -18,6 +19,7 @@ tracing-forest.workspace = true
+ whir = { git = "https://github.com/reilabs/circuit_whir.git", optional = true }
+ 
+ [features]
++field192 = []
+ default = ["whir"]
+ whir = ["dep:whir"]
+ 
+diff --git a/rust/gkr/src/keccacheck_og/prover.rs b/rust/gkr/src/keccacheck_og/prover.rs
+index 6361484..6f24678 100644
+--- a/rust/gkr/src/keccacheck_og/prover.rs
++++ b/rust/gkr/src/keccacheck_og/prover.rs
+@@ -1,6 +1,6 @@
+ use crate::reference::{KeccakRoundState, ROUND_CONSTANTS, strip_pi};
+ use crate::sumcheck::chi::prove_chi;
+-use crate::sumcheck::iota::prove_iota;
++use crate::sumcheck::iota::prove_iota_with_constants;
+ use crate::sumcheck::outputs::{prove_bits, prove_outputs};
+ use crate::sumcheck::rho::prove_rho;
+ use crate::sumcheck::theta::prove_theta;
+@@ -9,7 +9,7 @@ use crate::sumcheck::theta_c::prove_theta_c;
+ use crate::sumcheck::theta_d::prove_theta_d;
+ use crate::sumcheck::util::{HALF, eval_mle, to_field_vec, to_poly};
+ use crate::transcript::Prover;
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::{One, Zero};
+ use tracing::instrument;
+ 
+@@ -22,10 +22,16 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+     let data = data.to_vec();
+ 
+     let span = tracing::span!(tracing::Level::INFO, "calculate_states").entered();
+-    let mut state = Vec::with_capacity(24);
+-    state.push(KeccakRoundState::at_round(&data, 0));
+-    for i in 1..24 {
+-        state.push(state[i - 1].next());
++    let mut state: Vec<KeccakRoundState> = Vec::with_capacity(3);
++    for step in 0..3 {
++        let mut layer = match state.last() {
++            None => KeccakRoundState::at_round(&data, 0),
++            Some(previous) => previous.next(),
++        };
++        for (i, out) in layer.iota[..instances].iter_mut().enumerate() {
++            *out = layer.pi_chi[i] ^ ROUND_CONSTANTS[3 * (i % 8) + step];
++        }
++        state.push(layer);
+     }
+     span.exit();
+ 
+@@ -39,7 +45,7 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+     // Write final output sum
+     // Over here we will instead make a claim about the words
+     // to obtain the sum
+-    let output_words = to_field_vec(&state[23].iota);
++    let output_words = to_field_vec(&state[2].iota);
+     let c: Fr = output_words
+         .chunks(instances)
+         .enumerate()
+@@ -49,7 +55,7 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+ 
+     // We will run one round of reduction to reduce to a claim on the output bits
+     let eq_proof = prove_outputs(&mut prover, num_vars - 6, &r, &output_words, &beta, c);
+-    let mut bits = to_poly(&state[23].iota);
++    let mut bits = to_poly(&state[2].iota);
+ 
+     let bit_proof = prove_bits(
+         &mut prover,
+@@ -64,7 +70,7 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+     r.extend(bit_proof.r_y);
+     #[cfg(debug_assertions)]
+     {
+-        let sum: Fr = state[23]
++        let sum: Fr = state[2]
+             .iota
+             .chunks_exact(instances)
+             .enumerate()
+@@ -78,7 +84,7 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+     }
+ 
+     let mut sum = bit_proof.bit_rlc_eval;
+-    for round in (0..24).rev() {
++    for round in (0..3).rev() {
+         let previous_proof = prove_round(
+             &mut prover,
+             num_vars,
+@@ -86,7 +92,8 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+             &r,
+             &mut beta,
+             sum,
+-            ROUND_CONSTANTS[round],
++            &std::array::from_fn(|segment| ROUND_CONSTANTS[3 * segment + round]),
++            false,
+         );
+         r = previous_proof.r;
+         if round != 0 {
+@@ -100,7 +107,7 @@ pub fn prove(data: &[u64], r: Vec<Fr>) -> (Vec<Fr>, Vec<u64>, Vec<u64>) {
+     }
+     span.exit();
+ 
+-    (prover.finish(), state[0].a.clone(), state[23].iota.clone())
++    (prover.finish(), state[0].a.clone(), state[2].iota.clone())
+ }
+ 
+ #[instrument(skip_all)]
+@@ -111,10 +118,15 @@ pub fn prove_round(
+     alpha: &[Fr],
+     beta: &mut [Fr],
+     sum: Fr,
+-    rc: u64,
++    rc: &[u64; 8],
++    projected: bool,
+ ) -> ThetaAProof {
+     // prove iota
+-    let iota_proof = prove_iota(prover, num_vars, alpha, beta, &layers.pi_chi, sum, rc);
++    let iota_proof = if projected {
++        crate::projected::iota(prover, alpha, beta, &layers.pi_chi, sum, rc)
++    } else {
++        prove_iota_with_constants(prover, num_vars, alpha, beta, &layers.pi_chi, sum, rc)
++    };
+ 
+     // combine subclaims chi_00 and chi_rlc
+     let x = prover.read();
+@@ -124,7 +136,11 @@ pub fn prove_round(
+     let sum = beta[0] * iota_proof.chi_00 + y * iota_proof.chi_rlc;
+ 
+     // prove chi
+-    let pi_chi_proof = prove_chi(prover, num_vars, &iota_proof.r, beta, &layers.rho, sum);
++    let pi_chi_proof = if projected && num_vars >= 16 {
++        crate::packed_prefix::chi(prover, num_vars, &iota_proof.r, beta, &layers.rho, sum)
++    } else {
++        prove_chi(prover, num_vars, &iota_proof.r, beta, &layers.rho, sum)
++    };
+ 
+     // strip pi to get rho
+     let mut rho = pi_chi_proof.pi.clone();
+@@ -138,7 +154,11 @@ pub fn prove_round(
+     });
+ 
+     // prove rho
+-    let rho_proof = prove_rho(prover, num_vars, &pi_chi_proof.r, beta, &layers.theta, sum);
++    let rho_proof = if projected {
++        crate::projected::rho(prover, &pi_chi_proof.r, beta, &layers.theta, sum)
++    } else {
++        prove_rho(prover, num_vars, &pi_chi_proof.r, beta, &layers.theta, sum)
++    };
+ 
+     // combine subclaims on theta, change base
+     let theta_xor_base = rho_proof
+@@ -154,15 +174,27 @@ pub fn prove_round(
+     });
+ 
+     // prove theta
+-    let theta_proof = prove_theta(
+-        prover,
+-        num_vars,
+-        &rho_proof.r,
+-        beta,
+-        &layers.d,
+-        &layers.a,
+-        sum,
+-    );
++    let theta_proof = if projected && num_vars >= 16 {
++        crate::packed_prefix::theta(
++            prover,
++            num_vars,
++            &rho_proof.r,
++            beta,
++            &layers.d,
++            &layers.a,
++            sum,
++        )
++    } else {
++        prove_theta(
++            prover,
++            num_vars,
++            &rho_proof.r,
++            beta,
++            &layers.d,
++            &layers.a,
++            sum,
++        )
++    };
+ 
+     // combine subclaims on theta d
+     let mut sum = Fr::zero();
+@@ -173,7 +205,11 @@ pub fn prove_round(
+     });
+ 
+     // prove theta d
+-    let theta_d_proof = prove_theta_d(prover, num_vars, &theta_proof.r, &beta_d, &layers.c, sum);
++    let theta_d_proof = if projected && num_vars >= 16 {
++        crate::packed_prefix::theta_d(prover, num_vars, &theta_proof.r, &beta_d, &layers.c, sum)
++    } else {
++        prove_theta_d(prover, num_vars, &theta_proof.r, &beta_d, &layers.c, sum)
++    };
+ 
+     // combine claims on theta c and rot_c
+     let mut sum = Fr::zero();
+@@ -189,15 +225,27 @@ pub fn prove_round(
+     });
+ 
+     // prove theta c
+-    let theta_c_proof = prove_theta_c(
+-        prover,
+-        num_vars,
+-        &theta_d_proof.r,
+-        &beta_c,
+-        &beta_rot_c,
+-        &layers.a,
+-        sum,
+-    );
++    let theta_c_proof = if projected && num_vars >= 16 {
++        crate::packed_prefix::theta_c(
++            prover,
++            num_vars,
++            &theta_d_proof.r,
++            &beta_c,
++            &beta_rot_c,
++            &layers.a,
++            sum,
++        )
++    } else {
++        prove_theta_c(
++            prover,
++            num_vars,
++            &theta_d_proof.r,
++            &beta_c,
++            &beta_rot_c,
++            &layers.a,
++            sum,
++        )
++    };
+ 
+     // combine claims on a from theta and theta c
+     let mut sum = Fr::zero();
+@@ -216,14 +264,27 @@ pub fn prove_round(
+     });
+ 
+     // prove theta a
+-    prove_theta_a(
+-        prover,
+-        num_vars,
+-        &theta_proof.r,
+-        &theta_c_proof.r,
+-        beta,
+-        &beta_a,
+-        &layers.a,
+-        sum,
+-    )
++    if projected && num_vars >= 16 {
++        crate::packed_prefix::theta_a(
++            prover,
++            num_vars,
++            &theta_proof.r,
++            &theta_c_proof.r,
++            beta,
++            &beta_a,
++            &layers.a,
++            sum,
++        )
++    } else {
++        prove_theta_a(
++            prover,
++            num_vars,
++            &theta_proof.r,
++            &theta_c_proof.r,
++            beta,
++            &beta_a,
++            &layers.a,
++            sum,
++        )
++    }
+ }
+diff --git a/rust/gkr/src/keccacheck_og/verifier.rs b/rust/gkr/src/keccacheck_og/verifier.rs
+index 6331721..89e0654 100644
+--- a/rust/gkr/src/keccacheck_og/verifier.rs
++++ b/rust/gkr/src/keccacheck_og/verifier.rs
+@@ -2,12 +2,18 @@ use crate::reference::{ROUND_CONSTANTS, strip_pi};
+ use crate::sumcheck::util::{self, eq, to_field_vec};
+ use crate::sumcheck::util::{HALF, add_col, eval_mle, to_poly, verify_sumcheck, xor};
+ use crate::transcript::Verifier;
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::{One, Zero};
+ use tracing::{Level, instrument};
+ 
+ #[instrument(skip_all)]
+-pub fn verify(num_vars: usize, output: &[u64], input: &[u64], proof: &[Fr], r: Vec<Fr>) {
++pub fn verify(
++    num_vars: usize,
++    output: &[u64],
++    input: &[u64],
++    proof: &[Fr],
++    r: Vec<Fr>,
++) -> (Vec<Fr>, Vec<Fr>) {
+     let instances = 1usize << (num_vars - 6);
+ 
+     let mut verifier = Verifier::new(proof);
+@@ -55,14 +61,15 @@ pub fn verify(num_vars: usize, output: &[u64], input: &[u64], proof: &[Fr], r: V
+ 
+     let span = tracing::span!(Level::INFO, "verify all rounds").entered();
+     let mut iota = Vec::new();
+-    for round in (0..24).rev() {
++    for round in (0..3).rev() {
+         (r, iota) = verify_round(
+             &mut verifier,
+             num_vars,
+             &r,
+             &mut beta,
+             sum,
+-            ROUND_CONSTANTS[round],
++            &std::array::from_fn(|segment| ROUND_CONSTANTS[3 * segment + round]),
++            false,
+         );
+         if round != 0 {
+             sum = Fr::zero();
+@@ -74,6 +81,7 @@ pub fn verify(num_vars: usize, output: &[u64], input: &[u64], proof: &[Fr], r: V
+     }
+     span.exit();
+ 
++    assert!(verifier.remaining().is_empty());
+     // verify input
+     let span = tracing::span!(Level::INFO, "evaluate input at random point").entered();
+     for i in 0..25 {
+@@ -86,24 +94,28 @@ pub fn verify(num_vars: usize, output: &[u64], input: &[u64], proof: &[Fr], r: V
+         );
+     }
+     span.exit();
++    (r, iota)
+ }
+ 
+-fn verify_round(
++pub fn verify_round(
+     verifier: &mut Verifier,
+     num_vars: usize,
+     alpha: &[Fr],
+     beta: &mut [Fr],
+     sum: Fr,
+-    rc: u64,
++    rc: &[u64; 8],
++    projected: bool,
+ ) -> (Vec<Fr>, Vec<Fr>) {
+     // verify iota
+-    let (ve, vrs_iota) = verify_sumcheck::<3>(verifier, num_vars, sum);
++    let prefix = if projected { num_vars - 9 } else { 0 };
++    let (ve, r_tail) = verify_sumcheck::<3>(verifier, num_vars - prefix, sum);
++    let e_eq = util::eq(&alpha[prefix..], &r_tail);
++    let vrs_iota = [&alpha[..prefix], &r_tail].concat();
+     let chi_00 = verifier.read();
+     let chi_rlc = verifier.read();
+ 
+-    let e_eq = util::eq(alpha, &vrs_iota);
+-    let rc = to_poly(&[rc; 1]);
+-    let e_rc = eval_mle(&rc, &vrs_iota[(vrs_iota.len() - 6)..]);
++    let rc = to_poly(rc);
++    let e_rc = eval_mle(&rc, &vrs_iota[(vrs_iota.len() - 9)..]);
+     assert_eq!(e_eq * (beta[0] * xor(chi_00, e_rc) + chi_rlc), ve);
+ 
+     // combine subclaims chi_00 and chi_rlc
+@@ -137,10 +149,12 @@ fn verify_round(
+     });
+ 
+     // verify rho
+-    let (ve, vrs_rho) = verify_sumcheck::<2>(verifier, num_vars, expected_sum);
++    let prefix = if projected { num_vars - 6 } else { 0 };
++    let (ve, r_tail) = verify_sumcheck::<2>(verifier, num_vars - prefix, expected_sum);
++    let vrs_rho = [&vrs_chi[..prefix], &r_tail].concat();
+     let theta = (0..25).map(|_| verifier.read()).collect::<Vec<_>>();
+     let e_rot = (0..25)
+-        .map(|i| util::rot(i, &vrs_chi, &vrs_rho))
++        .map(|i| util::rot(i, &vrs_chi[prefix..], &vrs_rho[prefix..]))
+         .collect::<Vec<_>>();
+     let checksum = (0..25).map(|i| beta[i] * e_rot[i] * theta[i]).sum::<Fr>();
+     assert_eq!(checksum, ve);
+diff --git a/rust/gkr/src/lib.rs b/rust/gkr/src/lib.rs
+index 42514f9..17a8cb8 100644
+--- a/rust/gkr/src/lib.rs
++++ b/rust/gkr/src/lib.rs
+@@ -1,8 +1,14 @@
+ pub mod keccacheck_og;
+ #[cfg(feature = "whir")]
+ pub mod keccacheck_whir;
++#[cfg(feature="whir")]
+ pub mod poseidon;
+ pub mod reference;
+ #[allow(clippy::too_many_arguments)]
+ pub mod sumcheck;
+ pub mod transcript;
++
++pub mod projected;
++mod packed_prefix;
++
++pub mod scalar;
+diff --git a/rust/gkr/src/sumcheck/binary.rs b/rust/gkr/src/sumcheck/binary.rs
+index e0a02b5..5cbd0df 100644
+--- a/rust/gkr/src/sumcheck/binary.rs
++++ b/rust/gkr/src/sumcheck/binary.rs
+@@ -5,7 +5,7 @@ use crate::sumcheck::util::{
+     HALF, calculate_evaluations_over_boolean_hypercube_for_eq, eq, update, verify_sumcheck,
+ };
+ use crate::transcript::{Prover, Verifier};
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::{One, Zero};
+ use rayon::prelude::*;
+ use tracing::instrument;
+diff --git a/rust/gkr/src/sumcheck/chi.rs b/rust/gkr/src/sumcheck/chi.rs
+index e4a59f4..782b5a4 100644
+--- a/rust/gkr/src/sumcheck/chi.rs
++++ b/rust/gkr/src/sumcheck/chi.rs
+@@ -8,7 +8,7 @@ use crate::{
+     sumcheck::util::{HALF, update, xor},
+     transcript::Prover,
+ };
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::{One, Zero};
+ use rayon::prelude::*;
+ use std::str::FromStr;
+diff --git a/rust/gkr/src/sumcheck/iota.rs b/rust/gkr/src/sumcheck/iota.rs
+index 89cc95c..bc1e0e3 100644
+--- a/rust/gkr/src/sumcheck/iota.rs
++++ b/rust/gkr/src/sumcheck/iota.rs
+@@ -7,7 +7,7 @@ use crate::{
+     sumcheck::util::{HALF, update, xor},
+     transcript::Prover,
+ };
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::Zero;
+ use rayon::prelude::*;
+ use tracing::instrument;
+@@ -28,6 +28,19 @@ pub fn prove_iota(
+     chi: &[u64],
+     sum: Fr,
+     rc: u64,
++) -> IotaProof {
++    prove_iota_with_constants(transcript, num_vars, r, beta, chi, sum, &[rc])
++}
++
++#[instrument(skip_all)]
++pub fn prove_iota_with_constants(
++    transcript: &mut Prover,
++    num_vars: usize,
++    r: &[Fr],
++    beta: &[Fr],
++    chi: &[u64],
++    sum: Fr,
++    rc: &[u64],
+ ) -> IotaProof {
+     let instances = 1 << (num_vars - 6);
+ 
+@@ -49,7 +62,7 @@ pub fn prove_iota(
+         || {
+             rayon::join(
+                 || calculate_evaluations_over_boolean_hypercube_for_eq(r),
+-                || to_poly(&vec![rc; instances]),
++                || to_poly(&rc.repeat(instances / rc.len())),
+             )
+         },
+         || {
+@@ -95,7 +108,7 @@ pub fn prove_iota(
+         // sumcheck consumed all polynomials. create again
+         let eq = calculate_evaluations_over_boolean_hypercube_for_eq(r);
+         let chi_00 = to_poly(&chi[0..instances]);
+-        let rc = to_poly(&vec![rc; instances]);
++        let rc = to_poly(&rc.repeat(instances / rc.len()));
+         let mut chi_rlc = vec![Fr::zero(); 1 << num_vars];
+         for el in 1..25 {
+             let slice = &chi[(el * instances)..(el * instances + instances)];
+diff --git a/rust/gkr/src/sumcheck/outputs.rs b/rust/gkr/src/sumcheck/outputs.rs
+index dd43846..03035d3 100644
+--- a/rust/gkr/src/sumcheck/outputs.rs
++++ b/rust/gkr/src/sumcheck/outputs.rs
+@@ -1,4 +1,4 @@
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::Zero;
+ use rayon::iter::{IntoParallelIterator, ParallelIterator};
+ use tracing::instrument;
+diff --git a/rust/gkr/src/sumcheck/rho.rs b/rust/gkr/src/sumcheck/rho.rs
+index 8b13b6f..e28295a 100644
+--- a/rust/gkr/src/sumcheck/rho.rs
++++ b/rust/gkr/src/sumcheck/rho.rs
+@@ -2,7 +2,7 @@
+ use crate::sumcheck::util::eval_mle;
+ use crate::sumcheck::util::{calculate_evaluations_over_boolean_hypercube_for_rot, to_poly};
+ use crate::{sumcheck::util::update, transcript::Prover};
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::Zero;
+ use rayon::prelude::*;
+ use tracing::instrument;
+diff --git a/rust/gkr/src/sumcheck/theta.rs b/rust/gkr/src/sumcheck/theta.rs
+index 7ac67a0..889d4ba 100644
+--- a/rust/gkr/src/sumcheck/theta.rs
++++ b/rust/gkr/src/sumcheck/theta.rs
+@@ -3,7 +3,7 @@ use crate::sumcheck::util::{
+     to_poly_xor_base_coeff, update,
+ };
+ use crate::transcript::Prover;
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::Zero;
+ use rayon::prelude::*;
+ use tracing::instrument;
+diff --git a/rust/gkr/src/sumcheck/theta_a.rs b/rust/gkr/src/sumcheck/theta_a.rs
+index a409706..49fb331 100644
+--- a/rust/gkr/src/sumcheck/theta_a.rs
++++ b/rust/gkr/src/sumcheck/theta_a.rs
+@@ -2,7 +2,7 @@ use crate::sumcheck::util::{
+     calculate_evaluations_over_boolean_hypercube_for_eq, to_poly_xor_base,
+ };
+ use crate::{sumcheck::util::update, transcript::Prover};
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::Zero;
+ use rayon::prelude::*;
+ use tracing::instrument;
+@@ -183,7 +183,7 @@ mod test {
+     use crate::sumcheck::theta_a::prove_theta_a;
+     use crate::sumcheck::util::{eval_mle, to_poly_xor_base};
+     use crate::transcript::Prover;
+-    use ark_bn254::Fr;
++    use crate::scalar::Fr;
+ 
+     #[test]
+     fn theta_a_no_recursion() {
+diff --git a/rust/gkr/src/sumcheck/theta_c.rs b/rust/gkr/src/sumcheck/theta_c.rs
+index 0f3ad10..2256c0b 100644
+--- a/rust/gkr/src/sumcheck/theta_c.rs
++++ b/rust/gkr/src/sumcheck/theta_c.rs
+@@ -3,7 +3,7 @@ use crate::sumcheck::util::{
+     to_poly_xor_base, update,
+ };
+ use crate::transcript::Prover;
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::{MontFp, One, Zero};
+ use rayon::prelude::*;
+ use tracing::instrument;
+@@ -369,7 +369,7 @@ mod test {
+         eval_mle, to_poly_xor_base,
+     };
+     use crate::transcript::Prover;
+-    use ark_bn254::Fr;
++    use crate::scalar::Fr;
+     use ark_ff::Zero;
+ 
+     #[test]
+diff --git a/rust/gkr/src/sumcheck/theta_d.rs b/rust/gkr/src/sumcheck/theta_d.rs
+index f2f72db..fb70392 100644
+--- a/rust/gkr/src/sumcheck/theta_d.rs
++++ b/rust/gkr/src/sumcheck/theta_d.rs
+@@ -2,7 +2,7 @@ use crate::sumcheck::util::{
+     HALF, calculate_evaluations_over_boolean_hypercube_for_eq, to_poly_xor_base, update,
+ };
+ use crate::transcript::Prover;
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::Zero;
+ use rayon::prelude::*;
+ use tracing::instrument;
+@@ -207,7 +207,7 @@ mod test {
+     use crate::sumcheck::theta_d::prove_theta_d;
+     use crate::sumcheck::util::{eval_mle, to_poly_xor_base};
+     use crate::transcript::Prover;
+-    use ark_bn254::Fr;
++    use crate::scalar::Fr;
+ 
+     #[test]
+     fn theta_d_no_recursion() {
+diff --git a/rust/gkr/src/sumcheck/util.rs b/rust/gkr/src/sumcheck/util.rs
+index 11562b2..15fce76 100644
+--- a/rust/gkr/src/sumcheck/util.rs
++++ b/rust/gkr/src/sumcheck/util.rs
+@@ -1,6 +1,6 @@
+ use crate::reference::RHO_OFFSETS;
+ use crate::transcript::Verifier;
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ use ark_ff::{AdditiveGroup, Field, MontFp, One, Zero};
+ 
+ #[inline(always)]
+@@ -9,6 +9,9 @@ pub fn xor(a: Fr, b: Fr) -> Fr {
+     a + b - ab - ab
+ }
+ 
++#[cfg(feature="field192")]
++pub const HALF: Fr = MontFp!("1900769585494660045732484300086623433185562173778694242305");
++#[cfg(not(feature="field192"))]
+ pub const HALF: Fr =
+     MontFp!("10944121435919637611123202872628637544274182200208017171849102093287904247809");
+ 
+diff --git a/rust/gkr/src/transcript/mod.rs b/rust/gkr/src/transcript/mod.rs
+index 38641a3..92e57dd 100644
+--- a/rust/gkr/src/transcript/mod.rs
++++ b/rust/gkr/src/transcript/mod.rs
+@@ -1,6 +1,7 @@
++#[cfg_attr(not(feature = "whir"), path = "segment_sponge.rs")]
+ mod sponge;
+ 
+-use ark_bn254::Fr;
++use crate::scalar::Fr;
+ pub use sponge::Sponge;
+ 
+ pub struct Prover {
+@@ -27,6 +28,10 @@ impl Prover {
+         }
+     }
+ 
++    #[cfg(not(feature = "whir"))]
++    pub fn bit_claims() -> Self {
++        Self { sponge: Sponge::bit_claims(), proof: Vec::new() }
++    }
+     pub fn finish(self) -> Vec<Fr> {
+         self.proof
+     }
+@@ -53,6 +58,10 @@ impl<'a> Verifier<'a> {
+         }
+     }
+ 
++    #[cfg(not(feature = "whir"))]
++    pub fn bit_claims(proof: &'a [Fr]) -> Self {
++        Self { sponge: Sponge::bit_claims(), proof }
++    }
+     pub fn generate(&mut self) -> Fr {
+         self.sponge.squeeze()
+     }

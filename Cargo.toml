@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/flock-backend"]
+members = ["crates/flock-backend", "crates/evm-verifier", "adapters/leanvm/masked-client"]
 exclude = ["vendor/p3-recursion", "vendor/p3-sumcheck", "vendor/p3-multi-stark", "vendor/p3-gkr", "vendor/p3-bus"]
 resolver = "2"
 
@@ -60,6 +60,18 @@ lto = "thin"
 [lints.clippy]
 items_after_statements = "warn"
 wildcard_imports = "warn"
+
+[[bench]]
+name = "leanvm-recursion"
+harness = false
+
+[[example]]
+name = "root-opening-trace"
+required-features = ["opening-bench"]
+
+[[example]]
+name = "root-wiring-cap"
+required-features = ["opening-bench"]
 
 [[example]]
 name = "binary-upstream"

@@ -5,7 +5,7 @@
 //! intermediate transcript equations would not prove a polynomial statement.
 
 use anyhow::{Result, ensure};
-use rand::{RngExt, rngs::StdRng};
+use rand::TryCryptoRng;
 
 use super::{
     E, F,
@@ -49,10 +49,10 @@ impl MaskedProver {
         parameters: &Parameters,
         binding: &[u8],
         variables: usize,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<Self> {
         validate_size(parameters, variables)?;
-        let masks: Vec<E> = (0..variables + 6).map(|_| rng.random()).collect();
+        let masks = super::coins::fields(rng, variables + 6)?;
         let commitment = CommittedVectors::new(
             std::slice::from_ref(&masks),
             parameters.code(masks.len(), false)?,
@@ -98,7 +98,7 @@ impl MaskedProver {
     pub fn finish(
         self,
         verify: impl FnOnce(&mut MaskedReader<'_>) -> Result<Relation>,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<ExperimentalProof> {
         let parameters = self.parameters.clone();
         let (relation, prepared) = self.prepare(verify, rng)?;
@@ -110,7 +110,7 @@ impl MaskedProver {
     pub fn finish_unchecked(
         self,
         verify: impl FnOnce(&mut MaskedReader<'_>) -> Result<Relation>,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<ExperimentalProof> {
         let parameters = self.parameters.clone();
         let (relation, prepared) = self.prepare(verify, rng)?;
@@ -120,13 +120,13 @@ impl MaskedProver {
     fn prepare(
         mut self,
         verify: impl FnOnce(&mut MaskedReader<'_>) -> Result<Relation>,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<(Relation, PreparedTranscript)> {
         ensure!(
             self.witness.len() == self.variables,
             "unfinished masked schedule"
         );
-        let witness = pad_witness(&self.witness, rng);
+        let witness = pad_witness(&self.witness, rng)?;
         self.masked.extend(
             witness[self.variables..]
                 .iter()

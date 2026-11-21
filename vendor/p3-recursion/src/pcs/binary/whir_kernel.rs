@@ -358,16 +358,24 @@ where
     P: BinaryWhirPolicy<CF>,
 {
     let cap_height = check.cap.len().ilog2() as usize;
+    // Groups visit successively coarser partitions of this same commitment.
+    // Every upper node for the later groups is computed by the first group.
+    let mut upper_layers: Vec<Vec<Vec<ExprId>>> = Vec::new();
     for (range, depth) in check.site.queries.groups() {
         if arity == MerkleArity::Two
             && check.site.log_height == check.site.queries.index_bits()
             && depth > cap_height
         {
             let low = check.site.log_height - depth;
-            let mut layer: Vec<_> = (0..range.len())
-                .map(|s| check.paths[range.start + (s ^ 1)][low].clone())
-                .collect();
-            for (s, root) in layer.iter().enumerate() {
+            let levels = depth - cap_height;
+            let build_upper_tree = upper_layers.is_empty();
+            if build_upper_tree {
+                upper_layers.resize_with(levels + 1, Vec::new);
+                upper_layers[levels] = (0..range.len())
+                    .map(|s| check.paths[range.start + (s ^ 1)][low].clone())
+                    .collect();
+            }
+            for (s, root) in upper_layers[levels].iter().enumerate() {
                 let q = range.start + s;
                 authenticate_row_using::<P, H, CF>(
                     b,
@@ -382,7 +390,9 @@ where
                     domains,
                 )?;
             }
-            for k in 0..depth - cap_height {
+            for k in 0..levels {
+                let level = levels - k;
+                let layer = &upper_layers[level];
                 // Bind every redundant upper sibling, including paths that did
                 // not supply a representative root. No proof input is discarded.
                 for s in 0..range.len() {
@@ -394,7 +404,10 @@ where
                     }
                     b.check_construction_limits()?;
                 }
-                layer = layer
+                if !build_upper_tree {
+                    continue;
+                }
+                upper_layers[level - 1] = layer
                     .as_chunks::<2>()
                     .0
                     .iter()
@@ -409,11 +422,13 @@ where
                     })
                     .collect::<Result<_, VerificationError>>()?;
             }
-            for (actual, expected) in layer.iter().zip(&check.cap) {
-                for (&actual, &expected) in actual.iter().zip(expected) {
-                    b.connect(actual, expected);
+            if build_upper_tree {
+                for (actual, expected) in upper_layers[0].iter().zip(&check.cap) {
+                    for (&actual, &expected) in actual.iter().zip(expected) {
+                        b.connect(actual, expected);
+                    }
+                    b.check_construction_limits()?;
                 }
-                b.check_construction_limits()?;
             }
         } else {
             for q in range {

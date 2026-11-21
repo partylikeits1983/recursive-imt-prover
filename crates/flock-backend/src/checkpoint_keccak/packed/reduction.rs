@@ -268,11 +268,17 @@ pub(super) fn verify_parts(
                 * (k * (a + c) + b * c),
         "incorrect packed chi endpoint"
     );
-    let claim = previous_claim(
+    let beta = bind_values(values, ch);
+    let claim = previous_claim(point.as_slice(), values, beta, instance.len());
+    #[cfg(feature = "opening-bench")]
+    crate::opening_trace::record_chi_cubic(
+        sumcheck,
         point.as_slice(),
+        terminal,
+        coefficients,
         values,
-        bind_values(values, ch),
-        instance.len(),
+        beta,
+        claim.value,
     );
     Ok(PackedClaim { claim, lanes })
 }

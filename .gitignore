@@ -1,4 +1,6 @@
 /target/
+/adapters/leanvm/target/
 /run/
 *.profraw
 .DS_Store
+__pycache__/

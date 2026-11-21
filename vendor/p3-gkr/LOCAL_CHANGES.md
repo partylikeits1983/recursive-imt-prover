@@ -25,6 +25,9 @@ the original dense path over BinaryField128 and Poly64/Poly192, heights 0–16,
 empty/partial/full prefixes, chunk boundaries, trailing identities, distinct and
 shared roots. Upstream proof-byte fixtures and verifier tests are preserved.
 
+The public product-tree shape exposes its canonical domain separator for
+independent transcript replay in the Ethereum verifier.
+
 ```sh
 cargo test --locked --release --manifest-path vendor/p3-gkr/Cargo.toml --target-dir target --features parallel --lib
 ```

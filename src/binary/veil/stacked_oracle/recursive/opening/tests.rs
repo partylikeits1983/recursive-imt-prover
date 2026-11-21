@@ -22,11 +22,12 @@ struct Fixture {
     row_offset: usize,
 }
 
-fn fixture() -> Result<Fixture> {
+fn fixture(domains: crate::binary::veil::hash::RowDomains) -> Result<Fixture> {
     let spec = StackedSpec {
         variables: 3,
         columns: 5,
         log_stack: 2,
+        domains,
     };
     let parameters = Parameters::default();
     let mut rng = StdRng::seed_from_u64(0x6f7261636c65);
@@ -167,7 +168,7 @@ fn accepts(fixture: &Fixture, public: &[F], private: &[F]) -> bool {
 
 #[test]
 fn recursive_oracle_authenticates_salted_rows_and_affine_obligations() -> Result<()> {
-    let fixture = fixture()?;
+    let fixture = fixture(Default::default())?;
     assert!(accepts(&fixture, &fixture.public, &fixture.private));
     for i in [0, 32, 64, 73, 79, 94, fixture.public.len() - 1] {
         let mut changed = fixture.public.clone();
@@ -197,9 +198,19 @@ fn recursive_oracle_authenticates_salted_rows_and_affine_obligations() -> Result
 }
 
 #[test]
+fn aligned_oracle_domains_match_the_native_and_custom_circuit() -> Result<()> {
+    let fixture = fixture(crate::binary::veil::hash::RowDomains::Aligned)?;
+    assert!(accepts(&fixture, &fixture.public, &fixture.private));
+    let mut wrong = fixture.private.clone();
+    wrong[fixture.row_offset] += F::ONE;
+    assert!(!accepts(&fixture, &fixture.public, &wrong));
+    Ok(())
+}
+
+#[test]
 #[ignore = "resource-intensive complete public oracle-verification outer proof"]
 fn recursive_oracle_has_an_actual_outer_proof() -> Result<()> {
-    let fixture = fixture()?;
+    let fixture = fixture(Default::default())?;
     let prepared = PreparedCircuit::new(
         fixture.circuit,
         &Settings::default(),

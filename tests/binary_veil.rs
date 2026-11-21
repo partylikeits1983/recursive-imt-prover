@@ -1,4 +1,6 @@
 use anyhow::Result;
+use p3_binary_dft::BasisNtt;
+use p3_binary_field::TowerLevel;
 use p3_field::{Field, PrimeCharacteristicRing};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use recursive_imt_prover::binary::veil::{
@@ -28,6 +30,32 @@ fn additive_code_matches_interpolation_and_product() -> Result<()> {
         let encoded = code.encode_product(&product)?;
         for i in 0..code.codeword_len {
             assert_eq!(encoded[i], ca[i] * cb[i]);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn batched_codewords_match_scalar_extension_transforms() -> Result<()> {
+    let mut rng = StdRng::seed_from_u64(7593);
+    for rate in 2..=5 {
+        for (interpolation, code) in [
+            (true, BinaryCode::new(32, 5, rate)?),
+            (false, BinaryCode::coefficients(32, 5, rate)?),
+        ] {
+            let values: Vec<E> = (0..code.input_len).map(|_| rng.random()).collect();
+            let log_input = code.input_len.ilog2() as usize;
+            let log_output = code.codeword_len.ilog2() as usize;
+            let basis: Vec<_> = (0..log_output).map(F::cantor_basis).collect();
+            let mut expected = values.clone();
+            if interpolation {
+                BasisNtt::new(&basis[..log_input], F::ZERO)
+                    .transform_algebra::<E, true>(&mut expected, 1);
+            }
+            expected.resize(code.codeword_len, E::ZERO);
+            BasisNtt::new(&basis, F::cantor_basis(log_output))
+                .transform_algebra::<E, false>(&mut expected, 1);
+            assert_eq!(code.encode(&values)?, expected);
         }
     }
     Ok(())

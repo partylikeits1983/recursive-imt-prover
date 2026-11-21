@@ -43,7 +43,7 @@ impl NativeAirProgram {
             messages.len() == self.rounds && challenges.len() == 2 + 2 * self.rounds,
             "wrong AIR circuit schedule"
         );
-        let weights = weight_polynomials(self.degree);
+        let weights = self.round_weight_polynomials();
         let mut claim = LinearTarget::constant(constant(b, E::ZERO));
         let point = challenges[2 + self.rounds..].to_vec();
         for (message, r) in messages.iter().zip(&point) {
@@ -61,6 +61,14 @@ impl NativeAirProgram {
             point,
             claim,
         })
+    }
+}
+
+impl NativeAirProgram {
+    /// Polynomial coefficients for the previous claim and each transmitted round value.
+    /// The order is the same as in the native verifier's affine reduction.
+    pub fn round_weight_polynomials(&self) -> Vec<Vec<E>> {
+        weight_polynomials(self.degree)
     }
 }
 

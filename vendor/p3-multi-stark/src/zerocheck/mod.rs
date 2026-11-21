@@ -186,7 +186,7 @@ pub struct AirZerocheck<'a, A> {
 /// Native per-variable degrees of one AIR's ordinary constraints and lookup links.
 ///
 /// See [`get_air_profile`], which also counts the batched constraints.
-pub(crate) fn get_air_degrees<F, EF, A>(air: &A) -> AirDegrees
+pub fn get_air_degrees<F, EF, A>(air: &A) -> AirDegrees
 where
     F: Field,
     EF: ExtensionField<F>,

@@ -216,5 +216,18 @@ pub(crate) fn verify_joint<'a, A: VerifierAir<F, Poly192>>(
         ports.instance == proof.ports.instance && ports.values == proof.ports.values,
         "incorrect joint Keccak bridge"
     );
-    reduced.authenticate(&opened.auxiliary)
+    reduced.authenticate(&opened.auxiliary)?;
+    #[cfg(feature = "opening-bench")]
+    if scheme.packed_chi {
+        crate::opening_trace::record_linked_prefix(
+            authority,
+            &proof.arithmetic.commitment.roots()[0],
+            &proof.ports,
+            &proof.keccak,
+            &coefficients[0],
+            reduced.points[2].as_slice(),
+            None,
+        );
+    }
+    Ok(())
 }

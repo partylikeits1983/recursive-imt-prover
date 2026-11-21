@@ -6,6 +6,7 @@ use imt_flock_backend::{
     verifier_key_digest,
 };
 use p3_circuit::{Circuit, CircuitBuilder, CircuitConstructionLimits, ExprId};
+use serde::{Deserialize, Serialize};
 
 use super::{STATEMENT_BYTES, TreeProof, TreeStatement, TreeTarget};
 use crate::{
@@ -18,6 +19,14 @@ use crate::{
 };
 
 pub const PROTOCOL: &str = "experimental-binary-checkpoint-cyclic-merge-v2";
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrustedVerifier {
+    pub protocol: String,
+    pub identity: String,
+    pub verifier_digest: [u8; 32],
+}
 
 pub struct PreparedCyclicMerge {
     first: RecursiveAggregate,
@@ -39,14 +48,17 @@ impl CyclicVerifier {
     }
 
     pub fn verify(&self, proof: &[u8], public: &AggregatePublic) -> Result<()> {
+        self.verify_statement(proof, &TreeStatement::from_public(public)?)
+    }
+
+    /// Verify a merge against an independently expected ordered digest and leaf count.
+    pub fn verify_statement(&self, proof: &[u8], expected: &TreeStatement) -> Result<()> {
+        let count = usize::from(expected.count);
         ensure!(
-            public.children.len() >= 4,
-            "merge proof requires at least four leaves"
+            count.is_power_of_two() && (4..=MAX_CHILDREN).contains(&count),
+            "invalid merge leaf count"
         );
-        self.outer.verify(
-            proof,
-            &fields(&TreeStatement::from_public(public)?, &self.authority),
-        )
+        self.outer.verify(proof, &fields(expected, &self.authority))
     }
 }
 
@@ -98,6 +110,11 @@ impl PreparedCyclicMerge {
             ),
         )?;
         self.outer.compare_recorded_openings(repetitions)
+    }
+
+    #[cfg(feature = "opening-bench")]
+    pub fn fixed_column_profile(&self) -> imt_flock_backend::opening_bench::FixedColumnProfile {
+        self.outer.fixed_column_profile()
     }
 
     pub fn geometry(&self) -> &Geometry {
@@ -168,7 +185,7 @@ pub(crate) fn fields(statement: &TreeStatement, authority: &RecursiveAuthority) 
         .collect()
 }
 
-fn circuit(source: &RecursiveAggregate, first: &RecursiveAuthority) -> Result<Circuit<F>> {
+pub(super) fn merge_builder() -> Result<CircuitBuilder<F>> {
     let mut b = CircuitBuilder::with_construction_limits(CircuitConstructionLimits {
         max_expression_nodes: 1 << 27,
         max_pending_connects: 1 << 26,
@@ -176,6 +193,11 @@ fn circuit(source: &RecursiveAggregate, first: &RecursiveAuthority) -> Result<Ci
         max_non_primitive_slots: 1 << 29,
     })?;
     b.enable_native_keccak_f1600()?;
+    Ok(b)
+}
+
+fn circuit(source: &RecursiveAggregate, first: &RecursiveAuthority) -> Result<Circuit<F>> {
+    let mut b = merge_builder()?;
     let expected = b.alloc_public_input_array::<STATEMENT_BYTES>("parent statement");
     let side = b.alloc_public_input("side");
     b.assert_bool(side);

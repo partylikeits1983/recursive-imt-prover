@@ -12,7 +12,10 @@ use super::F;
 use crate::binary::{
     IMT_DEPTH,
     relation::{ClientPublic, ClientWitness, PUBLIC_BYTES},
-    tree::{NODE_DOMAIN, RECORD_DOMAIN, TAG_DOMAIN, commitment, parent},
+    tree::{
+        Hash, NODE_DOMAIN, PREIMAGE_DOMAIN, RECORD_DOMAIN, TAG_DOMAIN, commitment, parent,
+        preimage_leaf,
+    },
 };
 
 pub(super) const ROWS_PER_HASH: usize = 25;
@@ -31,7 +34,17 @@ const OUTPUT_END: usize = 31;
 const NEXT_FLAGS: usize = 32;
 pub(super) const PREPROCESSED_WIDTH: usize = NEXT_FLAGS + ROWS_PER_HASH;
 
-pub(super) struct MembershipAir;
+pub(super) struct MembershipAir {
+    pub(super) checks: CheckLayout,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CheckLayout {
+    Bitwise,
+    Packed,
+    PackedInputs,
+    Preimage,
+}
 
 struct KeccakBuilder<'a, AB: AirBuilder> {
     inner: &'a mut AB,
@@ -46,11 +59,22 @@ struct KeccakWindow<T> {
 impl MembershipAir {
     pub fn new(depth: usize) -> Result<Self> {
         ensure!(depth == IMT_DEPTH, "child IMT depth must be 32");
-        Ok(Self)
+        Ok(Self {
+            checks: CheckLayout::Bitwise,
+        })
     }
 
     pub fn height(&self) -> usize {
-        ((IMT_DEPTH + 3) * ROWS_PER_HASH).next_power_of_two()
+        (self.hashes() * ROWS_PER_HASH).next_power_of_two()
+    }
+
+    fn hashes(&self) -> usize {
+        IMT_DEPTH
+            + if self.checks == CheckLayout::Preimage {
+                1
+            } else {
+                3
+            }
     }
 
     pub fn public_values(public: &ClientPublic) -> Vec<F> {
@@ -66,24 +90,25 @@ impl MembershipAir {
             witness.merkle_path.len() == IMT_DEPTH,
             "incorrect Merkle path length"
         );
+        if self.checks == CheckLayout::Preimage {
+            return self.preimage_trace(
+                &witness.input_label,
+                witness.leaf_index,
+                &witness.merkle_path,
+            );
+        }
         let mut message = Vec::from(RECORD_DOMAIN.as_slice());
         message.extend(witness.input_label);
         message.extend(witness.input_nonce);
         message.extend(witness.quantity.to_le_bytes());
         let mut inputs = vec![sponge_input(&message)];
-        let mut digest = commitment(&witness.input_label, &witness.input_nonce, witness.quantity);
-        for (level, sibling) in witness.merkle_path.iter().enumerate() {
-            let (left, right) = if (witness.leaf_index >> level) & 1 == 0 {
-                (&digest, sibling)
-            } else {
-                (sibling, &digest)
-            };
-            let mut message = Vec::from(NODE_DOMAIN.as_slice());
-            message.extend(left);
-            message.extend(right);
-            inputs.push(sponge_input(&message));
-            digest = parent(left, right);
-        }
+        let digest = commitment(&witness.input_label, &witness.input_nonce, witness.quantity);
+        append_path(
+            &mut inputs,
+            digest,
+            witness.leaf_index,
+            &witness.merkle_path,
+        );
         let mut message = Vec::from(TAG_DOMAIN.as_slice());
         message.extend(witness.input_nonce);
         inputs.push(sponge_input(&message));
@@ -99,10 +124,34 @@ impl MembershipAir {
             .iter()
             .map(|bytes| F::new(u64::from_le_bytes(*bytes)))
             .collect();
+        let mut carried = nonce;
+        carried.push(F::new(witness.quantity));
+        Ok(self.trace_rows(inputs, witness.leaf_index, &carried))
+    }
+
+    pub fn preimage_trace(
+        &self,
+        preimage: &Hash,
+        index: u32,
+        siblings: &[Hash],
+    ) -> Result<RowMajorMatrix<F>> {
+        ensure!(
+            self.checks == CheckLayout::Preimage,
+            "expected preimage membership key"
+        );
+        ensure!(siblings.len() == IMT_DEPTH, "incorrect Merkle path length");
+        let mut message = PREIMAGE_DOMAIN.to_vec();
+        message.extend_from_slice(preimage);
+        let mut inputs = vec![sponge_input(&message)];
+        append_path(&mut inputs, preimage_leaf(preimage), index, siblings);
+        Ok(self.trace_rows(inputs, index, &[]))
+    }
+
+    fn trace_rows(&self, inputs: Vec<[u64; 25]>, index: u32, carried: &[F]) -> RowMajorMatrix<F> {
         // Do not turn this reference computation into a native-verifier Boolean.
         // The AIR binds the final hash to the supplied public root.
         let keccak = generate_binary_trace_rows::<F>(inputs, 0);
-        let mut values = Vec::with_capacity(self.height() * WIDTH);
+        let mut values = Vec::with_capacity(self.height() * self.width());
         for (row, state) in keccak
             .values
             .as_chunks::<NUM_KECCAK_BINARY_COLS>()
@@ -112,20 +161,37 @@ impl MembershipAir {
         {
             values.extend_from_slice(state);
             let hash = row / ROWS_PER_HASH;
-            let direction = row % ROWS_PER_HASH == 24
-                && hash < IMT_DEPTH
-                && (witness.leaf_index >> hash) & 1 == 1;
+            let direction =
+                row % ROWS_PER_HASH == 24 && hash < IMT_DEPTH && (index >> hash) & 1 == 1;
             values.push(F::from_bool(direction));
-            values.extend_from_slice(&nonce);
-            values.push(F::new(witness.quantity));
+            values.extend_from_slice(carried);
         }
-        Ok(RowMajorMatrix::new(values, WIDTH))
+        RowMajorMatrix::new(values, self.width())
+    }
+}
+
+fn append_path(inputs: &mut Vec<[u64; 25]>, mut digest: Hash, index: u32, siblings: &[Hash]) {
+    for (level, sibling) in siblings.iter().enumerate() {
+        let (left, right) = if (index >> level) & 1 == 0 {
+            (&digest, sibling)
+        } else {
+            (sibling, &digest)
+        };
+        let mut message = Vec::from(NODE_DOMAIN.as_slice());
+        message.extend(left);
+        message.extend(right);
+        inputs.push(sponge_input(&message));
+        digest = parent(left, right);
     }
 }
 
 impl BaseAir<F> for MembershipAir {
     fn width(&self) -> usize {
-        WIDTH
+        if self.checks == CheckLayout::Preimage {
+            DIRECTION + 1
+        } else {
+            WIDTH
+        }
     }
     fn num_public_values(&self) -> usize {
         PUBLIC_BYTES
@@ -136,7 +202,8 @@ impl BaseAir<F> for MembershipAir {
     fn preprocessed_trace(&self) -> Option<RowMajorMatrix<F>> {
         let path_end = (IMT_DEPTH + 1) * ROWS_PER_HASH;
         let output_start = path_end + ROWS_PER_HASH;
-        let used = output_start + ROWS_PER_HASH;
+        let used = self.hashes() * ROWS_PER_HASH;
+        let records = self.checks != CheckLayout::Preimage;
         let mut values = vec![F::ZERO; self.height() * PREPROCESSED_WIDTH];
         for (row, prep) in values
             .as_chunks_mut::<PREPROCESSED_WIDTH>()
@@ -149,10 +216,10 @@ impl BaseAir<F> for MembershipAir {
             prep[NODE_START] = F::from_bool(row > 0 && row < path_end && round == 0);
             prep[LINK] = F::from_bool(row < IMT_DEPTH * ROWS_PER_HASH && round == 24);
             prep[ROOT] = F::from_bool(row == path_end - 1);
-            prep[NONCE_START] = F::from_bool(row == path_end);
-            prep[NONCE_END] = F::from_bool(row == output_start - 1);
-            prep[OUTPUT_START] = F::from_bool(row == output_start);
-            prep[OUTPUT_END] = F::from_bool(row == used - 1);
+            prep[NONCE_START] = F::from_bool(records && row == path_end);
+            prep[NONCE_END] = F::from_bool(records && row == output_start - 1);
+            prep[OUTPUT_START] = F::from_bool(records && row == output_start);
+            prep[OUTPUT_END] = F::from_bool(records && row == used - 1);
             let next = (row + 1).min(self.height() - 1);
             let next_round = if next < used {
                 next % ROWS_PER_HASH
@@ -167,7 +234,9 @@ impl BaseAir<F> for MembershipAir {
         vec![]
     }
     fn main_next_row_columns(&self) -> Vec<usize> {
-        (0..NUM_KECCAK_BINARY_COLS).chain(NONCE..WIDTH).collect()
+        (0..NUM_KECCAK_BINARY_COLS)
+            .chain(NONCE..self.width())
+            .collect()
     }
 }
 
@@ -175,7 +244,16 @@ impl<AB: AirBuilder<F = F>> Air<AB> for MembershipAir {
     fn eval(&self, builder: &mut AB) {
         // Expose only the original columns to the existing Keccak AIR, while
         // forwarding its optimized array assertions to the native folder.
-        KeccakBinaryAir::default().eval(&mut KeccakBuilder { inner: builder });
+        let keccak = if matches!(
+            self.checks,
+            CheckLayout::PackedInputs | CheckLayout::Preimage
+        ) {
+            // Input constraints below establish the induction hypothesis for every hash.
+            KeccakBinaryAir::assuming_boolean_trace()
+        } else {
+            KeccakBinaryAir::default()
+        };
+        keccak.eval(&mut KeccakBuilder { inner: builder });
         let main = builder.main();
         let local = main.current_slice();
         let next = main.next_slice();
@@ -189,16 +267,49 @@ impl<AB: AirBuilder<F = F>> Air<AB> for MembershipAir {
         // Non-link direction cells are fixed, so they are not unconstrained
         // witness channels. Each of the depth actual link bits remains private.
         builder.assert_zero((AB::Expr::ONE - prep[LINK]) * d);
-        for bit in 0..256 {
-            let value = local[STATE_START + bit];
-            let left = next[STATE_START + 16 * 8 + bit];
-            let right = next[STATE_START + 48 * 8 + bit];
-            // In characteristic two, left + d*(left + right) selects the
-            // authenticated child. Booleanity of d is enforced above.
-            builder.assert_zero(prep[LINK] * (left.into() + d * (left + right) - value));
+        if self.checks != CheckLayout::Bitwise {
+            // The state coordinates are Boolean, so 64 basis coefficients encode a lane injectively.
+            for limb in 0..4 {
+                let value = pack_lane::<AB>(local, limb);
+                let left = pack_lane::<AB>(next, 2 + limb);
+                let right = pack_lane::<AB>(next, 6 + limb);
+                builder.assert_zero(prep[LINK] * (left.clone() + d * (left + right) - value));
+            }
+        } else {
+            for bit in 0..256 {
+                let value = local[STATE_START + bit];
+                let left = next[STATE_START + 16 * 8 + bit];
+                let right = next[STATE_START + 48 * 8 + bit];
+                // In characteristic two, left + d*(left + right) selects the
+                // authenticated child. Booleanity of d is enforced above.
+                builder.assert_zero(prep[LINK] * (left.into() + d * (left + right) - value));
+            }
         }
-        // KeccakBinaryAir checks each state bit for Booleanity. Packing its
-        // eight basis coordinates is therefore an injective byte encoding.
+        if self.checks == CheckLayout::Preimage {
+            for byte in 0..32 {
+                let value = (0..8).fold(AB::Expr::ZERO, |sum, bit| {
+                    sum + local[STATE_START + 8 * byte + bit] * F::new(1 << bit)
+                });
+                builder.assert_zero(prep[ROOT] * (value - builder.public_values()[byte].into()));
+            }
+            // Canonical root-only statement in the existing 96-byte batch encoding.
+            for i in 32..PUBLIC_BYTES {
+                let reserved: AB::Expr = builder.public_values()[i].into();
+                builder.assert_zero(reserved);
+            }
+            check_packed_absorbs::<AB, 2>(
+                builder,
+                local,
+                prep,
+                [
+                    (PREIMAGE_DOMAIN, 48, builder.is_first_row()),
+                    (NODE_DOMAIN, 80, prep[NODE_START].into()),
+                ],
+                80,
+            );
+            return;
+        }
+        // The eight Boolean basis coordinates encode a byte injectively.
         for byte in 0..32 {
             let value = (0..8).fold(AB::Expr::ZERO, |sum, bit| {
                 sum + local[STATE_START + 8 * byte + bit] * F::new(1 << bit)
@@ -230,11 +341,27 @@ impl<AB: AirBuilder<F = F>> Air<AB> for MembershipAir {
                 builder.assert_zero(gate * (packed - carried));
             }
         }
-        for (domain, length, gate) in [
+        let kinds = [
             (RECORD_DOMAIN, 88, record_start),
             (NODE_DOMAIN, 80, prep[NODE_START].into()),
             (TAG_DOMAIN, 48, prep[NONCE_START].into()),
-        ] {
+        ];
+        if self.checks == CheckLayout::PackedInputs {
+            check_packed_absorbs::<AB, 3>(builder, local, prep, kinds, 88);
+            return;
+        }
+        for (domain, length, gate) in kinds {
+            if self.checks == CheckLayout::Packed {
+                let mut message = vec![0; length];
+                message[..domain.len()].copy_from_slice(domain);
+                let template = sponge_input(&message);
+                for lane in (0..domain.len() / 8).chain(length / 8..25) {
+                    builder.assert_zero(
+                        gate.clone() * (pack_lane::<AB>(local, lane) - F::new(template[lane])),
+                    );
+                }
+                continue;
+            }
             for byte in 0..200 {
                 let fixed = if byte < domain.len() {
                     Some(domain[byte])
@@ -259,6 +386,58 @@ impl<AB: AirBuilder<F = F>> Air<AB> for MembershipAir {
             }
         }
     }
+}
+
+fn check_packed_absorbs<AB: AirBuilder<F = F>, const N: usize>(
+    builder: &mut AB,
+    local: &[AB::Var],
+    prep: &[AB::Var],
+    kinds: [(&[u8; 16], usize, AB::Expr); N],
+    max_bytes: usize,
+) {
+    let templates = kinds.each_ref().map(|(domain, length, _)| {
+        let mut message = vec![0; *length];
+        message[..domain.len()].copy_from_slice(*domain);
+        sponge_input(&message)
+    });
+    // Every round zero is a fresh absorb. All 24 round polynomials
+    // map bits to bits over characteristic two. Output rows break the
+    // recurrence, so the next absorb must independently constrain its input.
+    let absorb = prep[0];
+    let dummy = prep[24] - prep[LINK] - prep[ROOT] - prep[NONCE_END] - prep[OUTPUT_END];
+    for (bit, &value) in local[STATE_START..DIRECTION].iter().enumerate() {
+        if (16 * 8..max_bytes * 8).contains(&bit) {
+            builder.assert_zero(absorb * (value * (value - F::ONE)));
+            builder.assert_zero(dummy.clone() * value);
+        } else {
+            // The domain, capacity and common padding are known bits.
+            // Constrain them individually before packing any field coordinates.
+            let mut expected = AB::Expr::ZERO;
+            for (i, (_, _, gate)) in kinds.iter().enumerate() {
+                if templates[i][bit / 64] >> (bit % 64) & 1 == 1 {
+                    expected += gate.clone();
+                }
+            }
+            builder.assert_zero((absorb + dummy.clone()) * value - expected);
+        }
+    }
+    // Inside the maximum payload, shorter messages have fixed
+    // suffix and zero lanes. Booleanity now makes these packed checks injective.
+    for (i, (_, length, gate)) in kinds.iter().enumerate() {
+        for (lane, &expected) in templates[i][..max_bytes / 8]
+            .iter()
+            .enumerate()
+            .skip(length / 8)
+        {
+            builder.assert_zero(gate.clone() * (pack_lane::<AB>(local, lane) - F::new(expected)));
+        }
+    }
+}
+
+fn pack_lane<AB: AirBuilder<F = F>>(row: &[AB::Var], lane: usize) -> AB::Expr {
+    (0..64).fold(AB::Expr::ZERO, |sum, bit| {
+        sum + row[STATE_START + 64 * lane + bit] * F::new(1u64 << bit)
+    })
 }
 
 impl<T> WindowAccess<T> for KeccakWindow<T> {

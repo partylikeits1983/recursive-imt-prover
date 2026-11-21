@@ -1,0 +1,10 @@
+[package]
+name = "evm-verifier"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Ethereum verifier and calldata encoder for grouped LeanVM terminal proofs"
+
+[dependencies]
+anyhow = "1"
+hex = "0.4"

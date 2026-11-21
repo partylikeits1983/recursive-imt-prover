@@ -30,7 +30,7 @@ use super::{
     closing, committed, linear, previous_claim, rounds::ChiSumcheck,
 };
 use crate::{
-    config::{Challenger, Pcs, challenger, pcs},
+    config::{Challenger, Pcs, WHIR_LOG_INV_RATE, challenger, pcs_with_rate},
     encoding::TableEncoding,
 };
 use reduction::PackedClaim;
@@ -96,12 +96,27 @@ pub struct Batch {
     schedule: Schedule,
     kernel: Kernel,
     mode: Openings,
+    log_inv_rate: usize,
     groups: Vec<(Pcs, OpeningProtocol)>,
     pub conditional_algebraic_bits: f64,
 }
 
 impl Batch {
     pub fn new(log: usize, schedule: Schedule, kernel: Kernel, mode: Openings) -> Result<Self> {
+        Self::with_rate(log, schedule, kernel, mode, WHIR_LOG_INV_RATE)
+    }
+
+    pub fn with_rate(
+        log: usize,
+        schedule: Schedule,
+        kernel: Kernel,
+        mode: Openings,
+        log_inv_rate: usize,
+    ) -> Result<Self> {
+        ensure!(
+            (1..=4).contains(&log_inv_rate),
+            "unsupported Keccak component code rate"
+        );
         ensure!(
             (4..=MAX_BATCH_LOG).contains(&log),
             "expected at least one 16-way pack"
@@ -134,7 +149,7 @@ impl Batch {
             .zip(encodings.chunks(group_size))
             .zip(specs.chunks(group_size))
         {
-            let pcs = pcs(shapes, encodings.to_vec())?;
+            let pcs = pcs_with_rate(shapes, encodings.to_vec(), log_inv_rate)?;
             let protocol = OpeningProtocol::new(specs.to_vec());
             let security = pcs
                 .prescribed_security(&protocol)
@@ -179,6 +194,7 @@ impl Batch {
             schedule,
             kernel,
             mode,
+            log_inv_rate,
             groups,
             conditional_algebraic_bits,
         })
@@ -186,7 +202,12 @@ impl Batch {
 
     fn seed(&self, context: &[u8]) -> [u8; 32] {
         let mut hash = Keccak256::new();
-        hash.update(b"imt-packed-keccak-mixed-whir-v1");
+        if self.log_inv_rate == WHIR_LOG_INV_RATE {
+            hash.update(b"imt-packed-keccak-mixed-whir-v1");
+        } else {
+            hash.update(b"imt-packed-keccak-variable-rate-v1");
+            hash.update([self.log_inv_rate as u8]);
+        }
         hash.update([
             self.log as u8,
             self.schedule.depth() as u8,
@@ -408,12 +429,7 @@ impl Batch {
     }
 
     fn constant(&self, claim: &PackedClaim, round: usize) -> E {
-        let first = reduction::iota(claim, round);
-        if self.schedule == Schedule::Midpoint {
-            first + claim.claim.instance[0] * (first + reduction::iota(claim, round + 12))
-        } else {
-            first
-        }
+        round_constant(claim, round, self.schedule == Schedule::Midpoint)
     }
 
     pub fn verify(&self, statement: &Statement, proof: &Proof, context: &[u8]) -> Result<()> {
@@ -597,7 +613,7 @@ impl<'a> Checkpoints<'a> {
     }
 }
 
-fn advance(mut state: State, start: usize, end: usize) -> State {
+pub(super) fn advance(mut state: State, start: usize, end: usize) -> State {
     for round in start..end {
         state = linear::finish_round(&linear::forward(&state), round);
     }
@@ -609,6 +625,15 @@ fn midpoint_point(row: &Point<E>, position: Point<E>) -> Point<E> {
     point.extend_from_slice(row.as_slice());
     point.extend_from_slice(position.as_slice());
     Point::new(point)
+}
+
+fn round_constant(claim: &PackedClaim, round: usize, midpoint: bool) -> E {
+    let first = reduction::iota(claim, round);
+    if midpoint {
+        first + claim.claim.instance[0] * (first + reduction::iota(claim, round + 12))
+    } else {
+        first
+    }
 }
 
 fn merge_midpoint(claim: &mut PackedClaim, middle: E, ch: &mut impl FieldChallenger<F>) {
@@ -707,6 +732,27 @@ mod tests {
         let (statement, proof, _) = batch.prove(&states(32), b"recursive")?;
         let cost = batch.recursive_cost(&statement, &proof, b"recursive")?;
         assert!(cost.keccak_permutations > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn packed_openings_bind_the_code_rate() -> Result<()> {
+        let at_rate = |rate| {
+            Batch::with_rate(
+                4,
+                Schedule::Midpoint,
+                Kernel::Packed16,
+                Openings::Joint,
+                rate,
+            )
+        };
+        let normal = at_rate(WHIR_LOG_INV_RATE)?;
+        let low_rate = at_rate(4)?;
+        let (statement, proof, _) = low_rate.prove(&states(16), b"rate")?;
+        low_rate.verify(&statement, &proof, b"rate")?;
+        assert!(normal.verify(&statement, &proof, b"rate").is_err());
+        assert!(at_rate(0).is_err());
+        assert!(at_rate(5).is_err());
         Ok(())
     }
 

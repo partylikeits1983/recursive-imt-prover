@@ -100,6 +100,9 @@ mod whir_input;
 mod whir_kernel;
 mod whir_plan;
 pub use whir_domains::BinaryWhirHashDomains;
+pub use whir_plan::{
+    FoldShape as WhirFoldShape, OracleSite as WhirOracleSite, WhirPlan as BinaryWhirPlan,
+};
 mod whir_queries;
 mod whir_verifier;
 pub use boolean::{

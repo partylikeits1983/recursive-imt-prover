@@ -98,6 +98,30 @@ impl KeccakWires {
 }
 
 impl Prepared {
+    #[cfg(feature = "opening-bench")]
+    pub fn write_keccak_checkpoints(
+        &self,
+        public: &[OldF],
+        private: &[OldF],
+        mut out: impl std::io::Write,
+    ) -> Result<()> {
+        ensure!(
+            self.backend == HashBackend::Checkpoint,
+            "missing Keccak checkpoints"
+        );
+        let (tables, states) = self.witness_tables(public, private)?;
+        drop(tables);
+        let segments = states.segment_inputs();
+        let midpoints = &segments[states.inputs.len()..];
+        for ((input, middle), output) in states.inputs.iter().zip(midpoints).zip(&states.outputs) {
+            for lane in input.iter().chain(middle).chain(output) {
+                out.write_all(&lane.to_le_bytes())?;
+            }
+        }
+        out.flush()?;
+        Ok(())
+    }
+
     pub(crate) fn witness_tables(
         &self,
         public: &[OldF],
@@ -129,7 +153,7 @@ impl Prepared {
             .zip(&self.log_heights)
             .enumerate()
             .map(|(i, (air, &log))| {
-                let width = if i == self.hash_index && !self.direct_bridge {
+                let width = if i == self.hash_index && !self.direct_bridge() {
                     0
                 } else if air.is_public_table() {
                     1
@@ -184,7 +208,7 @@ impl Prepared {
                     WitnessSource::Gates(shard) => shard.fill_witness(output, read),
                     WitnessSource::Bridge => {
                         ensure!(
-                            i == self.hash_index + usize::from(!self.direct_bridge)
+                            i == self.hash_index + usize::from(!self.direct_bridge())
                                 && 2 * self.keccak_wires.len() <= height,
                             "invalid Keccak bridge table"
                         );
@@ -193,7 +217,7 @@ impl Prepared {
                             boundaries.inputs.push(before);
                             boundaries.outputs.push(after);
                         }
-                        if self.direct_bridge {
+                        if self.direct_bridge() {
                             let count = self.keccak_wires.len();
                             let limbs = keccak_state_to_limbs(&zero_output);
                             for (column, words) in output.chunks_exact_mut(height).enumerate() {
@@ -221,7 +245,7 @@ impl Prepared {
             .into_iter()
             .enumerate()
             .map(|(i, values)| {
-                (i != self.hash_index || self.direct_bridge)
+                (i != self.hash_index || self.direct_bridge())
                     .then(|| Table::new(RowMajorMatrix::new(values, 1 << self.log_heights[i])))
             })
             .collect();

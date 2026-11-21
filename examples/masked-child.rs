@@ -7,10 +7,13 @@ use mimalloc::MiMalloc;
 use recursive_imt_prover::{
     benchmark::{environment, ms, peak_rss, statistics},
     binary::{
-        cli::fixtures,
+        cli::membership_fixtures,
         relation::ClientPublic,
         veil::{
-            child::{MaskedMembershipProof, PROTOCOL, PreparedMembership},
+            child::{
+                MaskedMembershipProof, PACKED_PROTOCOL, PREIMAGE_PROTOCOL, PROTOCOL,
+                PreparedMembership,
+            },
             parameters::Parameters,
         },
     },
@@ -37,6 +40,15 @@ struct Args {
     verify: bool,
     #[arg(long)]
     inspect: bool,
+    /// Use the versioned leaf circuit with 64-bit path and padding checks.
+    #[arg(long)]
+    packed_lanes: bool,
+    /// Prove knowledge of a private 32-byte preimage and a private IMT path to a public root.
+    #[arg(long, conflicts_with_all = ["packed_lanes", "verify"])]
+    preimage: bool,
+    /// Use the versioned 16-byte stacked oracle hash domains for a preimage client.
+    #[arg(long, requires = "preimage")]
+    aligned_oracle: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,10 +72,19 @@ fn main() -> Result<()> {
     ensure!(!args.out.exists(), "output directory must be fresh");
     let parameters = Parameters::default();
     let start = Instant::now();
-    let prepared = PreparedMembership::new(args.depth, parameters.clone())?;
+    let protocol = if args.aligned_oracle {
+        recursive_imt_prover::binary::veil::child::ALIGNED_PREIMAGE_PROTOCOL
+    } else if args.preimage {
+        PREIMAGE_PROTOCOL
+    } else if args.packed_lanes {
+        PACKED_PROTOCOL
+    } else {
+        PROTOCOL
+    };
+    let prepared = PreparedMembership::for_protocol(args.depth, parameters.clone(), protocol)?;
     let setup_ms = ms(start);
     let trusted = Trusted {
-        protocol: PROTOCOL.into(),
+        protocol: protocol.into(),
         depth: args.depth,
         parameters,
         authority: prepared.identity(),
@@ -95,7 +116,7 @@ fn main() -> Result<()> {
     let mut samples = Vec::new();
     for sample in 0..args.samples {
         let start = Instant::now();
-        let (public, witness) = fixtures(args.depth, 1)?.remove(0);
+        let (public, witness) = membership_fixtures(args.depth, 1, args.preimage)?.remove(0);
         let fixture_ms = ms(start);
         let start = Instant::now();
         let trace = prepared.witness(&public, &witness)?;
@@ -152,9 +173,9 @@ fn main() -> Result<()> {
 
 fn verify(args: &Args) -> Result<()> {
     let trusted: Trusted = read_json(&args.out.join("trusted.json"))?;
-    ensure!(trusted.protocol == PROTOCOL, "wrong masked child protocol");
     let start = Instant::now();
-    let prepared = PreparedMembership::new(trusted.depth, trusted.parameters)?;
+    let prepared =
+        PreparedMembership::for_protocol(trusted.depth, trusted.parameters, &trusted.protocol)?;
     ensure!(
         prepared.identity() == trusted.authority,
         "masked child verifier identity mismatch"

@@ -262,13 +262,17 @@ fn remove_iota(claim: &Claim, round: usize) -> E {
 }
 
 fn previous_claim(point: &[E], values: [E; 3], beta: E, log_batch: usize) -> Claim {
-    let position = Point::new(&point[log_batch..]).equality_weights_msb();
+    let (lanes, bits) = point[log_batch..].split_at(5);
+    let lanes = Point::new(lanes).equality_weights_msb();
+    let bits = Point::new(bits).equality_weights_msb();
     let square = beta * beta;
-    let weights = (0..BITS)
-        .map(|j| {
-            position[j]
-                + beta * position[linear::shift(j, 4)]
-                + square * position[linear::shift(j, 3)]
+    // Chi moves between lanes and preserves the bit offset. Batch each lane once.
+    let weights = (0..25)
+        .flat_map(|lane| {
+            let lane_weight = lanes[lane]
+                + beta * lanes[linear::shift(lane * 64, 4) / 64]
+                + square * lanes[linear::shift(lane * 64, 3) / 64];
+            bits.iter().map(move |&bit| lane_weight * bit)
         })
         .collect::<Vec<_>>();
     Claim {

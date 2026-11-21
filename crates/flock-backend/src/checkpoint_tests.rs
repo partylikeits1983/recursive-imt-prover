@@ -7,6 +7,59 @@ use p3_symmetric::Permutation;
 
 use crate::{HashBackend, Prepared, Verifier, checkpoint::AggregateProof, verifier_key_digest};
 
+#[test]
+fn round_interpolation_matches_poly192_at_nodes_and_extension_points() {
+    use p3_binary_field::Poly64;
+    use p3_sumcheck::generic_degree::RoundPolyInterpolator;
+    let word = |i: u64| Poly192::new([Poly64::new(i + 1), Poly64::new(i * 7), Poly64::new(i ^ 17)]);
+    for degree in 1..=8 {
+        let coefficients: Vec<_> = (0..=degree).map(|i| word(i as u64)).collect();
+        let evaluate = |x| {
+            coefficients
+                .iter()
+                .rev()
+                .fold(Poly192::ZERO, |v, &c| v * x + c)
+        };
+        let node = |i: usize| Poly192::from(Poly64::new(i as u64));
+        let messages: Vec<_> = (0..=degree)
+            .filter(|&i| i != 1)
+            .map(|i| evaluate(node(i)))
+            .collect();
+        let sum = evaluate(node(0)) + evaluate(node(1));
+        let interpolate = RoundPolyInterpolator::new(degree);
+        for x in (0..=degree).map(node).chain([word(193)]) {
+            assert_eq!(interpolate.eval(&messages, sum, x), evaluate(x));
+        }
+    }
+}
+
+#[test]
+fn captured_root_rounds_match_native_sumcheck() {
+    use p3_binary_field::Poly64;
+    use p3_sumcheck::strategy::Basis;
+
+    let trace = include_str!("../tests/fixtures/native-root-whir-rounds.txt");
+    let mut results = Vec::new();
+    for line in trace.lines().filter(|line| !line.starts_with('#')) {
+        let limbs: [u64; 15] = line
+            .split_whitespace()
+            .map(|word| u64::from_str_radix(word, 16).unwrap())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let groups: [[u64; 3]; 5] = limbs.as_chunks::<3>().0.try_into().unwrap();
+        let [claim, constant, leading, challenge, expected] =
+            groups.map(|v| Poly192::new(v.map(Poly64::new)));
+        if let Some(&previous) = results.last() {
+            assert_eq!(claim, previous);
+        }
+        let next = Basis::Evaluation.reduce_claim(constant, leading, challenge, claim);
+        assert_eq!(next, expected);
+        results.push(next);
+    }
+    assert_eq!(results.len(), 4);
+}
+
 fn circuit() -> Circuit<OldF> {
     let mut builder = CircuitBuilder::<OldF>::new();
     builder.enable_native_keccak_f1600().unwrap();

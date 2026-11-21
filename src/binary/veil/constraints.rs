@@ -7,7 +7,7 @@
 
 use anyhow::{Result, ensure};
 use p3_field::PrimeCharacteristicRing;
-use rand::{RngExt, SeedableRng, rngs::StdRng};
+use rand::TryCryptoRng;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
@@ -144,12 +144,7 @@ impl Relation {
     ) -> Result<ExperimentalProof> {
         self.check(parameters, public, witness)?;
         self.require_algebraic_budget(parameters)?;
-        self.prove_inner(
-            parameters,
-            public,
-            witness,
-            &mut StdRng::from_rng(&mut rand::rng()),
-        )
+        self.prove_inner(parameters, public, witness, &mut rand::rngs::SysRng)
     }
 
     fn prove_inner(
@@ -157,11 +152,11 @@ impl Relation {
         parameters: &Parameters,
         public: &[E],
         witness: &[E],
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<ExperimentalProof> {
         let mut transcript = self.transcript(parameters, public)?;
-        let padded = pad_witness(witness, rng);
-        let masks: Vec<E> = (0..padded.len()).map(|_| rng.random()).collect();
+        let padded = pad_witness(witness, rng)?;
+        let masks = super::coins::fields(rng, padded.len())?;
         let mask_data = CommittedVectors::new(
             std::slice::from_ref(&masks),
             parameters.code(masks.len(), false)?,
@@ -189,7 +184,7 @@ impl Relation {
         parameters: &Parameters,
         public: &[E],
         prepared: PreparedTranscript,
-        rng: &mut StdRng,
+        rng: &mut impl TryCryptoRng,
     ) -> Result<ExperimentalProof> {
         self.validate(parameters, public)?;
         self.require_algebraic_budget(parameters)?;
@@ -346,13 +341,13 @@ impl Relation {
     }
 }
 
-pub(super) fn pad_witness(witness: &[E], rng: &mut StdRng) -> Vec<E> {
+pub(super) fn pad_witness(witness: &[E], rng: &mut impl TryCryptoRng) -> Result<Vec<E>> {
     let mut padded = witness.to_vec();
-    let r: E = rng.random();
-    let s: E = rng.random();
-    let t: E = rng.random();
+    let mut values = [E::ZERO; 3];
+    super::coins::fill_fields(rng, &mut values)?;
+    let [r, s, t] = values;
     padded.extend([r, s, r * s, r + E::ONE, t, (r + E::ONE) * t]);
-    padded
+    Ok(padded)
 }
 
 impl ExperimentalProof {
@@ -377,9 +372,9 @@ impl ExperimentalProof {
 
 #[cfg(test)]
 mod tests {
-    use super::{E, Linear, Parameters, Relation, StdRng};
+    use super::{E, Linear, Parameters, Relation};
     use p3_field::PrimeCharacteristicRing;
-    use rand::SeedableRng;
+    use rand::{SeedableRng, rngs::StdRng};
 
     #[test]
     fn invalid_witness_fails_the_proof_relation_without_native_precheck() {

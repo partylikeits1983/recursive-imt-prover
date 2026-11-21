@@ -1,52 +1,84 @@
 //! Compare the same authenticated Keccak statement with different kernels and PCS layouts.
 use anyhow::{Result, ensure};
+use clap::Parser;
 use imt_flock_backend::checkpoint_keccak::{
     State,
     packed::{Batch, Kernel, Openings, Proof, Schedule, Statement},
 };
 use serde_json::json;
-use std::{env, time::Instant};
+use std::{env, fs, path::PathBuf, time::Instant};
+
+#[derive(Parser)]
+struct Args {
+    log: usize,
+    schedule: String,
+    kernel: String,
+    mode: String,
+    repeats: usize,
+    #[arg(long)]
+    recursive: bool,
+    #[arg(long, default_value_t = imt_flock_backend::WHIR_LOG_INV_RATE)]
+    log_inv_rate: usize,
+    /// Little-endian Keccak states (25 u64s each). Remaining slots start at zero.
+    #[arg(long)]
+    inputs: Option<PathBuf>,
+}
 
 fn main() -> Result<()> {
-    let args: Vec<_> = env::args().skip(1).collect();
-    let recursive = args.last().is_some_and(|v| v == "--recursive");
+    let args = Args::parse();
+    let log = args.log;
     ensure!(
-        !recursive || cfg!(feature = "opening-bench"),
+        !args.recursive || cfg!(feature = "opening-bench"),
         "--recursive requires --features opening-bench"
     );
-    ensure!(
-        args.len() == 5 + usize::from(recursive),
-        "usage: packed-keccak LOG_N one|full|mid scalar|packed separate|joint REPEATS [--recursive]"
-    );
-    let log: usize = args[0].parse()?;
-    let schedule = match args[1].as_str() {
+    let schedule = match args.schedule.as_str() {
         "one" => Schedule::OneRound,
         "full" => Schedule::Full,
         "mid" => Schedule::Midpoint,
         _ => anyhow::bail!("unknown schedule"),
     };
-    let kernel = match args[2].as_str() {
+    let kernel = match args.kernel.as_str() {
         "scalar" => Kernel::Scalar,
         "packed" => Kernel::Packed16,
         _ => anyhow::bail!("unknown kernel"),
     };
-    let mode = match args[3].as_str() {
+    let mode = match args.mode.as_str() {
         "separate" => Openings::Separate,
         "joint" => Openings::Joint,
         _ => anyhow::bail!("unknown opening mode"),
     };
-    let repeats: usize = args[4].parse()?;
+    let repeats = args.repeats;
     ensure!(repeats > 0, "need at least one repeat");
-    let batch = Batch::new(log, schedule, kernel, mode)?;
-    let inputs: Vec<State> = (0..1 << log)
-        .map(|i| {
-            core::array::from_fn(|j| {
-                ((i * 25 + j + 1) as u64)
-                    .wrapping_mul(0x9e3779b97f4a7c15)
-                    .rotate_left((j * 11) as u32)
+    let batch = Batch::with_rate(log, schedule, kernel, mode, args.log_inv_rate)?;
+    let (inputs, active): (Vec<State>, usize) = if let Some(path) = args.inputs {
+        let bytes = fs::read(path)?;
+        let (rows, tail) = bytes.as_chunks::<200>();
+        ensure!(
+            tail.is_empty() && !rows.is_empty() && rows.len() <= 1 << log,
+            "invalid Keccak state file"
+        );
+        let mut v: Vec<_> = rows
+            .iter()
+            .map(|row| {
+                core::array::from_fn(|j| {
+                    u64::from_le_bytes(row[8 * j..8 * j + 8].try_into().unwrap())
+                })
             })
-        })
-        .collect();
+            .collect();
+        v.resize(1 << log, [0; 25]);
+        (v, rows.len())
+    } else {
+        let v = (0..1 << log)
+            .map(|i| {
+                core::array::from_fn(|j| {
+                    ((i * 25 + j + 1) as u64)
+                        .wrapping_mul(0x9e3779b97f4a7c15)
+                        .rotate_left((j * 11) as u32)
+                })
+            })
+            .collect();
+        (v, 1 << log)
+    };
     for _ in 0..repeats {
         let start = Instant::now();
         let (statement, proof, t) = batch.prove(&inputs, b"packed-keccak-benchmark")?;
@@ -59,7 +91,7 @@ fn main() -> Result<()> {
         batch.verify(&statement, &proof, b"packed-keccak-benchmark")?;
         let verify_s = start.elapsed().as_secs_f64();
         #[cfg(feature = "opening-bench")]
-        let circuit = if recursive {
+        let circuit = if args.recursive {
             Some(batch.recursive_cost(&statement, &proof, b"packed-keccak-benchmark")?)
         } else {
             None
@@ -69,10 +101,10 @@ fn main() -> Result<()> {
         println!(
             "{}",
             json!({
-                "log_n": log,
-                "schedule": args[1],
-                "kernel": args[2],
-                "pcs": args[3],
+                "log_n": log, "active": active, "log_inv_rate": args.log_inv_rate,
+                "schedule": args.schedule,
+                "kernel": args.kernel,
+                "pcs": args.mode,
                 "threads": env::var("RAYON_NUM_THREADS").ok(),
                 "conditional_algebraic_bits": batch.conditional_algebraic_bits,
                 "prove_s": prove_s,

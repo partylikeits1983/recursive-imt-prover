@@ -1,0 +1,236 @@
+diff --git a/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierCore8.sol b/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierCore8.sol
+index c5fbe89..dcde75c 100644
+--- a/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierCore8.sol
++++ b/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierCore8.sol
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: MIT
+ pragma solidity ^0.8.28;
+ 
++import { FullWidthRows } from "./FullWidthRows.sol";
+ import { KoalaBear } from "../../field/KoalaBear.sol";
+ import { KoalaBearExt8 } from "../../field/KoalaBearExt8.sol";
+ import { MerkleVerifier } from "../../merkle/MerkleVerifier.sol";
+@@ -1353,31 +1354,8 @@ library WhirVerifierCore8 {
+         uint256 depth = WhirVerifierUtils8.log2Strict(domainSize >> foldingFactor);
+ 
+         if (expectedRowLen == 16 && foldingFactor == 4) {
+-            bytes32 fastRoot;
+-            uint256[] memory rowEvals;
+-            if (expectedKind == 0) {
+-                (fastRoot, rowEvals) = _computeBaseRootAndEvals16(
+-                    indices,
+-                    queryBatch.values,
+-                    depth,
+-                    queryBatch.decommitments,
+-                    foldingRandomness[0],
+-                    foldingRandomness[1],
+-                    foldingRandomness[2],
+-                    foldingRandomness[3]
+-                );
+-            } else {
+-                (fastRoot, rowEvals) = _computeExtension8RootAndEvals16(
+-                    indices,
+-                    queryBatch.values,
+-                    depth,
+-                    queryBatch.decommitments,
+-                    foldingRandomness[0],
+-                    foldingRandomness[1],
+-                    foldingRandomness[2],
+-                    foldingRandomness[3]
+-                );
+-            }
++            (bytes32 fastRoot, uint256[] memory rowEvals) = FullWidthRows.open(indices, queryBatch.values, depth,
++                queryBatch.decommitments, foldingRandomness, expectedKind == 0);
+ 
+             if (fastRoot != expectedRoot) {
+                 revert MerkleRootMismatch(expectedRoot, fastRoot);
+@@ -1401,41 +1379,7 @@ library WhirVerifierCore8 {
+             return (challenge, claimedContribution, selVars);
+         }
+ 
+-        bytes32 computedRoot = expectedKind == 0
+-            ? MerkleVerifier.computeRootFromFlatBaseRows20(
+-                indices, queryBatch.values, queryBatch.rowLen, depth, queryBatch.decommitments
+-            )
+-            : MerkleVerifier.computeRootFromFlatExtension8Rows20(
+-                indices, queryBatch.values, queryBatch.rowLen, depth, queryBatch.decommitments
+-            );
+-
+-        if (computedRoot != expectedRoot) {
+-            revert MerkleRootMismatch(expectedRoot, computedRoot);
+-        }
+-
+-        challenge = WhirVerifierUtils8.sampleExt8(challenger);
+-        selVars = indices;
+-
+-        unchecked {
+-            for (uint256 i = indices.length; i > 0; --i) {
+-                uint256 idx = i - 1;
+-                selVars[idx] = KoalaBear.pow(foldedDomainGen, indices[idx]);
+-
+-                uint256 rowStart = idx * queryBatch.rowLen;
+-                uint256 evalValue = expectedKind == 0
+-                    ? WhirVerifierUtils8.evaluateBaseRowAsExt8(
+-                        queryBatch.values, rowStart, queryBatch.rowLen, foldingRandomness
+-                    )
+-                    : WhirVerifierUtils8.evaluateExtensionRowAsExt8(
+-                        queryBatch.values, rowStart, queryBatch.rowLen, foldingRandomness
+-                    );
+-                claimedContribution = _hornerStep(claimedContribution, challenge, evalValue);
+-            }
+-
+-            for (uint256 i = oodAnswers.length; i > 0; --i) {
+-                claimedContribution = _hornerStep(claimedContribution, challenge, oodAnswers[i - 1]);
+-            }
+-        }
++        revert QueryBatchRowLengthMismatch(16, expectedRowLen);
+     }
+ 
+     function _verifyFinalStirChallengesRaw(
+@@ -1483,31 +1427,8 @@ library WhirVerifierCore8 {
+         uint256 depth = WhirVerifierUtils8.log2Strict(domainSize >> foldingFactor);
+ 
+         if (expectedRowLen == 16 && foldingFactor == 4) {
+-            bytes32 fastRoot;
+-            uint256[] memory rowEvals;
+-            if (expectedKind == 0) {
+-                (fastRoot, rowEvals) = _computeBaseRootAndEvals16(
+-                    indices,
+-                    queryBatch.values,
+-                    depth,
+-                    queryBatch.decommitments,
+-                    foldingRandomness[0],
+-                    foldingRandomness[1],
+-                    foldingRandomness[2],
+-                    foldingRandomness[3]
+-                );
+-            } else {
+-                (fastRoot, rowEvals) = _computeExtension8RootAndEvals16(
+-                    indices,
+-                    queryBatch.values,
+-                    depth,
+-                    queryBatch.decommitments,
+-                    foldingRandomness[0],
+-                    foldingRandomness[1],
+-                    foldingRandomness[2],
+-                    foldingRandomness[3]
+-                );
+-            }
++            (bytes32 fastRoot, uint256[] memory rowEvals) = FullWidthRows.open(indices, queryBatch.values, depth,
++                queryBatch.decommitments, foldingRandomness, expectedKind == 0);
+ 
+             if (fastRoot != expectedRoot) {
+                 revert MerkleRootMismatch(expectedRoot, fastRoot);
+@@ -1596,34 +1517,7 @@ library WhirVerifierCore8 {
+             return;
+         }
+ 
+-        bytes32 computedRoot = expectedKind == 0
+-            ? MerkleVerifier.computeRootFromFlatBaseRows20(
+-                indices, queryBatch.values, queryBatch.rowLen, depth, queryBatch.decommitments
+-            )
+-            : MerkleVerifier.computeRootFromFlatExtension8Rows20(
+-                indices, queryBatch.values, queryBatch.rowLen, depth, queryBatch.decommitments
+-            );
+-
+-        if (computedRoot != expectedRoot) {
+-            revert MerkleRootMismatch(expectedRoot, computedRoot);
+-        }
+-
+-        unchecked {
+-            for (uint256 i = 0; i < indices.length; ++i) {
+-                uint256 point = KoalaBear.pow(foldedDomainGen, indices[i]);
+-                uint256 rowStart = i * queryBatch.rowLen;
+-                uint256 expectedEval = expectedKind == 0
+-                    ? WhirVerifierUtils8.evaluateBaseRowAsExt8(
+-                        queryBatch.values, rowStart, queryBatch.rowLen, foldingRandomness
+-                    )
+-                    : WhirVerifierUtils8.evaluateExtensionRowAsExt8(
+-                        queryBatch.values, rowStart, queryBatch.rowLen, foldingRandomness
+-                    );
+-                if (WhirVerifierUtils8.hornerBase(finalPoly, point) != expectedEval) {
+-                    revert StirConstraintFailed(i);
+-                }
+-            }
+-        }
++        revert QueryBatchRowLengthMismatch(16, expectedRowLen);
+     }
+ 
+     function _verifyStirAndCombineConstraintBlob(
+diff --git a/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierUtils8.sol b/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierUtils8.sol
+index 7eab896..c03b960 100644
+--- a/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierUtils8.sol
++++ b/src/whir/k22_jb100_lir6_ff4_rsv1/WhirVerifierUtils8.sol
+@@ -1329,7 +1329,7 @@ library WhirVerifierUtils8 {
+             mstore(add(ptr, 0x35), shl(224, v13))
+             mstore(add(ptr, 0x39), shl(224, v14))
+             mstore(add(ptr, 0x3d), shl(224, v15))
+-            digest := and(keccak256(ptr, 65), not(sub(shl(96, 1), 1)))
++            digest := keccak256(ptr, 65)
+         }
+ 
+         (
+@@ -1656,7 +1656,7 @@ library WhirVerifierUtils8 {
+             mstore(add(ptr, 0x1a1), v13)
+             mstore(add(ptr, 0x1c1), v14)
+             mstore(add(ptr, 0x1e1), v15)
+-            digest := and(keccak256(ptr, 513), not(sub(shl(96, 1), 1)))
++            digest := keccak256(ptr, 513)
+         }
+ 
+         (
+@@ -1833,7 +1833,7 @@ library WhirVerifierUtils8 {
+ 
+             mstore8(ptr, 0x00)
+             calldatacopy(add(ptr, 0x01), src, 0x40)
+-            digest := and(keccak256(ptr, 65), not(sub(shl(96, 1), 1)))
++            digest := keccak256(ptr, 65)
+         }
+ 
+         evalValue = _dotBaseRadix80(weightsPtr, w0, w1);
+@@ -2222,7 +2222,7 @@ library WhirVerifierUtils8 {
+             let ptr := mload(0x40)
+             mstore8(ptr, 0x00)
+             calldatacopy(add(ptr, 0x01), src, 0x200)
+-            digest := and(keccak256(ptr, 513), not(sub(shl(96, 1), 1)))
++            digest := keccak256(ptr, 513)
+ 
+             function qmul4(a0, a1, a2, a3, b0, b1, b2, b3) -> c0, c1, c2, c3 {
+                 c0 := add(mul(a0, b0), mul(3, add(add(mul(a1, b3), mul(a2, b2)), mul(a3, b1))))
+diff --git a/src/whir/k22_jb100_lir6_ff4_rsv1/FullWidthRows.sol b/src/whir/k22_jb100_lir6_ff4_rsv1/FullWidthRows.sol
+new file mode 100644
+index 0000000..e43dcc0
+--- /dev/null
++++ b/src/whir/k22_jb100_lir6_ff4_rsv1/FullWidthRows.sol
+@@ -0,0 +1,31 @@
++// SPDX-License-Identifier: MIT
++pragma solidity ^0.8.28;
++import { WhirVerifierUtils8 as U } from "./WhirVerifierUtils8.sol";
++import { MerkleVerifier as M } from "../../merkle/MerkleVerifier.sol";
++
++library FullWidthRows {
++    function open(
++        uint256[] calldata indices,
++        uint256[] calldata values,
++        uint256 depth,
++        bytes32[] calldata siblings,
++        uint256[] calldata points,
++        bool base
++    ) external pure returns (bytes32 root, uint256[] memory evals) {
++        require(values.length == indices.length * 16 && points.length == 4);
++        bytes32[] memory hashes = new bytes32[](indices.length);
++        evals = new uint256[](indices.length);
++        for (uint256 i; i < indices.length; ++i) {
++            if (base) {
++                (hashes[i], evals[i]) = U._hashAndEvaluateBaseRowDim4PackedPoints(
++                    values, 16 * i, points[0], points[1], points[2], points[3]
++                );
++            } else {
++                (hashes[i], evals[i]) = U._hashAndEvaluateExtensionRowDim4PackedPoints(
++                    values, 16 * i, points[0], points[1], points[2], points[3]
++                );
++            }
++        }
++        root = M.computeRootFromLeafHashes(indices, hashes, depth, siblings, 32);
++    }
++}

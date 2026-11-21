@@ -122,3 +122,12 @@ commitment. Proving and verification append their prescribed points to the AIR
 opening, and the security report charges the combined schedule. The outer
 protocol must check its reduction against the returned auxiliary values. The
 checkpoint parent uses these tables for the input and output bits of Keccak.
+
+The terminal shared opening reuses the fixed preprocessing commitment, prover
+data, AIR shapes and heights through `with_opening_strategy`. The two
+configurations must share the concrete commitment type and the proving-key
+conversion also requires the same committed-data type. This avoids re-encoding
+the fixed circuit for every merge.
+
+`src/zerocheck/mod.rs` exposes the existing AIR degree calculation so the native
+trace exporter derives the same sumcheck geometry as the verified proof.

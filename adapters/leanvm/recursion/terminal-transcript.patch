@@ -1,0 +1,281 @@
+diff --git a/crates/experimental_prover/lean_vm_core/src/cpu/mod.rs b/crates/experimental_prover/lean_vm_core/src/cpu/mod.rs
+index 45585d180..7039c3370 100644
+--- a/crates/experimental_prover/lean_vm_core/src/cpu/mod.rs
++++ b/crates/experimental_prover/lean_vm_core/src/cpu/mod.rs
+@@ -193,6 +193,16 @@ pub fn prove(
+     witness: &[(String, Vec<Vec<F128>>)],
+     public_input: [F128; 2],
+     log_inv_rate: usize,
++) -> Result<(Proof, Stats), ProveError> {
++    prove_with_transcript(program, witness, public_input, log_inv_rate, false)
++}
++
++pub fn prove_with_transcript(
++    program: &Program,
++    witness: &[(String, Vec<Vec<F128>>)],
++    public_input: [F128; 2],
++    log_inv_rate: usize,
++    hash_chain: bool,
+ ) -> Result<(Proof, Stats), ProveError> {
+     if ::pcs::whir::validate_log_inv_rate(log_inv_rate).is_err() {
+         return Err(ProveError::InvalidRate { log_inv_rate });
+@@ -227,7 +237,8 @@ pub fn prove(
+     let committed_size = w.committed_size();
+     // The public statement (program digest + input) seeds the transcript, so
+     // every challenge depends on the exact program and public input.
+-    let mut ps = ProverState::new(
++    let initialize = if hash_chain { ProverState::new_hash_chain } else { ProverState::new };
++    let mut ps = initialize(
+         verifier::Digest(program.bytecode().fiat_shamir_iv()).words(),
+         verifier::Digest(public_input_bytes(&public_input)).words(),
+     );
+diff --git a/crates/experimental_prover/lean_vm_core/src/prover.rs b/crates/experimental_prover/lean_vm_core/src/prover.rs
+index 464eb1bce..6000b1c29 100644
+--- a/crates/experimental_prover/lean_vm_core/src/prover.rs
++++ b/crates/experimental_prover/lean_vm_core/src/prover.rs
+@@ -8,6 +8,27 @@ use verifier::E;
+ /// The experimental prover.
+ pub struct ExperimentalProver;
+ 
++impl ExperimentalProver {
++    pub fn prove_with_transcript(
++        program: &isa::Program,
++        witness: &[(String, Vec<Vec<E>>)],
++        public_input: [E; 2],
++        log_inv_rate: usize,
++        hash_chain: bool,
++    ) -> Result<(verifier::Proof, isa::Stats), String> {
++        let witness: Vec<(String, Vec<Vec<F128>>)> = witness
++            .iter()
++            .map(|(name, entries)| {
++                let entries = entries
++                    .iter()
++                    .map(|entry| entry.iter().copied().map(from_scalar).collect());
++                (name.clone(), entries.collect())
++            })
++            .collect();
++        cpu::prove_with_transcript(program, &witness, public_input.map(from_scalar), log_inv_rate, hash_chain).map_err(|e| e.to_string())
++    }
++}
++
+ /// Rows [`ExperimentalProver::combine_rows`] adds into its accumulators between two reads of them.
+ const GROUP: usize = 8;
+ 
+@@ -28,16 +49,7 @@ impl isa::Prover for ExperimentalProver {
+         public_input: [E; 2],
+         log_inv_rate: usize,
+     ) -> Result<(verifier::Proof, isa::Stats), String> {
+-        let witness: Vec<(String, Vec<Vec<F128>>)> = witness
+-            .iter()
+-            .map(|(name, entries)| {
+-                let entries = entries
+-                    .iter()
+-                    .map(|entry| entry.iter().copied().map(from_scalar).collect());
+-                (name.clone(), entries.collect())
+-            })
+-            .collect();
+-        cpu::prove(program, &witness, public_input.map(from_scalar), log_inv_rate).map_err(|e| e.to_string())
++        Self::prove_with_transcript(program, witness, public_input, log_inv_rate, false)
+     }
+ 
+     fn map_collect<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
+diff --git a/crates/fiat_shamir_prover/src/lib.rs b/crates/fiat_shamir_prover/src/lib.rs
+index 9220f2b7e..ad2a50883 100644
+--- a/crates/fiat_shamir_prover/src/lib.rs
++++ b/crates/fiat_shamir_prover/src/lib.rs
+@@ -72,6 +72,7 @@ pub struct FiatShamirState<F> {
+     /// `n_pending` scalars absorbed since, then zeros.
+     state: [u64; STATE_LANES],
+     n_pending: usize,
++    hash_chain: bool,
+     /// The challenge a grind's permutation drew, which the next [`Self::sample`] returns.
+     ground: Option<F>,
+ }
+@@ -86,6 +87,7 @@ impl<F: Scalar> FiatShamirState<F> {
+         let mut fs = Self {
+             state: [0; STATE_LANES],
+             n_pending: 0,
++            hash_chain: false,
+             ground: None,
+         };
+         fs.state[..8].copy_from_slice([iv, public_input].as_flattened());
+@@ -93,6 +95,17 @@ impl<F: Scalar> FiatShamirState<F> {
+         fs
+     }
+ 
++    /// Terminal transcript. Every step hashes exactly 128 bytes, which fits in one
++    /// padded Keccak-256 block. The 256-bit digest chains the full transcript.
++    pub fn new_hash_chain(iv: [u64; 4], public_input: [u64; 4]) -> Self {
++        let mut seed = verifier::TERMINAL_TRANSCRIPT_DOMAIN.to_vec();
++        seed.extend(iv.into_iter().chain(public_input).flat_map(u64::to_le_bytes));
++        let mut state = [0; STATE_LANES];
++        state[..4].copy_from_slice(&Digest(keccak256::hash(&seed)).words());
++        state[16] = 0x8000_0000_0000_0001;
++        Self { state, n_pending: 0, hash_chain: true, ground: None }
++    }
++
+     /// Seed a protocol that has no public input of its own from `label`, whose hash
+     /// is all a domain separator has to be.
+     pub fn from_label(label: &[u8]) -> Self {
+@@ -103,7 +116,12 @@ impl<F: Scalar> FiatShamirState<F> {
+     fn duplex(&mut self) -> F {
+         keccak256::keccak_f(&mut self.state);
+         let out = F::from_limbs([self.state[0], self.state[1]]);
+-        self.state[..RATE_LANES].fill(0);
++        if self.hash_chain {
++            self.state[4..].fill(0);
++            self.state[16] = 0x8000_0000_0000_0001;
++        } else {
++            self.state[..RATE_LANES].fill(0);
++        }
+         self.n_pending = 0;
+         out
+     }
+@@ -113,9 +131,14 @@ impl<F: Scalar> FiatShamirState<F> {
+         if self.n_pending == RATE_SCALARS {
+             self.duplex();
+         }
+-        let i = 4 * self.n_pending;
+         let [c0, c1] = x.to_limbs();
+-        self.state[i..i + 4].copy_from_slice(&[c0, c1, 0, tag]);
++        if self.hash_chain {
++            let i = 4 + 3 * self.n_pending;
++            self.state[i..i + 3].copy_from_slice(&[c0, c1, tag]);
++        } else {
++            let i = 4 * self.n_pending;
++            self.state[i..i + 4].copy_from_slice(&[c0, c1, 0, tag]);
++        }
+         self.n_pending += 1;
+     }
+ 
+@@ -170,7 +193,9 @@ impl<F: Scalar> FiatShamirState<F> {
+         // first lane.
+         let mut base = self.clone();
+         base.absorb(F::from_limbs([0, 0]), DS_POW_NONCE);
+-        let (base, lane) = (base.state, 4 * (base.n_pending - 1));
++        let slot = base.n_pending - 1;
++        let lane = if base.hash_chain { 4 + 3 * slot } else { 4 * slot };
++        let base = base.state;
+         // The smallest passing nonce of batch `b`, the nonces `b * BATCH..(b + 1) * BATCH`.
+         const BATCH: u64 = 64;
+         let batch = |b: u64| {
+diff --git a/crates/fiat_shamir_prover/src/transcript.rs b/crates/fiat_shamir_prover/src/transcript.rs
+index f74f8b981..5a7fc49a5 100644
+--- a/crates/fiat_shamir_prover/src/transcript.rs
++++ b/crates/fiat_shamir_prover/src/transcript.rs
+@@ -20,6 +20,10 @@ impl<F: Scalar, S: Search> ProverState<F, S> {
+         Self::from_fs(FiatShamirState::new(iv, public_input))
+     }
+ 
++    pub fn new_hash_chain(iv: [u64; 4], public_input: [u64; 4]) -> Self {
++        Self::from_fs(FiatShamirState::new_hash_chain(iv, public_input))
++    }
++
+     /// A protocol with no public input of its own, seeded from `label` alone.
+     pub fn from_label(label: &[u8]) -> Self {
+         Self::from_fs(FiatShamirState::from_label(label))
+diff --git a/crates/verifier/src/lib.rs b/crates/verifier/src/lib.rs
+index 0f6e960bd..07d7fc429 100644
+--- a/crates/verifier/src/lib.rs
++++ b/crates/verifier/src/lib.rs
+@@ -190,14 +190,14 @@ pub struct Summary {
+ 
+ /// Verify that `proof` shows an execution of `bytecode` (the stacked bytecode multilinear) on the 256-bit `public_input`.
+ pub fn verify_execution(bytecode: &Bytecode, public_input: &[u8; 32], proof: &Proof) -> Result<Summary, VerifierError> {
+-    walk(bytecode, public_input, proof, true)
++    walk(bytecode, public_input, proof, true, false)
+ }
+ 
+ /// NOT a verification: the [`Summary`] of `proof`, read out without checking it. An invalid proof is accepted.
+ ///
+ /// For a prover that reads its guest's witness out of a proof the guest then verifies in full. It walks the same transcript as [`verify_execution`] and leaves out every check: the sumcheck, GKR, constraint, Keccak and WHIR terminal identities, the bus count's nonzero check, the proof of work, the bytecode evaluation and the Merkle roots. It still fails on a proof it cannot walk: announced sizes out of range, a stream or openings of the wrong length or shape, a Merkle path at a position the protocol did not open.
+ pub fn replay_unchecked(bytecode: &Bytecode, public_input: &[u8; 32], proof: &Proof) -> Result<Summary, VerifierError> {
+-    walk(bytecode, public_input, proof, false)
++    walk(bytecode, public_input, proof, false, false)
+ }
+ 
+ /// Exposed for the Keccak reduction's benchmark and tests: a batch of `2^log_steps` permutations proved alone, a state
+@@ -253,9 +253,16 @@ pub fn verify_keccak_batch(
+     Ok(())
+ }
+ 
+-fn walk(bytecode: &Bytecode, public_input: &[u8; 32], proof: &Proof, checked: bool) -> Result<Summary, VerifierError> {
++pub const TERMINAL_TRANSCRIPT_DOMAIN: &[u8] = b"IMT/LeanVM/terminal-transcript/v1";
++
++/// Checks a terminal proof under the domain-separated Keccak-256 transcript.
++pub fn verify_hash_chain_execution(bytecode: &Bytecode, public_input: &[u8; 32], proof: &Proof) -> Result<Summary, VerifierError> {
++    walk(bytecode, public_input, proof, true, true)
++}
++
++fn walk(bytecode: &Bytecode, public_input: &[u8; 32], proof: &Proof, checked: bool, hash_chain: bool) -> Result<Summary, VerifierError> {
+     let public_input = Digest(*public_input);
+-    let mut transcript = Transcript::new(proof, bytecode.fiat_shamir_iv, public_input, checked);
++    let mut transcript = Transcript::with_chain(proof, bytecode.fiat_shamir_iv, public_input, checked, hash_chain);
+ 
+     // 1] memory log-size, table row counts, and log-inv-rate in WHIR
+     let announced = transcript.next_scalars(2 + N_TABLES)?;
+diff --git a/crates/verifier/src/transcript.rs b/crates/verifier/src/transcript.rs
+index 872512b18..293e687b2 100644
+--- a/crates/verifier/src/transcript.rs
++++ b/crates/verifier/src/transcript.rs
+@@ -25,6 +25,7 @@ pub const RATE_SCALARS: usize = 4;
+ #[derive(Clone, Debug)]
+ pub struct Sponge {
+     state: [u64; STATE_LANES],
++    hash_chain: bool,
+     pending: [(E, u64); RATE_SCALARS],
+     n_pending: usize,
+     /// The challenge a grind's permutation drew, which the next [`Self::sample`] returns.
+@@ -42,6 +43,7 @@ impl Sponge {
+                 keccak_f(&mut state);
+                 state
+             },
++            hash_chain: false,
+             pending: [(ZERO, 0); RATE_SCALARS],
+             n_pending: 0,
+             ground: None,
+@@ -50,9 +52,18 @@ impl Sponge {
+ 
+     fn duplex(&mut self) {
+         let mut input = self.state;
+-        input[..16].fill(0);
+-        for (i, &(value, tag)) in self.pending[..self.n_pending].iter().enumerate() {
+-            input[4 * i..4 * i + 4].copy_from_slice(&[value.c0, value.c1, 0, tag]);
++        if self.hash_chain {
++            input[4..].fill(0);
++            for (i, &(value, tag)) in self.pending[..self.n_pending].iter().enumerate() {
++                let start = 4 + 3 * i;
++                input[start..start + 3].copy_from_slice(&[value.c0, value.c1, tag]);
++            }
++            input[16] = 0x8000_0000_0000_0001;
++        } else {
++            input[..16].fill(0);
++            for (i, &(value, tag)) in self.pending[..self.n_pending].iter().enumerate() {
++                input[4 * i..4 * i + 4].copy_from_slice(&[value.c0, value.c1, 0, tag]);
++            }
+         }
+         keccak_f(&mut input);
+         self.state = input;
+@@ -113,9 +124,21 @@ pub struct Transcript<'a> {
+ 
+ impl<'a> Transcript<'a> {
+     pub fn new(proof: &'a Proof, fiat_shamir_iv: Digest, public_input: Digest, checked: bool) -> Self {
++        Self::with_chain(proof, fiat_shamir_iv, public_input, checked, false)
++    }
++
++    pub(crate) fn with_chain(proof: &'a Proof, fiat_shamir_iv: Digest, public_input: Digest, checked: bool, hash_chain: bool) -> Self {
++        let mut sponge = Sponge::new(fiat_shamir_iv, public_input);
++        if hash_chain {
++            let mut seed = crate::TERMINAL_TRANSCRIPT_DOMAIN.to_vec();
++            seed.extend(fiat_shamir_iv.0);
++            seed.extend(public_input.0);
++            sponge.state[..4].copy_from_slice(&crate::hash::keccak_hash(&seed).words());
++            sponge.hash_chain = true;
++        }
+         Self {
+             proof,
+-            sponge: Sponge::new(fiat_shamir_iv, public_input),
++            sponge,
+             stream_offset: 0,
+             opening_offset: 0,
+             checked,

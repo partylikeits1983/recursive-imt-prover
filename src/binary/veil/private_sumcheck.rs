@@ -4,7 +4,7 @@
 use anyhow::{Result, ensure};
 use p3_multilinear_util::poly::Poly;
 use p3_sumcheck::strategy::VariableOrder;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::rngs::SysRng;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -55,7 +55,7 @@ impl PrivateSumcheckStatement {
             columns: 2,
         };
         spec.messages(opening_points)?;
-        let mut rng = StdRng::from_rng(&mut rand::rng());
+        let mut rng = SysRng;
         let claimed_sum = left.iter().zip(&right).map(|(&a, &b)| a * b).sum();
         let data =
             CommittedOracle::new(spec, &[left.clone(), right.clone()], parameters, &mut rng)?;

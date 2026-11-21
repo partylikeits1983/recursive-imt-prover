@@ -5,11 +5,38 @@
 //! query-privacy property needed by VEIL; it is not a full protocol ZK theorem.
 
 use anyhow::{Result, ensure};
-use p3_binary_dft::{BasisNtt, domain_point, subspace_polynomial};
+use p3_binary_dft::{BasisNtt, ButterflyField, domain_point, subspace_polynomial};
 use p3_binary_field::TowerLevel;
-use p3_field::{Field, PrimeCharacteristicRing};
+use p3_field::{BasedVectorSpace, Field, PrimeCharacteristicRing};
+use rayon::prelude::{IndexedParallelIterator, ParallelIterator, ParallelSliceMut};
 
 use super::{E, F};
+
+/// All additive NTT twiddles lie in the base field. The three coordinates of
+/// each extension element are therefore three columns of the same transform.
+fn evaluate_codeword(
+    values: &[E],
+    interpolation: Option<&BasisNtt<F>>,
+    domain: &BasisNtt<F>,
+) -> Vec<E> {
+    let width = <E as BasedVectorSpace<F>>::DIMENSION;
+    let mut coefficients = E::flatten_to_base(values.to_vec());
+    if let Some(plan) = interpolation {
+        F::lch_transform::<true>(&mut coefficients, width, plan.shift());
+    }
+    // Higher coefficients are zero. Evaluate the same polynomial on each
+    // disjoint coset of the smaller domain, in the original row order.
+    let mut output = F::zero_vec(width << domain.log_domain_size());
+    output
+        .par_chunks_exact_mut(coefficients.len())
+        .enumerate()
+        .for_each(|(i, coset)| {
+            coset.copy_from_slice(&coefficients);
+            let shift = domain.shift() + domain_point::<F>(i * values.len());
+            F::lch_transform::<false>(coset, width, shift);
+        });
+    E::reconstitute_from_base(output)
+}
 
 #[derive(Clone, Debug)]
 pub struct BinaryCode {
@@ -94,15 +121,11 @@ impl BinaryCode {
             padded.len() == self.input_len,
             "incorrect padded input length"
         );
-        let mut coefficients = padded.to_vec();
-        if !self.coefficients {
-            self.input
-                .transform_algebra::<E, true>(&mut coefficients, 1);
-        }
-        coefficients.resize(self.codeword_len, E::ZERO);
-        self.output
-            .transform_algebra::<E, false>(&mut coefficients, 1);
-        Ok(coefficients)
+        Ok(evaluate_codeword(
+            padded,
+            self.is_interpolation().then_some(&self.input),
+            &self.output,
+        ))
     }
 
     pub fn encode_product(&self, intermediate: &[E]) -> Result<Vec<E>> {
@@ -111,13 +134,11 @@ impl BinaryCode {
             intermediate.len() == 2 * self.input_len,
             "incorrect product length"
         );
-        let mut coefficients = intermediate.to_vec();
-        self.product
-            .transform_algebra::<E, true>(&mut coefficients, 1);
-        coefficients.resize(self.codeword_len, E::ZERO);
-        self.output
-            .transform_algebra::<E, false>(&mut coefficients, 1);
-        Ok(coefficients)
+        Ok(evaluate_codeword(
+            intermediate,
+            Some(&self.product),
+            &self.output,
+        ))
     }
 
     /// Extend a base-code message to the product-code interpolation domain.
@@ -127,13 +148,7 @@ impl BinaryCode {
             padded.len() == self.input_len,
             "incorrect padded input length"
         );
-        let mut coefficients = padded.to_vec();
-        self.input
-            .transform_algebra::<E, true>(&mut coefficients, 1);
-        coefficients.resize(2 * self.input_len, E::ZERO);
-        self.product
-            .transform_algebra::<E, false>(&mut coefficients, 1);
-        Ok(coefficients)
+        Ok(evaluate_codeword(padded, Some(&self.input), &self.product))
     }
 
     pub fn evaluation_point(&self, position: usize) -> Result<F> {

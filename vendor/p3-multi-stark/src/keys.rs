@@ -74,6 +74,35 @@ impl AirShape {
 }
 
 impl<C: MultiStarkConfig> ProvingKey<C> {
+    /// Share the original fixed tables, cap and AIR metadata with a verifier that
+    /// discharges openings differently. The caller uses the same commitment
+    /// layout and AIR batch. The verifier still checks the pinned cap.
+    pub fn with_opening_strategy<D>(&self) -> ProvingKey<D>
+    where
+        D: MultiStarkConfig<Val = C::Val, Challenge = C::Challenge, Challenger = C::Challenger>,
+        D::Pcs: MultilinearPcs<
+                C::Challenge,
+                C::Challenger,
+                Commitment = Commitment<C>,
+                ProverData = ProverData<C>,
+            >,
+        Commitment<C>: Clone,
+        ProverData<C>: Clone,
+    {
+        ProvingKey {
+            preprocessed: self
+                .preprocessed
+                .as_ref()
+                .map(|data| PreprocessedProverData {
+                    commitment: data.commitment.clone(),
+                    prover_data: data.prover_data.clone(),
+                }),
+            air_profiles: self.air_profiles.clone(),
+            declares_bus: self.declares_bus,
+            air_shapes: self.air_shapes.clone(),
+        }
+    }
+
     /// Whether this key can have come from `setup` over `airs`, in this order.
     ///
     /// The count, every width and every public-value count are compared on each call.
@@ -142,6 +171,20 @@ pub struct VerifyingKey<C: MultiStarkConfig> {
 }
 
 impl<C: MultiStarkConfig> VerifyingKey<C> {
+    /// Reuse the setup commitment and pinned AIR metadata for another opening strategy.
+    pub fn with_opening_strategy<D>(&self) -> VerifyingKey<D>
+    where
+        D: MultiStarkConfig<Val = C::Val, Challenge = C::Challenge, Challenger = C::Challenger>,
+        D::Pcs: MultilinearPcs<C::Challenge, C::Challenger, Commitment = Commitment<C>>,
+        Commitment<C>: Clone,
+    {
+        VerifyingKey {
+            preprocessed: self.preprocessed.clone(),
+            preprocessed_log_heights: self.preprocessed_log_heights.clone(),
+            air_profiles: self.air_profiles.clone(),
+        }
+    }
+
     pub fn preprocessed_commitment(&self) -> Option<&Commitment<C>> {
         self.preprocessed.as_ref()
     }

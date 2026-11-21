@@ -8,6 +8,24 @@ pub(super) const LEAF_DOMAIN: &[u8] = b"imt-veil-v3/leaf\0\0";
 pub(super) const NODE_DOMAIN: &[u8] = b"imt-veil-v3/node\0\0";
 pub(super) const TRANSCRIPT_DOMAIN: &[u8] = b"imt-veil-v3/transcript\0\0";
 
+/// Merkle preimages for the stacked coefficient oracle. The trusted client
+/// protocol selects the domain pair, independently of proof bytes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum RowDomains {
+    #[default]
+    Original,
+    Aligned,
+}
+
+impl RowDomains {
+    pub fn tags(self) -> (&'static [u8], &'static [u8]) {
+        match self {
+            Self::Original => (LEAF_DOMAIN, NODE_DOMAIN),
+            Self::Aligned => (b"imt-veil-v4/leaf", b"imt-veil-v4/node"),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct DomainHash(pub &'static [u8]);
 

@@ -11,6 +11,45 @@ use super::{
 };
 
 pub mod cyclic;
+pub mod terminal;
+
+/// Dispatch exclusively on the independently trusted key metadata.
+pub enum RootVerifier {
+    Cyclic(cyclic::CyclicVerifier),
+    Terminal(terminal::TerminalVerifier),
+}
+
+impl RootVerifier {
+    pub fn from_trusted(key: &[u8], trust: &cyclic::TrustedVerifier) -> Result<Self> {
+        match trust.protocol.as_str() {
+            cyclic::PROTOCOL => Ok(Self::Cyclic(cyclic::CyclicVerifier::from_bytes(
+                key,
+                &trust.verifier_digest,
+                &trust.identity,
+            )?)),
+            terminal::PROTOCOL
+            | terminal::SHARED_PROTOCOL
+            | terminal::FOLD4_PROTOCOL
+            | terminal::MIDPOINT_PROTOCOL
+            | terminal::MIDPOINT_COMPARISON_PROTOCOL => {
+                Ok(Self::Terminal(terminal::TerminalVerifier::load(
+                    key,
+                    &trust.verifier_digest,
+                    &trust.identity,
+                    &trust.protocol,
+                )?))
+            }
+            _ => anyhow::bail!("unsupported trusted root protocol"),
+        }
+    }
+
+    pub fn verify_statement(&self, proof: &[u8], expected: &TreeStatement) -> Result<()> {
+        match self {
+            Self::Cyclic(v) => v.verify_statement(proof, expected),
+            Self::Terminal(v) => v.verify_statement(proof, expected),
+        }
+    }
+}
 
 const LEAF_DOMAIN: &[u8] = b"IMT-AGG-LEAF-V3";
 const NODE_DOMAIN: &[u8] = b"IMT-AGG-NODE-V2";
@@ -80,8 +119,16 @@ impl TreeStatement {
         Ok(level.remove(0))
     }
 
+    /// Ordered batch digest followed by its unsigned one-byte leaf count.
+    pub fn bytes(&self) -> [u8; STATEMENT_BYTES] {
+        let mut bytes = [0; STATEMENT_BYTES];
+        bytes[..32].copy_from_slice(&self.digest);
+        bytes[32] = self.count;
+        bytes
+    }
+
     pub fn fields(&self) -> [F; STATEMENT_BYTES] {
-        std::array::from_fn(|i| F::new(u64::from(if i < 32 { self.digest[i] } else { self.count })))
+        self.bytes().map(|byte| F::new(u64::from(byte)))
     }
 }
 
@@ -112,15 +159,19 @@ impl TreeTarget {
         }
         let one = b.define_const(F::new(1));
         b.connect(selected, one);
+        Ok(Self {
+            digest: Self::merge_digest(b, left, right)?,
+            count,
+        })
+    }
+
+    fn merge_digest(b: &mut CircuitBuilder<F>, left: Self, right: Self) -> Result<[ExprId; 32]> {
         let mut message = domain(b, NODE_DOMAIN);
         message.extend(left.digest);
         message.push(left.count);
         message.extend(right.digest);
         message.push(right.count);
-        Ok(Self {
-            digest: b.native_keccak256_bytes(&message)?,
-            count,
-        })
+        Ok(b.native_keccak256_bytes(&message)?)
     }
 
     pub fn connect(self, b: &mut CircuitBuilder<F>, expected: [ExprId; STATEMENT_BYTES]) {

@@ -853,3 +853,31 @@ fn arithmetic_partitions_avoid_padding_cliffs_without_losing_preprocessing() {
         }
     }
 }
+
+#[test]
+fn recursive_fanout_spills_word16_ids_only_into_word16_rows() {
+    // Two more IDs than fit across both the four-copy and eight-copy shards.
+    let ids = (1 << 16) - 1 + (1 << 11) - 1 + 2;
+    let mut source = Vec::with_capacity(3 * 4 * ids);
+    for id in 1..=ids {
+        for copy in 0..4 {
+            source.extend([
+                OldF::from_repr(id as u64),
+                OldF::from_repr(1),
+                OldF::from_repr(u64::from(copy != 3)),
+            ]);
+        }
+    }
+    let (shards, _) = fanout::partition(&vec![16; ids + 1], &source, &[], true).unwrap();
+    let mut counts = vec![0; ids + 1];
+    for shard in &shards {
+        for row in &shard.rows {
+            assert_eq!(shard.coordinate_width, 16);
+            assert_eq!(row.copies, 4);
+            assert_eq!(row.source_row, (row.id - 1) * 4);
+            counts[row.id as usize] += 1;
+        }
+    }
+    assert!(counts[1..].iter().all(|&count| count == 1));
+    assert_eq!(shards[6].rows.len(), 2);
+}

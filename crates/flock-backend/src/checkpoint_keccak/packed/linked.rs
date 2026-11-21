@@ -32,13 +32,25 @@ pub(super) type Coefficients = Vec<Vec<E>>;
 pub(in crate::checkpoint_keccak) fn prove(
     states: &[State],
     output: &Claim,
+    middle: Option<E>,
     ch: &mut Challenger,
 ) -> Result<(Proof, Coefficients, closing::Proof, Point<E>, E)> {
     let mut claim = start(output, ch)?;
-    let mut layers = Vec::with_capacity(ROUNDS);
-    let mut coefficients = Vec::with_capacity(ROUNDS);
-    let checkpoints = super::Checkpoints::new(states, ROUNDS, 6, states.len());
-    for round in (0..ROUNDS).rev() {
+    let depth = if let Some(value) = middle {
+        super::merge_midpoint(&mut claim, value, ch);
+        ROUNDS / 2
+    } else {
+        ROUNDS
+    };
+    let segment_rows = 1usize << output.instance.len();
+    ensure!(
+        states.len() == segment_rows * (ROUNDS / depth),
+        "incorrect segment geometry"
+    );
+    let mut layers = Vec::with_capacity(depth);
+    let mut coefficients = Vec::with_capacity(depth);
+    let checkpoints = super::Checkpoints::new(states, depth, 6, segment_rows);
+    for round in (0..depth).rev() {
         ch.observe(F::from_repr(round as u64));
         let (states, before_chi) = checkpoints.before_chi(round);
         let (layer, next) =
@@ -59,21 +71,26 @@ pub(in crate::checkpoint_keccak) fn verify(
     coefficients: &[Vec<E>],
     closing: &closing::Proof,
     output: &Claim,
+    middle: Option<E>,
     ch: &mut (impl FieldChallenger<F> + GrindingChallenger<Witness = F>),
 ) -> Result<closing::Closing> {
+    let depth = if middle.is_some() { ROUNDS / 2 } else { ROUNDS };
     ensure!(
-        proof.layers.len() == ROUNDS && coefficients.len() == ROUNDS,
+        proof.layers.len() == depth && coefficients.len() == depth,
         "incorrect packed Keccak round count"
     );
     let mut claim = start(output, ch)?;
-    for ((round, layer), coeff) in (0..ROUNDS).rev().zip(&proof.layers).zip(coefficients) {
+    if let Some(value) = middle {
+        super::merge_midpoint(&mut claim, value, ch);
+    }
+    for ((round, layer), coeff) in (0..depth).rev().zip(&proof.layers).zip(coefficients) {
         ch.observe(F::from_repr(round as u64));
         claim = reduction::verify_parts(
             coeff,
             &layer.sumcheck,
             layer.values,
             &claim,
-            reduction::iota(&claim, round),
+            super::round_constant(&claim, round, middle.is_some()),
             ch,
         )?;
     }
